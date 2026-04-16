@@ -34,8 +34,8 @@ RUN mkdir -p build \
         -DBuildMPRdVulkan=OFF \
         -DBuildMPRend2=OFF \
         -DBuildMPUI=OFF \
-        -DBuildMPGame=OFF \
-        -DBuildMPCGame=OFF \
+        -DBuildMPGame=ON \
+        -DBuildMPCGame=ON \
         -DBuildDiscordRichPresence=OFF \
         -DBuildTests=OFF \
         .. \
