@@ -10,7 +10,7 @@
   "description": "Runs TaystJK dedicated server on Pterodactyl from a source-built runtime image without bundling copyrighted Jedi Academy game assets. Default fs_game is taystjk, which is where TaystJK installs its bundled jaPRO-oriented content.",
   "features": [],
   "docker_images": {
-    "ghcr.io/your-org/yolks:taystjk-source": "ghcr.io/your-org/yolks:taystjk-source"
+    "ghcr.io/akiondev/jedi-academy-taystjk:latest": "ghcr.io/akiondev/jedi-academy-taystjk:latest"
   },
   "file_denylist": [],
   "startup": "--panel-startup",
