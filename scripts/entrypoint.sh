@@ -8,6 +8,7 @@ COLOR_OK=""
 COLOR_WARN=""
 COLOR_ERROR=""
 COLOR_SECTION=""
+COLOR_DIM=""
 LAST_FAILURE_MESSAGE=""
 
 setup_colors() {
@@ -19,6 +20,7 @@ setup_colors() {
     COLOR_WARN=$'\033[33m'
     COLOR_ERROR=$'\033[31m'
     COLOR_SECTION=$'\033[97m'
+    COLOR_DIM=$'\033[90m'
   fi
 }
 
@@ -29,13 +31,23 @@ print_header() {
   printf '%b\n\n' "${COLOR_BOLD}============================================================${COLOR_RESET}"
 }
 
+divider() {
+  printf '%b\n' "${COLOR_DIM}------------------------------------------------------------${COLOR_RESET}"
+}
+
 section() {
   printf '\n'
-  printf '%b\n' "${COLOR_SECTION}${COLOR_BOLD}[SECTION]${COLOR_RESET} ${COLOR_BOLD}${1}${COLOR_RESET}"
+  divider
+  printf '%b\n' "${COLOR_SECTION}${COLOR_BOLD}[${1}]${COLOR_RESET}"
+  divider
 }
 
 kv() {
   printf '%-16s %s\n' "$1" "$2"
+}
+
+kv_highlight() {
+  printf '%-16s %b%s%b\n' "$1" "${COLOR_BOLD}" "$2" "${COLOR_RESET}"
 }
 
 info() {
@@ -125,6 +137,10 @@ list_dir_files() {
 debug() {
   [[ "${DEBUG_STARTUP}" == "true" ]] || return 0
   printf '%b\n' "${COLOR_INFO}[DEBUG]${COLOR_RESET} $*"
+}
+
+ready() {
+  printf '%b\n' "${COLOR_OK}${COLOR_BOLD}[READY]${COLOR_RESET} $*"
 }
 
 bool_state() {
@@ -348,46 +364,38 @@ anti_vpn_allowlist_status() {
 }
 
 print_runtime_summary() {
-  section "Runtime Summary"
+  section "SERVER"
   kv "Image creator  :" "akiondev"
   kv "Startup source :" "$startup_source"
-  kv "Startup detail :" "$startup_detail"
-  kv "Runtime mode   :" "dedicated server"
-  kv "Mod directory  :" "$active_game_dir"
-  kv "Server config  :" "${active_game_dir}/${SERVER_CONFIG}"
-  kv "Server binary  :" "$server_binary_name"
-  kv "Server port    :" "$SERVER_PORT"
+  kv_highlight "Mode          :" "Dedicated server"
+  kv_highlight "Mod           :" "$active_game_dir"
+  kv_highlight "Config        :" "${active_game_dir}/${SERVER_CONFIG}"
+  kv_highlight "Port          :" "$SERVER_PORT"
+  kv_highlight "Binary        :" "$server_binary_name"
   kv "Copyright ack  :" "$COPYRIGHT_ACKNOWLEDGED"
   if [[ "${#EXTRA_STARTUP_ARGV[@]}" -gt 0 ]]; then
     kv "Extra args     :" "set"
   else
     kv "Extra args     :" "not set"
   fi
-  if [[ "${DEBUG_STARTUP}" == "true" ]]; then
-    kv "Debug startup  :" "enabled"
-  else
-    kv "Debug startup  :" "disabled"
-  fi
+  kv "Debug startup  :" "$(bool_state "$DEBUG_STARTUP")"
+  debug "Startup detail: ${startup_detail}"
 }
 
 print_anti_vpn_summary() {
-  section "Anti-VPN"
-  kv "Enabled         :" "$(bool_state "$ANTI_VPN_ENABLED")"
-  kv "Configured mode :" "$ANTI_VPN_MODE_NORMALIZED"
-  kv "Effective mode  :" "$ANTI_VPN_EFFECTIVE_MODE"
-  kv "Capture mode    :" "stdout-first with server.log fallback"
-  kv "Cache TTL       :" "$ANTI_VPN_CACHE_TTL"
-  kv "Cache path      :" "$ANTI_VPN_CACHE_PATH"
-  kv "Cache flush     :" "$ANTI_VPN_CACHE_FLUSH_INTERVAL"
-  kv "Threshold       :" "$ANTI_VPN_SCORE_THRESHOLD"
-  kv "Timeout         :" "$ANTI_VPN_TIMEOUT_MS"
-  kv "Decision logs   :" "$(bool_state "$ANTI_VPN_LOG_DECISIONS")"
-  kv "Broadcast mode  :" "$ANTI_VPN_BROADCAST_MODE_NORMALIZED"
-  kv "Broadcast cd    :" "$ANTI_VPN_BROADCAST_COOLDOWN"
-  kv "Allowlist       :" "$(anti_vpn_allowlist_status)"
-  kv "Log path        :" "$ANTI_VPN_LOG_PATH"
-  kv "Audit log       :" "$ANTI_VPN_AUDIT_LOG_PATH"
-  kv "Providers       :" "$(anti_vpn_provider_summary)"
+  section "ANTI-VPN"
+  kv_highlight "Status        :" "$(printf '%s' "$(bool_state "$ANTI_VPN_ENABLED")" | tr '[:lower:]' '[:upper:]')"
+  kv_highlight "Mode          :" "$(printf '%s' "$ANTI_VPN_EFFECTIVE_MODE" | tr '[:lower:]' '[:upper:]')"
+  kv_highlight "Broadcast     :" "$(printf '%s' "$ANTI_VPN_BROADCAST_MODE_NORMALIZED" | tr '[:lower:]' '[:upper:]')"
+  kv_highlight "Threshold     :" "$ANTI_VPN_SCORE_THRESHOLD"
+  kv "Capture mode   :" "stdout-first with server.log fallback"
+  kv "Providers      :" "$(anti_vpn_provider_summary)"
+  kv "Decision logs  :" "$(printf '%s' "$(bool_state "$ANTI_VPN_LOG_DECISIONS")" | tr '[:lower:]' '[:upper:]')"
+  kv "Allowlist      :" "$(anti_vpn_allowlist_status)"
+  kv "Cache TTL      :" "$ANTI_VPN_CACHE_TTL"
+  kv "Cache flush    :" "$ANTI_VPN_CACHE_FLUSH_INTERVAL"
+  kv "Timeout        :" "$ANTI_VPN_TIMEOUT_MS"
+  kv "Broadcast cd   :" "$ANTI_VPN_BROADCAST_COOLDOWN"
 
   if [[ "$ANTI_VPN_EFFECTIVE_MODE" == "off" ]]; then
     warn "Anti-VPN supervision is disabled"
@@ -402,31 +410,47 @@ print_anti_vpn_summary() {
 }
 
 print_preflight_checks() {
-  section "Preflight Checks"
+  section "CHECKS"
   ok "Runtime files synced from image"
-  ok "Server binary found at ${server_binary_path}"
-  ok "Container home prepared at /home/container"
+  ok "Server binary found"
+  ok "Container home prepared"
   if [[ "${#EXTRA_STARTUP_ARGV[@]}" -gt 0 ]]; then
-    ok "Extra startup args set: ${EXTRA_STARTUP_ARGS}"
+    ok "Extra startup args set"
+    debug "Extra startup args: ${EXTRA_STARTUP_ARGS}"
   else
     warn "Extra startup args not set"
   fi
 }
 
 print_asset_detection() {
-  section "Asset Detection"
-  print_path_status "Base assets" "/home/container/base/assets0.pk3"
-  print_path_status "Bundled TaystJK files" "/home/container/taystjk" "dir"
+  if [[ -f /home/container/base/assets0.pk3 ]]; then
+    ok "Base assets found"
+  else
+    warn "Base assets missing"
+  fi
+
+  if [[ -d /home/container/taystjk ]]; then
+    ok "Bundled TaystJK files found"
+  else
+    warn "Bundled TaystJK files missing"
+  fi
 }
 
 print_mod_detection() {
   local mod_path="/home/container/${active_game_dir}"
   local config_path="${mod_path}/${SERVER_CONFIG}"
 
-  section "Mod Detection"
-  kv "Selected mod path :" "$mod_path"
-  print_path_status "Active mod directory" "$mod_path" "dir"
-  print_path_status "Server config" "$config_path"
+  if [[ -d "$mod_path" ]]; then
+    ok "Active mod directory found"
+  else
+    warn "Active mod directory missing"
+  fi
+
+  if [[ -f "$config_path" ]]; then
+    ok "Server config found"
+  else
+    warn "Server config missing"
+  fi
 
   if [[ "$active_game_dir" == "base" ]]; then
     info "Running in base mode without an fs_game override"
@@ -437,20 +461,48 @@ print_mod_detection() {
   fi
 }
 
-print_file_inventory() {
-  section "File Inventory"
-  kv "Base files      :" "$(list_dir_files /home/container/base 'assets*.pk3')"
-  kv "Mod files       :" "$(list_dir_files "/home/container/${active_game_dir}")"
+count_dir_files() {
+  local path="$1"
+  local pattern="${2:-*}"
+
+  if [[ ! -d "$path" ]]; then
+    printf '0\n'
+    return
+  fi
+
+  find "$path" -maxdepth 1 -type f -name "$pattern" | wc -l | tr -d ' '
+}
+
+print_paths() {
+  section "PATHS"
+  kv "Binary path    :" "$server_binary_path"
+  kv "Mod path       :" "/home/container/${active_game_dir}"
+  kv "Log path       :" "$ANTI_VPN_LOG_PATH"
+  kv "Audit log      :" "$ANTI_VPN_AUDIT_LOG_PATH"
+  kv "Cache path     :" "$ANTI_VPN_CACHE_PATH"
+}
+
+print_inventory_summary() {
+  section "INVENTORY"
+  kv "Base files     :" "$(count_dir_files /home/container/base 'assets*.pk3') found"
+  kv "Mod files      :" "$(count_dir_files "/home/container/${active_game_dir}") found"
   if [[ -d /home/container/logs ]]; then
-    kv "Logs directory  :" "present"
+    kv "Logs directory :" "present"
   else
-    kv "Logs directory  :" "missing"
+    kv "Logs directory :" "missing"
   fi
 }
 
+print_debug_inventory() {
+  [[ "${DEBUG_STARTUP}" == "true" ]] || return 0
+  section "DEBUG INVENTORY"
+  kv "Base files     :" "$(list_dir_files /home/container/base 'assets*.pk3')"
+  kv "Mod files      :" "$(list_dir_files "/home/container/${active_game_dir}")"
+}
+
 print_launch_decision() {
-  section "Launch Decision"
-  ok "Preflight complete"
+  section "LAUNCH"
+  ready "Startup checks passed"
   print_command_preview
   if [[ "$ANTI_VPN_EFFECTIVE_MODE" == "off" ]]; then
     info "Launching TaystJK dedicated server now..."
@@ -513,7 +565,7 @@ fi
 export HOME=/home/container
 
 if [[ "$#" -gt 0 && "$1" != "--panel-startup" ]]; then
-  section "Launch Decision"
+  section "LAUNCH"
   info "Custom startup command detected"
   if [[ "$ANTI_VPN_EFFECTIVE_MODE" != "off" ]]; then
     warn "Anti-VPN supervision is bypassed for custom startup commands"
@@ -537,8 +589,10 @@ print_runtime_summary
 print_preflight_checks
 print_asset_detection
 print_mod_detection
-print_file_inventory
 print_anti_vpn_summary
+print_inventory_summary
+print_paths
+print_debug_inventory
 require_base_assets
 print_launch_decision
 launch_server
