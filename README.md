@@ -43,7 +43,7 @@ The anti-VPN feature is designed specifically for VPN / hosting / non-residentia
 
 - Runtime component: compiled Go binary inside the Docker image
 - Detection inputs: `proxycheck.io`, `ipapi.is`, `IPHub`, and optionally `vpnapi.io`
-- Runtime behavior: watches player join log events from `server.log`, checks connecting IPs, caches decisions locally, and can log or block based on score
+- Runtime behavior: captures join events from server stdout first, falls back to `server.log`, caches decisions locally, writes a dedicated audit trail, and can log or block based on score
 - Safety defaults: external API failures do not stop server startup and do not hard-block players by themselves
 
 Read [docs/anti-vpn.md](/Users/robinblossing/Desktop/REPOS/jedi-academy-pterodactyl-main/docs/anti-vpn.md) for the full operating guide.

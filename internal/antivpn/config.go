@@ -14,6 +14,7 @@ type Config struct {
 	Enabled              bool
 	Mode                 Mode
 	CacheTTL             time.Duration
+	CacheFlushInterval   time.Duration
 	ScoreThreshold       int
 	Allowlist            []netip.Prefix
 	ProxyCheckAPIKey     string
@@ -23,6 +24,7 @@ type Config struct {
 	Timeout              time.Duration
 	LogDecisions         bool
 	CachePath            string
+	AuditLogPath         string
 	LogPath              string
 	RetryCount           int
 	ProviderMinInterval  time.Duration
@@ -35,6 +37,7 @@ func LoadConfigFromEnv() (Config, error) {
 	cfg := Config{
 		Enabled:             envBool("ANTI_VPN_ENABLED", false),
 		CacheTTL:            envDuration("ANTI_VPN_CACHE_TTL", 6*time.Hour),
+		CacheFlushInterval:  envDuration("ANTI_VPN_CACHE_FLUSH_INTERVAL", 2*time.Second),
 		ScoreThreshold:      envInt("ANTI_VPN_SCORE_THRESHOLD", 90),
 		ProxyCheckAPIKey:    strings.TrimSpace(os.Getenv("ANTI_VPN_PROXYCHECK_API_KEY")),
 		IPAPIISAPIKey:       strings.TrimSpace(os.Getenv("ANTI_VPN_IPAPIIS_API_KEY")),
@@ -43,6 +46,7 @@ func LoadConfigFromEnv() (Config, error) {
 		Timeout:             envDurationOrMilliseconds("ANTI_VPN_TIMEOUT_MS", 1500*time.Millisecond),
 		LogDecisions:        envBool("ANTI_VPN_LOG_DECISIONS", true),
 		CachePath:           envString("ANTI_VPN_CACHE_PATH", "/home/container/.cache/taystjk-antivpn/cache.json"),
+		AuditLogPath:        envString("ANTI_VPN_AUDIT_LOG_PATH", "/home/container/logs/anti-vpn-audit.log"),
 		LogPath:             envString("ANTI_VPN_LOG_PATH", defaultLogPath()),
 		RetryCount:          envInt("ANTI_VPN_RETRY_COUNT", 1),
 		ProviderMinInterval: envDuration("ANTI_VPN_PROVIDER_MIN_INTERVAL", 250*time.Millisecond),
@@ -69,6 +73,9 @@ func LoadConfigFromEnv() (Config, error) {
 	if cfg.CacheTTL <= 0 {
 		return Config{}, fmt.Errorf("ANTI_VPN_CACHE_TTL must be greater than zero")
 	}
+	if cfg.CacheFlushInterval <= 0 {
+		return Config{}, fmt.Errorf("ANTI_VPN_CACHE_FLUSH_INTERVAL must be greater than zero")
+	}
 	if cfg.Timeout <= 0 {
 		return Config{}, fmt.Errorf("ANTI_VPN_TIMEOUT_MS must be greater than zero")
 	}
@@ -77,6 +84,7 @@ func LoadConfigFromEnv() (Config, error) {
 	}
 
 	cfg.CachePath = filepath.Clean(cfg.CachePath)
+	cfg.AuditLogPath = filepath.Clean(cfg.AuditLogPath)
 	cfg.LogPath = filepath.Clean(cfg.LogPath)
 
 	return cfg, nil

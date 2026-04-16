@@ -67,6 +67,11 @@ func runCheck(ctx context.Context, logger *slog.Logger, args []string) error {
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if closeErr := engine.Close(); closeErr != nil {
+			logger.Warn("anti-vpn engine shutdown cleanup failed", "error", closeErr)
+		}
+	}()
 
 	decision, err := engine.CheckIP(ctx, ip)
 	if err != nil {

@@ -274,6 +274,8 @@ configure_anti_vpn() {
   : "${ANTI_VPN_TIMEOUT_MS:=1500}"
   : "${ANTI_VPN_LOG_DECISIONS:=true}"
   : "${ANTI_VPN_CACHE_PATH:=/home/container/.cache/taystjk-antivpn/cache.json}"
+  : "${ANTI_VPN_CACHE_FLUSH_INTERVAL:=2s}"
+  : "${ANTI_VPN_AUDIT_LOG_PATH:=/home/container/logs/anti-vpn-audit.log}"
   : "${ANTI_VPN_BAN_COMMAND:=addip %IP%}"
   : "${ANTI_VPN_KICK_COMMAND:=clientkick %SLOT%}"
   : "${ANTI_VPN_LOG_PATH:=/home/container/${active_game_dir}/server.log}"
@@ -294,6 +296,7 @@ configure_anti_vpn() {
   fi
 
   mkdir -p "$(dirname "$ANTI_VPN_CACHE_PATH")"
+  mkdir -p "$(dirname "$ANTI_VPN_AUDIT_LOG_PATH")"
 }
 
 anti_vpn_provider_summary() {
@@ -358,12 +361,16 @@ print_anti_vpn_summary() {
   kv "Enabled         :" "$(bool_state "$ANTI_VPN_ENABLED")"
   kv "Configured mode :" "$ANTI_VPN_MODE_NORMALIZED"
   kv "Effective mode  :" "$ANTI_VPN_EFFECTIVE_MODE"
+  kv "Capture mode    :" "stdout-first with server.log fallback"
   kv "Cache TTL       :" "$ANTI_VPN_CACHE_TTL"
+  kv "Cache path      :" "$ANTI_VPN_CACHE_PATH"
+  kv "Cache flush     :" "$ANTI_VPN_CACHE_FLUSH_INTERVAL"
   kv "Threshold       :" "$ANTI_VPN_SCORE_THRESHOLD"
   kv "Timeout         :" "$ANTI_VPN_TIMEOUT_MS"
   kv "Decision logs   :" "$(bool_state "$ANTI_VPN_LOG_DECISIONS")"
   kv "Allowlist       :" "$(anti_vpn_allowlist_status)"
   kv "Log path        :" "$ANTI_VPN_LOG_PATH"
+  kv "Audit log       :" "$ANTI_VPN_AUDIT_LOG_PATH"
   kv "Providers       :" "$(anti_vpn_provider_summary)"
 
   if [[ "$ANTI_VPN_EFFECTIVE_MODE" == "off" ]]; then

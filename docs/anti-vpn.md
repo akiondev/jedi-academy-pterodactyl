@@ -19,10 +19,11 @@ The anti-VPN feature is implemented as a compiled Go binary inside the runtime i
 - binary: `taystjk-antivpn`
 - launch path: `scripts/entrypoint.sh`
 - runtime model: supervisor around the dedicated server process
-- signal source: `server.log` join-related lines
+- signal source: stdout-first event capture with `server.log` fallback
 - enforcement path: server stdin console commands
+- audit path: dedicated anti-VPN audit log file
 
-The supervisor watches player join events, extracts the player IP from `ClientUserinfoChanged` log lines, queries providers in parallel, evaluates a weighted score, logs the result, and optionally sends server console commands such as `addip` and `clientkick`.
+The supervisor mirrors the dedicated server output back to Pterodactyl, extracts player IPs from `ClientUserinfoChanged` events as close to the process as possible, queries providers in parallel, evaluates a weighted score, writes a structured audit trail, and optionally sends server console commands such as `addip` and `clientkick`.
 
 ## Supported providers
 
@@ -77,7 +78,28 @@ Default TTL:
 
 `6h`
 
+Default flush interval:
+
+`2s`
+
 The cache is local to the server volume and survives container restarts as long as the volume persists.
+
+The cache is persisted in the background so repeated joins do not trigger a full cache rewrite on every single decision.
+
+## Audit logging
+
+Default audit log path:
+
+`/home/container/logs/anti-vpn-audit.log`
+
+The audit log is separate from the regular game console and records:
+
+- event source
+- matched IP and slot
+- weighted score and threshold
+- provider status summary
+- final allow / would-block / block action
+- enforcement commands that were sent or failed
 
 ## Allowlist
 
@@ -102,6 +124,7 @@ Allowlisted addresses always bypass anti-VPN scoring.
 - `ANTI_VPN_ENABLED`
 - `ANTI_VPN_MODE`
 - `ANTI_VPN_CACHE_TTL`
+- `ANTI_VPN_CACHE_FLUSH_INTERVAL`
 - `ANTI_VPN_SCORE_THRESHOLD`
 - `ANTI_VPN_ALLOWLIST`
 - `ANTI_VPN_PROXYCHECK_API_KEY`
@@ -110,6 +133,7 @@ Allowlisted addresses always bypass anti-VPN scoring.
 - `ANTI_VPN_VPNAPI_IO_API_KEY`
 - `ANTI_VPN_TIMEOUT_MS`
 - `ANTI_VPN_LOG_DECISIONS`
+- `ANTI_VPN_AUDIT_LOG_PATH`
 - `ANTI_VPN_BAN_COMMAND`
 - `ANTI_VPN_KICK_COMMAND`
 
@@ -124,9 +148,11 @@ These are exposed as variables because different mods or server builds can use s
 
 ## Operational notes
 
-- Anti-VPN monitoring depends on the runtime log file remaining available at the expected `server.log` path.
+- Primary event capture happens from the live server stdout stream, with `server.log` used as a fallback path.
 - Custom startup commands bypass the normal anti-VPN supervisor path and are logged as such by the entrypoint.
 - Anonymous provider access is allowed for `proxycheck.io` and `ipapi.is`, but production deployments should still configure API keys to avoid low shared limits.
+- Provider failures degrade the decision quality, but they do not fail server startup and they do not force a block by themselves.
+- The dedicated audit log is the best place to review why a player was allowed, would have been blocked, or was actively blocked.
 
 ## Recommended defaults
 
@@ -134,7 +160,9 @@ These are exposed as variables because different mods or server builds can use s
 - `ANTI_VPN_MODE=log-only`
 - `ANTI_VPN_SCORE_THRESHOLD=90`
 - `ANTI_VPN_CACHE_TTL=6h`
+- `ANTI_VPN_CACHE_FLUSH_INTERVAL=2s`
 - `ANTI_VPN_TIMEOUT_MS=1500`
 - `ANTI_VPN_LOG_DECISIONS=true`
+- `ANTI_VPN_AUDIT_LOG_PATH=/home/container/logs/anti-vpn-audit.log`
 
 Move to `block` only after reviewing real console decisions on your own playerbase.

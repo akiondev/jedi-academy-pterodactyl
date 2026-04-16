@@ -19,7 +19,7 @@ type Engine struct {
 }
 
 func NewEngine(cfg Config, logger *slog.Logger) (*Engine, error) {
-	cache, err := NewCache(cfg.CachePath, logger)
+	cache, err := NewCache(cfg.CachePath, cfg.CacheFlushInterval, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -30,6 +30,13 @@ func NewEngine(cfg Config, logger *slog.Logger) (*Engine, error) {
 		cache:     cache,
 		providers: buildProviders(cfg, logger),
 	}, nil
+}
+
+func (e *Engine) Close() error {
+	if e == nil || e.cache == nil {
+		return nil
+	}
+	return e.cache.Close()
 }
 
 func (e *Engine) CheckIP(ctx context.Context, ip netip.Addr) (Decision, error) {
@@ -231,7 +238,31 @@ func DecisionLogFields(decision Decision) []any {
 		"threshold", decision.Threshold,
 		"providers_ok", decision.ProviderSuccesses,
 		"providers_total", decision.ProviderCount,
+		"provider_statuses", strings.Join(ProviderStatusSummary(decision.Providers), "; "),
 		"summary", decision.Summary,
 		"reasons", strings.Join(reasons, "; "),
 	}
+}
+
+func ProviderStatusSummary(results []ProviderResult) []string {
+	summaries := make([]string, 0, len(results))
+
+	for _, result := range results {
+		status := "no-signal"
+		switch {
+		case result.Error != "":
+			status = "error:" + result.Error
+		case !result.Success:
+			status = "unusable"
+		case len(result.Signals) > 0:
+			status = "signal"
+		}
+
+		if result.Summary != "" {
+			status += " (" + result.Summary + ")"
+		}
+		summaries = append(summaries, result.Provider+"="+status)
+	}
+
+	return summaries
 }

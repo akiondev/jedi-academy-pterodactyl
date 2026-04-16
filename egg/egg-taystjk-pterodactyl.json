@@ -7,7 +7,7 @@
   "exported_at": "2026-04-16T14:05:00+02:00",
   "name": "TaystJK",
   "author": "admin@example.com",
-  "description": "Runs TaystJK dedicated server on Pterodactyl from a source-built runtime image without bundling copyrighted Jedi Academy game assets. Default fs_game is taystjk, which is where TaystJK installs its bundled jaPRO-oriented content. Includes an optional anti-VPN runtime supervisor with online API checks, local cache, allowlist support and weighted log-only/block decisions.",
+  "description": "Runs TaystJK dedicated server on Pterodactyl from a source-built runtime image without bundling copyrighted Jedi Academy game assets. Default fs_game is taystjk, which is where TaystJK installs its bundled jaPRO-oriented content. Includes an optional anti-VPN runtime supervisor with stdout-first event capture, online API checks, local cache, audit logging, allowlist support and weighted log-only/block decisions.",
   "features": [],
   "docker_images": {
     "ghcr.io/akiondev/jedi-academy-taystjk:latest": "ghcr.io/akiondev/jedi-academy-taystjk:latest"
@@ -109,6 +109,16 @@
       "field_type": "text"
     },
     {
+      "name": "Anti-VPN Cache Flush Interval",
+      "description": "How often the local anti-VPN cache is flushed to disk. Supports Go-style durations such as 1s, 2s or 10s.",
+      "env_variable": "ANTI_VPN_CACHE_FLUSH_INTERVAL",
+      "default_value": "2s",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|max:32",
+      "field_type": "text"
+    },
+    {
       "name": "Anti-VPN Score Threshold",
       "description": "Weighted score required before a decision becomes blockable.",
       "env_variable": "ANTI_VPN_SCORE_THRESHOLD",
@@ -180,12 +190,22 @@
     },
     {
       "name": "Anti-VPN Decision Logging",
-      "description": "Emit structured anti-VPN decision summaries into the console output.",
+      "description": "Emit structured anti-VPN decision summaries into the console output. Separate audit logging still goes to the anti-VPN audit log path.",
       "env_variable": "ANTI_VPN_LOG_DECISIONS",
       "default_value": "true",
       "user_viewable": true,
       "user_editable": true,
       "rules": "required|string|in:true,false",
+      "field_type": "text"
+    },
+    {
+      "name": "Anti-VPN Audit Log Path",
+      "description": "Path for the dedicated structured anti-VPN audit log inside the server volume.",
+      "env_variable": "ANTI_VPN_AUDIT_LOG_PATH",
+      "default_value": "/home/container/logs/anti-vpn-audit.log",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|max:256",
       "field_type": "text"
     },
     {
