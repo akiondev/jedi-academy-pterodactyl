@@ -24,7 +24,7 @@ The anti-VPN feature is implemented as a compiled Go binary inside the runtime i
 - optional public player-chat broadcast path: server `say` command templates
 - audit path: dedicated anti-VPN audit log file
 
-The supervisor mirrors the dedicated server output back to Pterodactyl, extracts player IPs from `ClientUserinfoChanged` events as close to the process as possible, queries providers in parallel, evaluates a weighted score, writes a structured audit trail, and optionally sends server console commands such as `addip` and `clientkick`.
+The supervisor mirrors the dedicated server output back to Pterodactyl, extracts player IPs from `ClientUserinfoChanged` events as close to the process as possible, queries providers in parallel, evaluates a weighted score, writes a structured audit trail, and optionally sends server console commands such as `clientkick` and, if configured, `addip`.
 
 ## Supported providers
 
@@ -187,10 +187,10 @@ Allowlisted addresses always bypass anti-VPN scoring.
 
 Default commands:
 
-- ban command: `addip %IP%`
+- ban command: empty by default (kick-only enforcement)
 - kick command: `clientkick %SLOT%`
 
-These are exposed as variables because different mods or server builds can use slightly different admin command conventions.
+These are exposed as variables because different mods or server builds can use slightly different admin command conventions. If you want ban-plus-kick enforcement, set `ANTI_VPN_BAN_COMMAND` explicitly.
 
 ## Operational notes
 

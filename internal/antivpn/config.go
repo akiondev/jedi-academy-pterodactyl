@@ -60,7 +60,7 @@ func LoadConfigFromEnv() (Config, error) {
 		ProviderMinInterval:  envDuration("ANTI_VPN_PROVIDER_MIN_INTERVAL", 250*time.Millisecond),
 		LogPollInterval:      envDuration("ANTI_VPN_LOG_POLL_INTERVAL", 750*time.Millisecond),
 		BroadcastCooldown:    envDuration("ANTI_VPN_BROADCAST_COOLDOWN", 90*time.Second),
-		BanCommand:           envString("ANTI_VPN_BAN_COMMAND", "addip %IP%"),
+		BanCommand:           envString("ANTI_VPN_BAN_COMMAND", ""),
 		KickCommand:          envString("ANTI_VPN_KICK_COMMAND", "clientkick %SLOT%"),
 		BroadcastPassCommand: envString("ANTI_VPN_BROADCAST_PASS_TEMPLATE", `say [Anti-VPN] VPN PASS: %PLAYER% cleared checks (%SCORE%/%THRESHOLD%). %SUMMARY%`),
 		BroadcastBlockCommand: envString("ANTI_VPN_BROADCAST_BLOCK_TEMPLATE", `say [Anti-VPN] VPN BLOCKED: %PLAYER% triggered anti-VPN (%SCORE%/%THRESHOLD%). %SUMMARY%`),

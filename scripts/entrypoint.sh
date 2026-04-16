@@ -298,7 +298,7 @@ configure_anti_vpn() {
   : "${ANTI_VPN_BROADCAST_COOLDOWN:=90s}"
   : "${ANTI_VPN_BROADCAST_PASS_TEMPLATE:=say [Anti-VPN] VPN PASS: %PLAYER% cleared checks (%SCORE%/%THRESHOLD%). %SUMMARY%}"
   : "${ANTI_VPN_BROADCAST_BLOCK_TEMPLATE:=say [Anti-VPN] VPN BLOCKED: %PLAYER% triggered anti-VPN (%SCORE%/%THRESHOLD%). %SUMMARY%}"
-  : "${ANTI_VPN_BAN_COMMAND:=addip %IP%}"
+  : "${ANTI_VPN_BAN_COMMAND:=}"
   : "${ANTI_VPN_KICK_COMMAND:=clientkick %SLOT%}"
   : "${ANTI_VPN_LOG_PATH:=/home/container/${active_game_dir}/server.log}"
 
