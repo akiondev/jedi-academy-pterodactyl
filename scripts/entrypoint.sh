@@ -7,6 +7,7 @@ COLOR_INFO=""
 COLOR_OK=""
 COLOR_WARN=""
 COLOR_ERROR=""
+COLOR_ACTIVE=""
 COLOR_SECTION=""
 COLOR_DIM=""
 LAST_FAILURE_MESSAGE=""
@@ -19,6 +20,7 @@ setup_colors() {
     COLOR_OK=$'\033[32m'
     COLOR_WARN=$'\033[33m'
     COLOR_ERROR=$'\033[31m'
+    COLOR_ACTIVE=$'\033[35m'
     COLOR_SECTION=$'\033[97m'
     COLOR_DIM=$'\033[90m'
   fi
@@ -48,6 +50,10 @@ kv() {
 
 kv_highlight() {
   printf '%-14s : %b%s%b\n' "$1" "${COLOR_BOLD}" "$2" "${COLOR_RESET}"
+}
+
+kv_value() {
+  printf '%-14s : %b%s%b\n' "$1" "$2" "$3" "${COLOR_RESET}"
 }
 
 info() {
@@ -342,38 +348,49 @@ configure_anti_vpn() {
   mkdir -p "$(dirname "$ANTI_VPN_AUDIT_LOG_PATH")"
 }
 
-anti_vpn_provider_summary() {
-  local providers=()
+anti_vpn_provider_row() {
+  local label="$1"
+  local state="$2"
+  local note="${3:-}"
 
-  if [[ -n "$ANTI_VPN_PROXYCHECK_API_KEY" ]]; then
-    providers+=("proxycheck.io")
+  if [[ "$state" == "ENABLED" ]]; then
+    if [[ -n "$note" ]]; then
+      kv_value "$label" "$COLOR_ACTIVE" "${state} ${note}"
+    else
+      kv_value "$label" "$COLOR_ACTIVE" "$state"
+    fi
   else
-    providers+=("proxycheck.io (anonymous)")
+    kv_value "$label" "$COLOR_ERROR" "DISABLED"
   fi
+}
 
-  if [[ -n "$ANTI_VPN_IPAPIIS_API_KEY" ]]; then
-    providers+=("ipapi.is")
-  else
-    providers+=("ipapi.is (anonymous)")
-  fi
+print_anti_vpn_providers() {
+  anti_vpn_provider_row "proxycheck.io" "ENABLED" "$( [[ -n "$ANTI_VPN_PROXYCHECK_API_KEY" ]] && printf '' || printf '(ANONYMOUS)' )"
+  anti_vpn_provider_row "ipapi.is" "ENABLED" "$( [[ -n "$ANTI_VPN_IPAPIIS_API_KEY" ]] && printf '' || printf '(ANONYMOUS)' )"
 
   if [[ -n "$ANTI_VPN_IPHUB_API_KEY" ]]; then
-    providers+=("IPHub")
+    anti_vpn_provider_row "IPHub" "ENABLED"
+  else
+    anti_vpn_provider_row "IPHub" "DISABLED"
   fi
 
   if [[ -n "$ANTI_VPN_VPNAPI_IO_API_KEY" ]]; then
-    providers+=("vpnapi.io")
+    anti_vpn_provider_row "vpnapi.io" "ENABLED"
+  else
+    anti_vpn_provider_row "vpnapi.io" "DISABLED"
   fi
 
   if [[ -n "$ANTI_VPN_IPQUALITYSCORE_API_KEY" ]]; then
-    providers+=("IPQualityScore")
+    anti_vpn_provider_row "IPQualityScore" "ENABLED"
+  else
+    anti_vpn_provider_row "IPQualityScore" "DISABLED"
   fi
 
   if [[ -n "$ANTI_VPN_IPLOCATE_API_KEY" ]]; then
-    providers+=("IPLocate")
+    anti_vpn_provider_row "IPLocate" "ENABLED"
+  else
+    anti_vpn_provider_row "IPLocate" "DISABLED"
   fi
-
-  join_csv "${providers[@]}"
 }
 
 anti_vpn_allowlist_status() {
@@ -410,8 +427,8 @@ print_anti_vpn_summary() {
   kv_highlight "Enforce" "$(printf '%s' "$ANTI_VPN_ENFORCEMENT_MODE_NORMALIZED" | tr '[:lower:]' '[:upper:]')"
   kv_highlight "Broadcast" "$(printf '%s' "$ANTI_VPN_BROADCAST_MODE_NORMALIZED" | tr '[:lower:]' '[:upper:]')"
   kv_highlight "Threshold" "$ANTI_VPN_SCORE_THRESHOLD"
-  kv "Providers" "$(anti_vpn_provider_summary)"
   kv "Allowlist" "$(anti_vpn_allowlist_status)"
+  print_anti_vpn_providers
   debug "Capture mode: stdout-first with server.log fallback"
   debug "Decision logs: $(printf '%s' "$(bool_state "$ANTI_VPN_LOG_DECISIONS")" | tr '[:lower:]' '[:upper:]')"
   debug "Cache TTL: ${ANTI_VPN_CACHE_TTL}"
