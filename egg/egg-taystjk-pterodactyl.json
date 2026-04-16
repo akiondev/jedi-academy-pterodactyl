@@ -35,7 +35,8 @@
       "default_value": "./taystjkded.x86_64",
       "user_viewable": true,
       "user_editable": true,
-      "rules": "required|string|max:128|regex:/^(\\.\\/)?[A-Za-z0-9][A-Za-z0-9._-]*$/"
+      "rules": "required|string|max:128|regex:/^(\\.\\/)?[A-Za-z0-9][A-Za-z0-9._-]*$/",
+      "field_type": "text"
     },
     {
       "name": "fs_game Mod Directory",
@@ -44,16 +45,8 @@
       "default_value": "taystjk",
       "user_viewable": true,
       "user_editable": true,
-      "rules": "required|string|max:64|regex:/^[A-Za-z0-9][A-Za-z0-9._-]*$/"
-    },
-    {
-      "name": "Server Port",
-      "description": "Game port.",
-      "env_variable": "SERVER_PORT",
-      "default_value": "29070",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|integer|between:1024,65535"
+      "rules": "required|string|max:64|regex:/^[A-Za-z0-9][A-Za-z0-9._-]*$/",
+      "field_type": "text"
     },
     {
       "name": "Server Config",
@@ -62,7 +55,8 @@
       "default_value": "server.cfg",
       "user_viewable": true,
       "user_editable": true,
-      "rules": "required|string|max:64|regex:/^[A-Za-z0-9][A-Za-z0-9._-]*$/"
+      "rules": "required|string|max:64|regex:/^[A-Za-z0-9][A-Za-z0-9._-]*$/",
+      "field_type": "text"
     },
     {
       "name": "Extra Startup Args",
@@ -71,7 +65,8 @@
       "default_value": "",
       "user_viewable": true,
       "user_editable": true,
-      "rules": "nullable|string|max:512"
+      "rules": "nullable|string|max:512",
+      "field_type": "text"
     },
     {
       "name": "Game Assets Mode",
@@ -80,7 +75,8 @@
       "default_value": "manual",
       "user_viewable": true,
       "user_editable": true,
-      "rules": "required|string|in:manual,url,none"
+      "rules": "required|string|in:manual,url,none",
+      "field_type": "text"
     },
     {
       "name": "Game Assets URL",
@@ -89,7 +85,8 @@
       "default_value": "",
       "user_viewable": true,
       "user_editable": true,
-      "rules": "nullable|string|max:2048"
+      "rules": "nullable|string|max:2048",
+      "field_type": "text"
     },
     {
       "name": "Game Assets Archive Type",
@@ -98,7 +95,8 @@
       "default_value": "auto",
       "user_viewable": true,
       "user_editable": true,
-      "rules": "required|string|in:auto,zip,tar.gz,tgz"
+      "rules": "required|string|in:auto,zip,tar.gz,tgz",
+      "field_type": "text"
     },
     {
       "name": "Game Assets SHA256",
@@ -107,7 +105,8 @@
       "default_value": "",
       "user_viewable": true,
       "user_editable": true,
-      "rules": "nullable|string|max:128"
+      "rules": "nullable|string|max:128",
+      "field_type": "text"
     },
     {
       "name": "Copyright Acknowledged",
@@ -116,7 +115,8 @@
       "default_value": "false",
       "user_viewable": true,
       "user_editable": true,
-      "rules": "required|string|in:true,false"
+      "rules": "required|string|in:true,false",
+      "field_type": "text"
     }
   ]
 }
