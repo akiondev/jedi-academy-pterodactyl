@@ -495,7 +495,8 @@ func parseClientUserinfoChanged(line string) (string, netip.Addr, string, bool) 
 		return "", netip.Addr{}, "", false
 	}
 	slot := fields[0]
-	playerName := extractUserinfoValue(line, "n")
+	userinfo := strings.TrimSpace(strings.TrimPrefix(rest, slot))
+	playerName := extractUserinfoValue(userinfo, "n")
 
 	ipIndex := strings.Index(line, `\ip\`)
 	if ipIndex == -1 {
@@ -561,18 +562,26 @@ func fillCommandTemplate(template string, data commandTemplateData) string {
 }
 
 func extractUserinfoValue(line, key string) string {
-	marker := `\` + key + `\`
-	index := strings.Index(line, marker)
-	if index == -1 {
-		return ""
+	markers := []string{
+		`\` + key + `\`,
+		key + `\`,
 	}
 
-	raw := line[index+len(marker):]
-	end := strings.Index(raw, `\`)
-	if end == -1 {
-		return raw
+	for _, marker := range markers {
+		index := strings.Index(line, marker)
+		if index == -1 {
+			continue
+		}
+
+		raw := line[index+len(marker):]
+		end := strings.Index(raw, `\`)
+		if end == -1 {
+			return raw
+		}
+		return raw[:end]
 	}
-	return raw[:end]
+
+	return ""
 }
 
 func sanitizePlayerName(value string) string {
