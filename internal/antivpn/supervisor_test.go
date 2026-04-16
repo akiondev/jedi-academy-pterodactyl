@@ -12,7 +12,7 @@ import (
 func TestParseClientUserinfoChangedFromTimestampedLine(t *testing.T) {
 	line := `2026-04-16 17:28:09 ClientUserinfoChanged: 3 n\Player\t\0\ip\198.51.100.25:29070\cl_guid\abc123`
 
-	slot, addr, ok := parseClientUserinfoChanged(line)
+	slot, addr, player, ok := parseClientUserinfoChanged(line)
 	if !ok {
 		t.Fatalf("expected parser to match ClientUserinfoChanged line")
 	}
@@ -21,6 +21,9 @@ func TestParseClientUserinfoChangedFromTimestampedLine(t *testing.T) {
 	}
 	if addr != netip.MustParseAddr("198.51.100.25") {
 		t.Fatalf("expected parsed IP 198.51.100.25, got %s", addr)
+	}
+	if player != "Player" {
+		t.Fatalf("expected parsed player name Player, got %q", player)
 	}
 }
 
@@ -67,5 +70,51 @@ func TestCachePersistsOnClose(t *testing.T) {
 	}
 	if decision.IP != "198.51.100.40" {
 		t.Fatalf("unexpected cached IP: %s", decision.IP)
+	}
+}
+
+func TestSanitizePlayerNameStripsFormatting(t *testing.T) {
+	name := sanitizePlayerName("^1Cool^7Player\x00")
+	if name != "CoolPlayer" {
+		t.Fatalf("unexpected sanitized player name: %q", name)
+	}
+}
+
+func TestPublicDecisionSummaryUsesPublicSafeText(t *testing.T) {
+	blocked := publicDecisionSummary(Decision{
+		Blocked:            true,
+		StrongSignals:      1,
+		DetectingProviders: 1,
+	})
+	if blocked != "High-confidence VPN or non-residential signal detected." {
+		t.Fatalf("unexpected blocked summary: %q", blocked)
+	}
+
+	passed := publicDecisionSummary(Decision{
+		Allowed:       true,
+		Degraded:      true,
+		ProviderSuccesses: 1,
+	})
+	if passed != "Allowed with partial provider coverage." {
+		t.Fatalf("unexpected pass summary: %q", passed)
+	}
+}
+
+func TestFillCommandTemplateSupportsBroadcastPlaceholders(t *testing.T) {
+	command := fillCommandTemplate(
+		"say [Anti-VPN] VPN PASS: %PLAYER% cleared checks (%SCORE%/%THRESHOLD%). %SUMMARY%",
+		commandTemplateData{
+			Player:    "Player",
+			Score:     10,
+			Threshold: 90,
+			Summary:   "No provider reported a VPN or hosting signal.",
+			Slot:      "3",
+			IP:        "198.51.100.25",
+		},
+	)
+
+	expected := "say [Anti-VPN] VPN PASS: Player cleared checks (10/90). No provider reported a VPN or hosting signal."
+	if command != expected {
+		t.Fatalf("unexpected rendered broadcast command: %q", command)
 	}
 }

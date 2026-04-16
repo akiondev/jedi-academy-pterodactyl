@@ -21,6 +21,7 @@ The anti-VPN feature is implemented as a compiled Go binary inside the runtime i
 - runtime model: supervisor around the dedicated server process
 - signal source: stdout-first event capture with `server.log` fallback
 - enforcement path: server stdin console commands
+- optional public player-chat broadcast path: server `say` command templates
 - audit path: dedicated anti-VPN audit log file
 
 The supervisor mirrors the dedicated server output back to Pterodactyl, extracts player IPs from `ClientUserinfoChanged` events as close to the process as possible, queries providers in parallel, evaluates a weighted score, writes a structured audit trail, and optionally sends server console commands such as `addip` and `clientkick`.
@@ -101,6 +102,43 @@ The audit log is separate from the regular game console and records:
 - final allow / would-block / block action
 - enforcement commands that were sent or failed
 
+## Public broadcasts
+
+Anti-VPN can optionally send public `say` messages to all players after each completed decision.
+
+Recommended defaults:
+
+- include the player name
+- always include score and threshold
+- keep summaries short and public-safe
+- do not expose the player IP
+- do not expose raw provider errors
+
+Supported broadcast modes:
+
+- `off`
+- `block-only`
+- `pass-and-block`
+
+Default pass template:
+
+`say [Anti-VPN] VPN PASS: %PLAYER% cleared checks (%SCORE%/%THRESHOLD%). %SUMMARY%`
+
+Default block template:
+
+`say [Anti-VPN] VPN BLOCKED: %PLAYER% triggered anti-VPN (%SCORE%/%THRESHOLD%). %SUMMARY%`
+
+Supported placeholders:
+
+- `%PLAYER%`
+- `%SCORE%`
+- `%THRESHOLD%`
+- `%SUMMARY%`
+- `%IP%`
+- `%SLOT%`
+
+Player names are sanitized before broadcast to strip color codes, control characters, and overlong values.
+
 ## Allowlist
 
 `ANTI_VPN_ALLOWLIST` supports:
@@ -134,6 +172,10 @@ Allowlisted addresses always bypass anti-VPN scoring.
 - `ANTI_VPN_TIMEOUT_MS`
 - `ANTI_VPN_LOG_DECISIONS`
 - `ANTI_VPN_AUDIT_LOG_PATH`
+- `ANTI_VPN_BROADCAST_MODE`
+- `ANTI_VPN_BROADCAST_COOLDOWN`
+- `ANTI_VPN_BROADCAST_PASS_TEMPLATE`
+- `ANTI_VPN_BROADCAST_BLOCK_TEMPLATE`
 - `ANTI_VPN_BAN_COMMAND`
 - `ANTI_VPN_KICK_COMMAND`
 
@@ -153,6 +195,7 @@ These are exposed as variables because different mods or server builds can use s
 - Anonymous provider access is allowed for `proxycheck.io` and `ipapi.is`, but production deployments should still configure API keys to avoid low shared limits.
 - Provider failures degrade the decision quality, but they do not fail server startup and they do not force a block by themselves.
 - The dedicated audit log is the best place to review why a player was allowed, would have been blocked, or was actively blocked.
+- Public broadcasts are rate-limited with a cooldown per slot and action to avoid repetitive spam from duplicate join events.
 
 ## Recommended defaults
 
@@ -164,5 +207,7 @@ These are exposed as variables because different mods or server builds can use s
 - `ANTI_VPN_TIMEOUT_MS=1500`
 - `ANTI_VPN_LOG_DECISIONS=true`
 - `ANTI_VPN_AUDIT_LOG_PATH=/home/container/logs/anti-vpn-audit.log`
+- `ANTI_VPN_BROADCAST_MODE=pass-and-block`
+- `ANTI_VPN_BROADCAST_COOLDOWN=90s`
 
 Move to `block` only after reviewing real console decisions on your own playerbase.

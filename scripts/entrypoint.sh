@@ -276,6 +276,10 @@ configure_anti_vpn() {
   : "${ANTI_VPN_CACHE_PATH:=/home/container/.cache/taystjk-antivpn/cache.json}"
   : "${ANTI_VPN_CACHE_FLUSH_INTERVAL:=2s}"
   : "${ANTI_VPN_AUDIT_LOG_PATH:=/home/container/logs/anti-vpn-audit.log}"
+  : "${ANTI_VPN_BROADCAST_MODE:=pass-and-block}"
+  : "${ANTI_VPN_BROADCAST_COOLDOWN:=90s}"
+  : "${ANTI_VPN_BROADCAST_PASS_TEMPLATE:=say [Anti-VPN] VPN PASS: %PLAYER% cleared checks (%SCORE%/%THRESHOLD%). %SUMMARY%}"
+  : "${ANTI_VPN_BROADCAST_BLOCK_TEMPLATE:=say [Anti-VPN] VPN BLOCKED: %PLAYER% triggered anti-VPN (%SCORE%/%THRESHOLD%). %SUMMARY%}"
   : "${ANTI_VPN_BAN_COMMAND:=addip %IP%}"
   : "${ANTI_VPN_KICK_COMMAND:=clientkick %SLOT%}"
   : "${ANTI_VPN_LOG_PATH:=/home/container/${active_game_dir}/server.log}"
@@ -288,6 +292,16 @@ configure_anti_vpn() {
       ANTI_VPN_MODE_NORMALIZED="off"
       ;;
   esac
+
+  ANTI_VPN_BROADCAST_MODE_NORMALIZED="$(printf '%s' "$ANTI_VPN_BROADCAST_MODE" | tr '[:upper:]' '[:lower:]')"
+  case "$ANTI_VPN_BROADCAST_MODE_NORMALIZED" in
+    off|block-only|pass-and-block) ;;
+    *)
+      warn "ANTI_VPN_BROADCAST_MODE=${ANTI_VPN_BROADCAST_MODE} is invalid, falling back to pass-and-block"
+      ANTI_VPN_BROADCAST_MODE_NORMALIZED="pass-and-block"
+      ;;
+  esac
+  ANTI_VPN_BROADCAST_MODE="$ANTI_VPN_BROADCAST_MODE_NORMALIZED"
 
   if [[ "${ANTI_VPN_ENABLED,,}" != "true" || "$ANTI_VPN_MODE_NORMALIZED" == "off" ]]; then
     ANTI_VPN_EFFECTIVE_MODE="off"
@@ -368,6 +382,8 @@ print_anti_vpn_summary() {
   kv "Threshold       :" "$ANTI_VPN_SCORE_THRESHOLD"
   kv "Timeout         :" "$ANTI_VPN_TIMEOUT_MS"
   kv "Decision logs   :" "$(bool_state "$ANTI_VPN_LOG_DECISIONS")"
+  kv "Broadcast mode  :" "$ANTI_VPN_BROADCAST_MODE_NORMALIZED"
+  kv "Broadcast cd    :" "$ANTI_VPN_BROADCAST_COOLDOWN"
   kv "Allowlist       :" "$(anti_vpn_allowlist_status)"
   kv "Log path        :" "$ANTI_VPN_LOG_PATH"
   kv "Audit log       :" "$ANTI_VPN_AUDIT_LOG_PATH"

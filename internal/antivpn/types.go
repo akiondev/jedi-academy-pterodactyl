@@ -14,6 +14,14 @@ const (
 	ModeBlock   Mode = "block"
 )
 
+type BroadcastMode string
+
+const (
+	BroadcastOff          BroadcastMode = "off"
+	BroadcastBlockOnly    BroadcastMode = "block-only"
+	BroadcastPassAndBlock BroadcastMode = "pass-and-block"
+)
+
 type Signal struct {
 	Provider string `json:"provider"`
 	Category string `json:"category"`

@@ -25,6 +25,8 @@ type Supervisor struct {
 	commandMu     sync.Mutex
 	seenMu        sync.Mutex
 	seenEvents    map[string]time.Time
+	broadcastMu   sync.Mutex
+	broadcastSeen map[string]time.Time
 	checkSlots    chan struct{}
 }
 
@@ -57,6 +59,7 @@ func NewSupervisor(cfg Config, logger *slog.Logger) (*Supervisor, error) {
 		auditCloser: auditCloser,
 		engine:      engine,
 		seenEvents:  make(map[string]time.Time),
+		broadcastSeen: make(map[string]time.Time),
 		checkSlots:  make(chan struct{}, 8),
 	}, nil
 }
@@ -260,7 +263,7 @@ func (s *Supervisor) monitorLogFile(ctx context.Context, stdin io.Writer) {
 }
 
 func (s *Supervisor) handleLogLine(ctx context.Context, stdin io.Writer, line string, source string) {
-	slot, addr, ok := parseClientUserinfoChanged(line)
+	slot, addr, playerName, ok := parseClientUserinfoChanged(line)
 	if !ok {
 		return
 	}
@@ -292,9 +295,11 @@ func (s *Supervisor) handleLogLine(ctx context.Context, stdin io.Writer, line st
 			if decision.Blocked || decision.WouldBlock || decision.Degraded {
 				level = slog.LevelWarn
 			}
-			fields := append([]any{"event_source", source, "slot", slot}, DecisionLogFields(decision)...)
+			fields := append([]any{"event_source", source, "slot", slot, "player", playerName}, DecisionLogFields(decision)...)
 			s.logger.Log(ctx, level, "anti-vpn decision", fields...)
 		}
+
+		s.broadcastDecision(stdin, slot, playerName, decision)
 
 		if decision.Blocked {
 			s.enforceDecision(stdin, slot, addr, decision)
@@ -307,10 +312,16 @@ func (s *Supervisor) enforceDecision(stdin io.Writer, slot string, addr netip.Ad
 	commands := make([]string, 0, 2)
 
 	if strings.TrimSpace(s.cfg.BanCommand) != "" {
-		commands = append(commands, fillCommandTemplate(s.cfg.BanCommand, ipText, slot))
+		commands = append(commands, fillCommandTemplate(s.cfg.BanCommand, commandTemplateData{
+			IP:   ipText,
+			Slot: slot,
+		}))
 	}
 	if slot != "" && strings.TrimSpace(s.cfg.KickCommand) != "" {
-		commands = append(commands, fillCommandTemplate(s.cfg.KickCommand, ipText, slot))
+		commands = append(commands, fillCommandTemplate(s.cfg.KickCommand, commandTemplateData{
+			IP:   ipText,
+			Slot: slot,
+		}))
 	}
 
 	for _, command := range commands {
@@ -338,6 +349,46 @@ func (s *Supervisor) auditDecision(source, slot string, addr netip.Addr, decisio
 	}
 	fields = append(fields, DecisionLogFields(decision)...)
 	s.auditLogger.Info("anti-vpn audit", fields...)
+}
+
+func (s *Supervisor) broadcastDecision(stdin io.Writer, slot, playerName string, decision Decision) {
+	if !s.shouldBroadcast(slot, decision) {
+		return
+	}
+
+	publicSummary := publicDecisionSummary(decision)
+	template := s.cfg.BroadcastPassCommand
+	if decision.Blocked {
+		template = s.cfg.BroadcastBlockCommand
+	}
+
+	command := fillCommandTemplate(
+		template,
+		commandTemplateData{
+			Player:    sanitizePlayerName(playerName),
+			Score:     decision.Score,
+			Threshold: decision.Threshold,
+			Summary:   publicSummary,
+			IP:        decision.IP,
+			Slot:      slot,
+		},
+	)
+	if command == "" {
+		return
+	}
+
+	if _, err := fmt.Fprintln(stdin, command); err != nil {
+		s.logger.Warn("anti-vpn broadcast command failed", "slot", slot, "player", playerName, "command", command, "error", err)
+		if s.auditLogger != nil {
+			s.auditLogger.Warn("anti-vpn audit", "event", "broadcast", "status", "failed", "slot", slot, "player", sanitizePlayerName(playerName), "command", command, "summary", publicSummary, "error", err)
+		}
+		return
+	}
+
+	s.logger.Info("anti-vpn broadcast command sent", "slot", slot, "player", playerName, "command", command, "summary", publicSummary)
+	if s.auditLogger != nil {
+		s.auditLogger.Info("anti-vpn audit", "event", "broadcast", "status", "sent", "slot", slot, "player", sanitizePlayerName(playerName), "command", command, "summary", publicSummary)
+	}
 }
 
 func (s *Supervisor) auditEnforcement(ipText, slot, command string, decision Decision, commandErr error) {
@@ -373,6 +424,43 @@ func decisionAction(decision Decision) string {
 	}
 }
 
+func (s *Supervisor) shouldBroadcast(slot string, decision Decision) bool {
+	switch s.cfg.BroadcastMode {
+	case BroadcastOff:
+		return false
+	case BroadcastBlockOnly:
+		if !decision.Blocked {
+			return false
+		}
+	case BroadcastPassAndBlock:
+	default:
+		return false
+	}
+
+	if s.cfg.BroadcastCooldown <= 0 {
+		return true
+	}
+
+	now := time.Now().UTC()
+	key := slot + "|" + decision.IP + "|" + decisionAction(decision)
+
+	s.broadcastMu.Lock()
+	defer s.broadcastMu.Unlock()
+
+	for current, seenAt := range s.broadcastSeen {
+		if now.Sub(seenAt) > 10*time.Minute {
+			delete(s.broadcastSeen, current)
+		}
+	}
+
+	if seenAt, exists := s.broadcastSeen[key]; exists && now.Sub(seenAt) < s.cfg.BroadcastCooldown {
+		return false
+	}
+
+	s.broadcastSeen[key] = now
+	return true
+}
+
 func (s *Supervisor) markEvent(key string) bool {
 	now := time.Now().UTC()
 
@@ -393,38 +481,39 @@ func (s *Supervisor) markEvent(key string) bool {
 	return true
 }
 
-func parseClientUserinfoChanged(line string) (string, netip.Addr, bool) {
+func parseClientUserinfoChanged(line string) (string, netip.Addr, string, bool) {
 	const prefix = "ClientUserinfoChanged:"
 
 	index := strings.Index(line, prefix)
 	if index == -1 {
-		return "", netip.Addr{}, false
+		return "", netip.Addr{}, "", false
 	}
 
 	rest := strings.TrimSpace(line[index+len(prefix):])
 	fields := strings.Fields(rest)
 	if len(fields) == 0 {
-		return "", netip.Addr{}, false
+		return "", netip.Addr{}, "", false
 	}
 	slot := fields[0]
+	playerName := extractUserinfoValue(line, "n")
 
 	ipIndex := strings.Index(line, `\ip\`)
 	if ipIndex == -1 {
-		return "", netip.Addr{}, false
+		return "", netip.Addr{}, "", false
 	}
 
 	raw := line[ipIndex+len(`\ip\`):]
 	end := strings.Index(raw, `\`)
 	if end == -1 {
-		return "", netip.Addr{}, false
+		return "", netip.Addr{}, "", false
 	}
 
 	addr, err := parseServerIPField(raw[:end])
 	if err != nil {
-		return "", netip.Addr{}, false
+		return "", netip.Addr{}, "", false
 	}
 
-	return slot, addr, true
+	return slot, addr, playerName, true
 }
 
 func parseServerIPField(value string) (netip.Addr, error) {
@@ -450,10 +539,97 @@ func parseServerIPField(value string) (netip.Addr, error) {
 	return netip.Addr{}, fmt.Errorf("unsupported IP field %q", value)
 }
 
-func fillCommandTemplate(template, ip, slot string) string {
-	command := strings.ReplaceAll(template, "%IP%", ip)
-	command = strings.ReplaceAll(command, "%SLOT%", slot)
-	return strings.TrimSpace(command)
+type commandTemplateData struct {
+	Player    string
+	Score     int
+	Threshold int
+	Summary   string
+	IP        string
+	Slot      string
+}
+
+func fillCommandTemplate(template string, data commandTemplateData) string {
+	replacer := strings.NewReplacer(
+		"%PLAYER%", data.Player,
+		"%SCORE%", fmt.Sprintf("%d", data.Score),
+		"%THRESHOLD%", fmt.Sprintf("%d", data.Threshold),
+		"%SUMMARY%", data.Summary,
+		"%IP%", data.IP,
+		"%SLOT%", data.Slot,
+	)
+	return strings.TrimSpace(replacer.Replace(template))
+}
+
+func extractUserinfoValue(line, key string) string {
+	marker := `\` + key + `\`
+	index := strings.Index(line, marker)
+	if index == -1 {
+		return ""
+	}
+
+	raw := line[index+len(marker):]
+	end := strings.Index(raw, `\`)
+	if end == -1 {
+		return raw
+	}
+	return raw[:end]
+}
+
+func sanitizePlayerName(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "Unknown Player"
+	}
+
+	var builder strings.Builder
+	builder.Grow(len(value))
+
+	skipColorDigit := false
+	for _, char := range value {
+		if skipColorDigit {
+			skipColorDigit = false
+			if char >= '0' && char <= '9' {
+				continue
+			}
+		}
+		if char == '^' {
+			skipColorDigit = true
+			continue
+		}
+		if char < 32 || char == 127 {
+			continue
+		}
+		builder.WriteRune(char)
+	}
+
+	sanitized := strings.TrimSpace(builder.String())
+	if sanitized == "" {
+		sanitized = "Unknown Player"
+	}
+	if len([]rune(sanitized)) > 32 {
+		runes := []rune(sanitized)
+		sanitized = string(runes[:32]) + "..."
+	}
+	return sanitized
+}
+
+func publicDecisionSummary(decision Decision) string {
+	switch {
+	case decision.Blocked && decision.StrongSignals > 0:
+		return "High-confidence VPN or non-residential signal detected."
+	case decision.Blocked && decision.DetectingProviders >= 2:
+		return "Multiple providers reported VPN or hosting signals."
+	case decision.Blocked:
+		return "Configured VPN threshold was reached."
+	case decision.Degraded && decision.ProviderSuccesses == 0:
+		return "Allowed with limited provider coverage."
+	case decision.Degraded:
+		return "Allowed with partial provider coverage."
+	case decision.DetectingProviders == 0:
+		return "No provider reported a VPN or hosting signal."
+	default:
+		return "Score remained below the configured threshold."
+	}
 }
 
 func isAllDigits(value string) bool {

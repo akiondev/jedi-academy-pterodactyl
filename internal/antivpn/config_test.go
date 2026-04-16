@@ -32,3 +32,9 @@ func TestParseAllowlistRejectsInvalidInput(t *testing.T) {
 		t.Fatalf("expected invalid CIDR to fail")
 	}
 }
+
+func TestParseBroadcastModeRejectsInvalidInput(t *testing.T) {
+	if _, err := parseBroadcastMode("all"); err == nil {
+		t.Fatalf("expected invalid broadcast mode to fail")
+	}
+}

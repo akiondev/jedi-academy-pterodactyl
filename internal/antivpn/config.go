@@ -13,6 +13,7 @@ import (
 type Config struct {
 	Enabled              bool
 	Mode                 Mode
+	BroadcastMode        BroadcastMode
 	CacheTTL             time.Duration
 	CacheFlushInterval   time.Duration
 	ScoreThreshold       int
@@ -29,8 +30,11 @@ type Config struct {
 	RetryCount           int
 	ProviderMinInterval  time.Duration
 	LogPollInterval      time.Duration
+	BroadcastCooldown    time.Duration
 	BanCommand           string
 	KickCommand          string
+	BroadcastPassCommand string
+	BroadcastBlockCommand string
 }
 
 func LoadConfigFromEnv() (Config, error) {
@@ -51,8 +55,11 @@ func LoadConfigFromEnv() (Config, error) {
 		RetryCount:          envInt("ANTI_VPN_RETRY_COUNT", 1),
 		ProviderMinInterval: envDuration("ANTI_VPN_PROVIDER_MIN_INTERVAL", 250*time.Millisecond),
 		LogPollInterval:     envDuration("ANTI_VPN_LOG_POLL_INTERVAL", 750*time.Millisecond),
+		BroadcastCooldown:   envDuration("ANTI_VPN_BROADCAST_COOLDOWN", 90*time.Second),
 		BanCommand:          envString("ANTI_VPN_BAN_COMMAND", "addip %IP%"),
 		KickCommand:         envString("ANTI_VPN_KICK_COMMAND", "clientkick %SLOT%"),
+		BroadcastPassCommand: envString("ANTI_VPN_BROADCAST_PASS_TEMPLATE", `say [Anti-VPN] VPN PASS: %PLAYER% cleared checks (%SCORE%/%THRESHOLD%). %SUMMARY%`),
+		BroadcastBlockCommand: envString("ANTI_VPN_BROADCAST_BLOCK_TEMPLATE", `say [Anti-VPN] VPN BLOCKED: %PLAYER% triggered anti-VPN (%SCORE%/%THRESHOLD%). %SUMMARY%`),
 	}
 
 	mode, err := parseMode(envString("ANTI_VPN_MODE", string(ModeLogOnly)))
@@ -60,6 +67,12 @@ func LoadConfigFromEnv() (Config, error) {
 		return Config{}, err
 	}
 	cfg.Mode = mode
+
+	broadcastMode, err := parseBroadcastMode(envString("ANTI_VPN_BROADCAST_MODE", string(BroadcastPassAndBlock)))
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.BroadcastMode = broadcastMode
 
 	allowlist, err := parseAllowlist(os.Getenv("ANTI_VPN_ALLOWLIST"))
 	if err != nil {
@@ -78,6 +91,9 @@ func LoadConfigFromEnv() (Config, error) {
 	}
 	if cfg.Timeout <= 0 {
 		return Config{}, fmt.Errorf("ANTI_VPN_TIMEOUT_MS must be greater than zero")
+	}
+	if cfg.BroadcastCooldown < 0 {
+		return Config{}, fmt.Errorf("ANTI_VPN_BROADCAST_COOLDOWN must be zero or greater")
 	}
 	if cfg.RetryCount < 0 || cfg.RetryCount > 5 {
 		return Config{}, fmt.Errorf("ANTI_VPN_RETRY_COUNT must be between 0 and 5")
@@ -141,6 +157,19 @@ func parseMode(value string) (Mode, error) {
 		return ModeBlock, nil
 	default:
 		return "", fmt.Errorf("ANTI_VPN_MODE must be one of off, log-only, block")
+	}
+}
+
+func parseBroadcastMode(value string) (BroadcastMode, error) {
+	switch BroadcastMode(strings.TrimSpace(strings.ToLower(value))) {
+	case BroadcastOff:
+		return BroadcastOff, nil
+	case BroadcastBlockOnly:
+		return BroadcastBlockOnly, nil
+	case BroadcastPassAndBlock:
+		return BroadcastPassAndBlock, nil
+	default:
+		return "", fmt.Errorf("ANTI_VPN_BROADCAST_MODE must be one of off, block-only, pass-and-block")
 	}
 }
 

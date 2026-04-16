@@ -7,7 +7,7 @@
   "exported_at": "2026-04-16T14:05:00+02:00",
   "name": "TaystJK",
   "author": "admin@example.com",
-  "description": "Runs TaystJK dedicated server on Pterodactyl from a source-built runtime image without bundling copyrighted Jedi Academy game assets. Default fs_game is taystjk, which is where TaystJK installs its bundled jaPRO-oriented content. Includes an optional anti-VPN runtime supervisor with stdout-first event capture, online API checks, local cache, audit logging, allowlist support and weighted log-only/block decisions.",
+  "description": "Runs TaystJK dedicated server on Pterodactyl from a source-built runtime image without bundling copyrighted Jedi Academy game assets. Default fs_game is taystjk, which is where TaystJK installs its bundled jaPRO-oriented content. Includes an optional anti-VPN runtime supervisor with stdout-first event capture, online API checks, local cache, public decision broadcasts, audit logging, allowlist support and weighted log-only/block decisions.",
   "features": [],
   "docker_images": {
     "ghcr.io/akiondev/jedi-academy-taystjk:latest": "ghcr.io/akiondev/jedi-academy-taystjk:latest"
@@ -206,6 +206,46 @@
       "user_viewable": true,
       "user_editable": true,
       "rules": "required|string|max:256",
+      "field_type": "text"
+    },
+    {
+      "name": "Anti-VPN Broadcast Mode",
+      "description": "Public decision broadcast mode: off, block-only or pass-and-block.",
+      "env_variable": "ANTI_VPN_BROADCAST_MODE",
+      "default_value": "pass-and-block",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|in:off,block-only,pass-and-block",
+      "field_type": "text"
+    },
+    {
+      "name": "Anti-VPN Broadcast Cooldown",
+      "description": "Cooldown before repeating the same public anti-VPN result for the same slot/action. Supports Go-style durations such as 30s or 90s.",
+      "env_variable": "ANTI_VPN_BROADCAST_COOLDOWN",
+      "default_value": "90s",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|max:32",
+      "field_type": "text"
+    },
+    {
+      "name": "Anti-VPN Pass Broadcast Template",
+      "description": "Public server command template for a passed anti-VPN decision. Score is always included by default. Supports %PLAYER%, %SCORE%, %THRESHOLD%, %SUMMARY%, %IP% and %SLOT%.",
+      "env_variable": "ANTI_VPN_BROADCAST_PASS_TEMPLATE",
+      "default_value": "say [Anti-VPN] VPN PASS: %PLAYER% cleared checks (%SCORE%/%THRESHOLD%). %SUMMARY%",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|max:255",
+      "field_type": "text"
+    },
+    {
+      "name": "Anti-VPN Block Broadcast Template",
+      "description": "Public server command template for a blocked anti-VPN decision. Score is always included by default. Supports %PLAYER%, %SCORE%, %THRESHOLD%, %SUMMARY%, %IP% and %SLOT%.",
+      "env_variable": "ANTI_VPN_BROADCAST_BLOCK_TEMPLATE",
+      "default_value": "say [Anti-VPN] VPN BLOCKED: %PLAYER% triggered anti-VPN (%SCORE%/%THRESHOLD%). %SUMMARY%",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|max:255",
       "field_type": "text"
     },
     {
