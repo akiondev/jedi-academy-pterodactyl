@@ -1,12 +1,62 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+COLOR_RESET=""
+COLOR_BOLD=""
+COLOR_INFO=""
+COLOR_OK=""
+COLOR_WARN=""
+COLOR_ERROR=""
+
+setup_colors() {
+  if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+    COLOR_RESET=$'\033[0m'
+    COLOR_BOLD=$'\033[1m'
+    COLOR_INFO=$'\033[36m'
+    COLOR_OK=$'\033[32m'
+    COLOR_WARN=$'\033[33m'
+    COLOR_ERROR=$'\033[31m'
+  fi
+}
+
+print_header() {
+  printf '%s\n' "============================================================"
+  printf '%s\n' " TaystJK Installer"
+  printf '%s\n' " Created by akiondev"
+  printf '%s\n\n' "============================================================"
+}
+
+section() {
+  printf '%b\n' "${COLOR_BOLD}${1}${COLOR_RESET}"
+}
+
+kv() {
+  printf '%-16s %s\n' "$1" "$2"
+}
+
+info() {
+  printf '%b\n' "${COLOR_INFO}[INFO]${COLOR_RESET} $*"
+}
+
+ok() {
+  printf '%b\n' "${COLOR_OK}[ OK ]${COLOR_RESET} $*"
+}
+
+warn() {
+  printf '%b\n' "${COLOR_WARN}[WARN]${COLOR_RESET} $*"
+}
+
 log() {
-  echo "[install] $*"
+  info "$*"
 }
 
 fail() {
-  echo "[install][error] $*" >&2
+  printf '%b\n' "${COLOR_ERROR}[ERROR]${COLOR_RESET} $*" >&2
+  printf '\n' >&2
+  section "What to Check Next" >&2
+  printf '%s\n' "- Confirm the selected asset archive contains GameData/base/assets0.pk3 or base/assets0.pk3" >&2
+  printf '%s\n' "- Confirm COPYRIGHT_ACKNOWLEDGED is set to true" >&2
+  printf '%s\n' "- Confirm the selected mod directory and config names are valid" >&2
   exit 1
 }
 
@@ -33,7 +83,96 @@ resolve_active_game_dir() {
   printf '%s\n' "$requested"
 }
 
+print_path_status() {
+  local label="$1"
+  local path="$2"
+  local kind="${3:-file}"
+
+  if [[ "$kind" == "dir" ]]; then
+    if [[ -d "$path" ]]; then
+      ok "${label}: found at ${path}"
+    else
+      warn "${label}: missing at ${path}"
+    fi
+    return
+  fi
+
+  if [[ -f "$path" ]]; then
+    ok "${label}: found at ${path}"
+  else
+    warn "${label}: missing at ${path}"
+  fi
+}
+
+list_dir_files() {
+  local path="$1"
+  local pattern="${2:-*}"
+  local files=()
+  local file
+  local result=""
+
+  if [[ ! -d "$path" ]]; then
+    printf 'directory missing\n'
+    return
+  fi
+
+  while IFS= read -r file; do
+    files+=("$file")
+  done < <(
+    find "$path" -maxdepth 1 -type f -name "$pattern" -printf '%f\n' 2>/dev/null | sort
+  )
+
+  for file in "${files[@]}"; do
+    if [[ -n "$result" ]]; then
+      result+=", "
+    fi
+    result+="$file"
+  done
+
+  if [[ -n "$result" ]]; then
+    printf '%s\n' "$result"
+  else
+    printf 'none detected\n'
+  fi
+}
+
+print_install_summary() {
+  section "Installation Summary"
+  kv "Assets mode    :" "$GAME_ASSETS_MODE"
+  kv "Mod directory  :" "$active_game_dir"
+  kv "Server config  :" "${active_game_dir}/${SERVER_CONFIG}"
+  kv "Server port    :" "$SERVER_PORT"
+  printf '\n'
+}
+
+print_install_checks() {
+  section "Installation Checks"
+  ok "Server directories created"
+  ok "Active mod directory prepared at /mnt/server/${active_game_dir}"
+  print_path_status "Base assets" "/mnt/server/base/assets0.pk3"
+  printf '\n'
+}
+
+print_install_inventory() {
+  section "File Inventory"
+  kv "Base files      :" "$(list_dir_files /mnt/server/base 'assets*.pk3')"
+  kv "Mod files       :" "$(list_dir_files "/mnt/server/${active_game_dir}")"
+  printf '\n'
+}
+
+print_install_result() {
+  section "Result"
+  info "Installation complete"
+  if [[ -f /mnt/server/base/assets0.pk3 ]]; then
+    ok "Server can proceed to runtime startup checks"
+  else
+    warn "Upload your legally owned Jedi Academy base assets to /mnt/server/base"
+  fi
+}
+
 cd /mnt/server
+setup_colors
+print_header
 
 : "${GAME_ASSETS_MODE:=manual}"
 : "${GAME_ASSETS_URL:=}"
@@ -51,6 +190,7 @@ mkdir -p /mnt/server/base /mnt/server/logs /tmp/taystjk-install
 require_safe_component "$SERVER_CONFIG" "SERVER_CONFIG"
 active_game_dir="$(resolve_active_game_dir "$FS_GAME_MOD")"
 mkdir -p "/mnt/server/${active_game_dir}"
+print_install_summary
 
 extract_assets_archive() {
   local archive="$1"
@@ -105,40 +245,36 @@ fi
 
 case "$GAME_ASSETS_MODE" in
   manual)
-    log "GAME_ASSETS_MODE=manual"
-    log "Upload your legally owned Jedi Academy files so that /mnt/server/base/assets0.pk3 exists"
+    info "GAME_ASSETS_MODE is set to manual"
+    warn "Upload your legally owned Jedi Academy files so that /mnt/server/base/assets0.pk3 exists"
     ;;
   url)
     [[ -n "$GAME_ASSETS_URL" ]] || fail "GAME_ASSETS_MODE=url requires GAME_ASSETS_URL"
     local_archive="/tmp/taystjk-install/game_assets"
-    log "Downloading user-provided game assets archive"
+    info "Downloading user-provided game assets archive"
     curl -L --fail --retry 3 "$GAME_ASSETS_URL" -o "$local_archive"
 
     if [[ -n "$GAME_ASSETS_SHA256" ]]; then
-      log "Verifying SHA256"
+      info "Verifying SHA256"
       echo "${GAME_ASSETS_SHA256}  ${local_archive}" | sha256sum -c -
     fi
 
     extract_assets_archive "$local_archive"
     ;;
   none)
-    log "GAME_ASSETS_MODE=none"
-    log "Assuming assets will be mounted or added later"
+    info "GAME_ASSETS_MODE is set to none"
+    warn "Assuming assets will be mounted or added later"
     ;;
   *)
     fail "Unsupported GAME_ASSETS_MODE: $GAME_ASSETS_MODE"
     ;;
 esac
 
-log "Selected fs_game mod directory: ${active_game_dir}"
+print_install_checks
+print_install_inventory
+info "Selected fs_game mod directory: ${active_game_dir}"
 if [[ "$active_game_dir" != "base" ]]; then
-  log "If you switch to japlus, japro, mbii or another mod, install that mod manually into /mnt/server/${active_game_dir}"
+  warn "If you switch to japlus, japro, mbii or another mod, install that mod manually into /mnt/server/${active_game_dir}"
 fi
 
-if [[ -f /mnt/server/base/assets0.pk3 ]]; then
-  log "Detected base/assets0.pk3"
-else
-  log "No base/assets0.pk3 present yet"
-fi
-
-log "Installation complete"
+print_install_result
