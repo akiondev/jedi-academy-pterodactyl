@@ -18,6 +18,14 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Validate Go packages
+        run: go test ./...
+
       - name: Validate shell scripts
         run: bash -n scripts/entrypoint.sh scripts/install_taystjk.sh
 

@@ -1,3 +1,17 @@
+FROM golang:1.22-bookworm AS antivpn-builder
+
+ARG TARGETOS=linux
+ARG TARGETARCH
+
+WORKDIR /src
+COPY go.mod ./
+COPY cmd ./cmd
+COPY internal ./internal
+
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS="${TARGETOS}" GOARCH="${TARGETARCH:-amd64}" \
+    go build -trimpath -ldflags="-s -w" -o /out/taystjk-antivpn ./cmd/taystjk-antivpn
+
 FROM debian:12-slim AS builder
 
 ARG TAYSTJK_REPO=https://github.com/taysta/TaystJK.git
@@ -66,8 +80,9 @@ RUN apt-get update \
 RUN mkdir -p /opt/taystjk-dist
 COPY --from=builder /opt/taystjk/JediAcademy/taystjkded.* /opt/taystjk-dist/
 COPY --from=builder /opt/taystjk/JediAcademy/taystjk /opt/taystjk-dist/taystjk
+COPY --from=antivpn-builder /out/taystjk-antivpn /usr/local/bin/taystjk-antivpn
 COPY --chown=container:container scripts/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh /opt/taystjk-dist/taystjkded.*
+RUN chmod +x /entrypoint.sh /usr/local/bin/taystjk-antivpn /opt/taystjk-dist/taystjkded.*
 
 USER container
 ENV USER=container HOME=/home/container

@@ -7,7 +7,7 @@
   "exported_at": "2026-04-16T14:05:00+02:00",
   "name": "TaystJK",
   "author": "admin@example.com",
-  "description": "Runs TaystJK dedicated server on Pterodactyl from a source-built runtime image without bundling copyrighted Jedi Academy game assets. Default fs_game is taystjk, which is where TaystJK installs its bundled jaPRO-oriented content.",
+  "description": "Runs TaystJK dedicated server on Pterodactyl from a source-built runtime image without bundling copyrighted Jedi Academy game assets. Default fs_game is taystjk, which is where TaystJK installs its bundled jaPRO-oriented content. Includes an optional anti-VPN runtime supervisor with online API checks, local cache, allowlist support and weighted log-only/block decisions.",
   "features": [],
   "docker_images": {
     "ghcr.io/akiondev/jedi-academy-taystjk:latest": "ghcr.io/akiondev/jedi-academy-taystjk:latest"
@@ -76,6 +76,136 @@
       "user_viewable": true,
       "user_editable": true,
       "rules": "required|string|in:true,false",
+      "field_type": "text"
+    },
+    {
+      "name": "Anti-VPN Enabled",
+      "description": "Enable the anti-VPN runtime supervisor.",
+      "env_variable": "ANTI_VPN_ENABLED",
+      "default_value": "false",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|in:true,false",
+      "field_type": "text"
+    },
+    {
+      "name": "Anti-VPN Mode",
+      "description": "off, log-only or block.",
+      "env_variable": "ANTI_VPN_MODE",
+      "default_value": "log-only",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|in:off,log-only,block",
+      "field_type": "text"
+    },
+    {
+      "name": "Anti-VPN Cache TTL",
+      "description": "Local decision cache TTL. Supports Go-style durations such as 30m, 6h or 24h.",
+      "env_variable": "ANTI_VPN_CACHE_TTL",
+      "default_value": "6h",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|max:32",
+      "field_type": "text"
+    },
+    {
+      "name": "Anti-VPN Score Threshold",
+      "description": "Weighted score required before a decision becomes blockable.",
+      "env_variable": "ANTI_VPN_SCORE_THRESHOLD",
+      "default_value": "90",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|integer|between:1,200",
+      "field_type": "text"
+    },
+    {
+      "name": "Anti-VPN Allowlist",
+      "description": "Comma or whitespace separated trusted IPs and CIDRs that always bypass anti-VPN checks.",
+      "env_variable": "ANTI_VPN_ALLOWLIST",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string|max:4096",
+      "field_type": "text"
+    },
+    {
+      "name": "ProxyCheck API Key",
+      "description": "Optional API key for proxycheck.io. Without a key the provider runs on anonymous/free limits.",
+      "env_variable": "ANTI_VPN_PROXYCHECK_API_KEY",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string|max:128",
+      "field_type": "text"
+    },
+    {
+      "name": "ipapi.is API Key",
+      "description": "Optional API key for ipapi.is. Without a key the provider runs on anonymous/free limits.",
+      "env_variable": "ANTI_VPN_IPAPIIS_API_KEY",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string|max:128",
+      "field_type": "text"
+    },
+    {
+      "name": "IPHub API Key",
+      "description": "API key for IPHub non-residential checks.",
+      "env_variable": "ANTI_VPN_IPHUB_API_KEY",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string|max:128",
+      "field_type": "text"
+    },
+    {
+      "name": "vpnapi.io API Key",
+      "description": "Optional API key for vpnapi.io VPN checks.",
+      "env_variable": "ANTI_VPN_VPNAPI_IO_API_KEY",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string|max:128",
+      "field_type": "text"
+    },
+    {
+      "name": "Anti-VPN Timeout (ms)",
+      "description": "Per-provider request timeout in milliseconds.",
+      "env_variable": "ANTI_VPN_TIMEOUT_MS",
+      "default_value": "1500",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|integer|between:100,10000",
+      "field_type": "text"
+    },
+    {
+      "name": "Anti-VPN Decision Logging",
+      "description": "Emit structured anti-VPN decision summaries into the console output.",
+      "env_variable": "ANTI_VPN_LOG_DECISIONS",
+      "default_value": "true",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|in:true,false",
+      "field_type": "text"
+    },
+    {
+      "name": "Anti-VPN Ban Command",
+      "description": "Console command template used when a block decision is reached. Supports %IP%.",
+      "env_variable": "ANTI_VPN_BAN_COMMAND",
+      "default_value": "addip %IP%",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|max:128",
+      "field_type": "text"
+    },
+    {
+      "name": "Anti-VPN Kick Command",
+      "description": "Console command template used when kicking the matched player slot. Supports %SLOT% and %IP%.",
+      "env_variable": "ANTI_VPN_KICK_COMMAND",
+      "default_value": "clientkick %SLOT%",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|max:128",
       "field_type": "text"
     },
     {

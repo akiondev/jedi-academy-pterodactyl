@@ -8,8 +8,10 @@ Pterodactyl Docker image and egg for running a **TaystJK** dedicated server with
 - `egg/egg-taystjk-pterodactyl.json` — importable Pterodactyl egg
 - `scripts/entrypoint.sh` — runtime preparation and launch helper
 - `scripts/install_taystjk.sh` — standalone install helper
+- `cmd/taystjk-antivpn` — Go-based anti-VPN supervisor for runtime join checks
 - `docs/source-analysis.md` — source-code findings that drove the project design
 - `docs/notes.md` — final revision notes
+- `docs/anti-vpn.md` — anti-VPN design, variables, scoring and operating notes
 
 ## Key behavior
 
@@ -18,6 +20,7 @@ Pterodactyl Docker image and egg for running a **TaystJK** dedicated server with
 - Supports asset provisioning through `manual`, `url`, or `none`
 - Uses `FS_GAME_MOD=taystjk` by default
 - Allows switching to manually installed mod folders such as `base`, `japlus`, `japro`, or `mbii`
+- Optional anti-VPN supervision using online API checks with cache, allowlist, structured logging and weighted decisions
 
 ## Release process
 
@@ -29,6 +32,18 @@ Pterodactyl Docker image and egg for running a **TaystJK** dedicated server with
 
 This repository includes a workflow at `.github/workflows/ci.yml` that:
 
+- validates the Go anti-VPN component with `go test ./...`,
 - validates shell scripts and egg JSON on push/PR,
 - performs a Docker build test on push/PR,
 - publishes to GHCR automatically when pushing a tag like `v1.0.0`.
+
+## Anti-VPN overview
+
+The anti-VPN feature is designed specifically for VPN / hosting / non-residential detection. It does not use offline proxy lists, Tor blocklists, or generic abuse feeds.
+
+- Runtime component: compiled Go binary inside the Docker image
+- Detection inputs: `proxycheck.io`, `ipapi.is`, `IPHub`, and optionally `vpnapi.io`
+- Runtime behavior: watches player join log events from `server.log`, checks connecting IPs, caches decisions locally, and can log or block based on score
+- Safety defaults: external API failures do not stop server startup and do not hard-block players by themselves
+
+Read [docs/anti-vpn.md](/Users/robinblossing/Desktop/REPOS/jedi-academy-pterodactyl-main/docs/anti-vpn.md) for the full operating guide.

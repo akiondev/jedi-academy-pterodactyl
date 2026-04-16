@@ -1,0 +1,140 @@
+# Anti-VPN
+
+## Purpose
+
+This project includes an anti-VPN runtime component intended specifically for VPN, hosting-backed, and non-residential IP detection during Jedi Academy / TaystJK server operation on Pterodactyl.
+
+It is intentionally scoped to anti-VPN behavior only:
+
+- online API checks only
+- no public proxy lists
+- no Tor lists
+- no giant offline blocklists
+- no startup hard-fail if providers are unavailable
+
+## Architecture
+
+The anti-VPN feature is implemented as a compiled Go binary inside the runtime image:
+
+- binary: `taystjk-antivpn`
+- launch path: `scripts/entrypoint.sh`
+- runtime model: supervisor around the dedicated server process
+- signal source: `server.log` join-related lines
+- enforcement path: server stdin console commands
+
+The supervisor watches player join events, extracts the player IP from `ClientUserinfoChanged` log lines, queries providers in parallel, evaluates a weighted score, logs the result, and optionally sends server console commands such as `addip` and `clientkick`.
+
+## Supported providers
+
+- `proxycheck.io`
+- `ipapi.is`
+- `IPHub`
+- `vpnapi.io` (optional)
+
+Providers are queried independently with:
+
+- request timeouts
+- small retries
+- per-provider rate gating
+- local cache with TTL
+
+If one provider fails, the others still run. If every provider fails, the decision falls back to allow and logs the degraded state.
+
+## Weighted scoring
+
+The default model is intentionally conservative:
+
+- strong VPN detections from `proxycheck.io`, `ipapi.is`, or `vpnapi.io` carry the most weight
+- hosting or datacenter signals carry medium weight
+- `IPHub` contributes medium or weak non-residential signals
+- a block normally requires the threshold to be met and either:
+  - at least one strong signal, or
+  - agreement from at least two providers
+
+This avoids blocking only because of one weak or ambiguous signal.
+
+Default threshold: `90`
+
+## Modes
+
+- `off`
+- `log-only`
+- `block`
+
+Behavior by mode:
+
+- `off`: the Go supervisor is not used
+- `log-only`: decisions are logged but no enforcement commands are sent
+- `block`: decisions above threshold can send console commands back to the game server
+
+## Cache
+
+Default cache path:
+
+`/home/container/.cache/taystjk-antivpn/cache.json`
+
+Default TTL:
+
+`6h`
+
+The cache is local to the server volume and survives container restarts as long as the volume persists.
+
+## Allowlist
+
+`ANTI_VPN_ALLOWLIST` supports:
+
+- individual IPs
+- CIDR ranges
+- comma-separated values
+- whitespace-separated values
+
+Example:
+
+```text
+203.0.113.10, 198.51.100.0/24
+2001:db8::/32
+```
+
+Allowlisted addresses always bypass anti-VPN scoring.
+
+## Egg variables
+
+- `ANTI_VPN_ENABLED`
+- `ANTI_VPN_MODE`
+- `ANTI_VPN_CACHE_TTL`
+- `ANTI_VPN_SCORE_THRESHOLD`
+- `ANTI_VPN_ALLOWLIST`
+- `ANTI_VPN_PROXYCHECK_API_KEY`
+- `ANTI_VPN_IPAPIIS_API_KEY`
+- `ANTI_VPN_IPHUB_API_KEY`
+- `ANTI_VPN_VPNAPI_IO_API_KEY`
+- `ANTI_VPN_TIMEOUT_MS`
+- `ANTI_VPN_LOG_DECISIONS`
+- `ANTI_VPN_BAN_COMMAND`
+- `ANTI_VPN_KICK_COMMAND`
+
+## Enforcement notes
+
+Default commands:
+
+- ban command: `addip %IP%`
+- kick command: `clientkick %SLOT%`
+
+These are exposed as variables because different mods or server builds can use slightly different admin command conventions.
+
+## Operational notes
+
+- Anti-VPN monitoring depends on the runtime log file remaining available at the expected `server.log` path.
+- Custom startup commands bypass the normal anti-VPN supervisor path and are logged as such by the entrypoint.
+- Anonymous provider access is allowed for `proxycheck.io` and `ipapi.is`, but production deployments should still configure API keys to avoid low shared limits.
+
+## Recommended defaults
+
+- `ANTI_VPN_ENABLED=true`
+- `ANTI_VPN_MODE=log-only`
+- `ANTI_VPN_SCORE_THRESHOLD=90`
+- `ANTI_VPN_CACHE_TTL=6h`
+- `ANTI_VPN_TIMEOUT_MS=1500`
+- `ANTI_VPN_LOG_DECISIONS=true`
+
+Move to `block` only after reviewing real console decisions on your own playerbase.

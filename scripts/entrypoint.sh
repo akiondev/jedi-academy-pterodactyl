@@ -127,6 +127,29 @@ debug() {
   printf '%b\n' "${COLOR_INFO}[DEBUG]${COLOR_RESET} $*"
 }
 
+bool_state() {
+  if [[ "${1,,}" == "true" || "${1}" == "1" || "${1,,}" == "yes" || "${1,,}" == "on" ]]; then
+    printf 'enabled\n'
+  else
+    printf 'disabled\n'
+  fi
+}
+
+join_csv() {
+  local result=""
+  local item
+
+  for item in "$@"; do
+    [[ -n "$item" ]] || continue
+    if [[ -n "$result" ]]; then
+      result+=", "
+    fi
+    result+="$item"
+  done
+
+  printf '%s\n' "$result"
+}
+
 print_command_preview() {
   local rendered=""
   local arg
@@ -238,6 +261,75 @@ build_startup_command() {
   fi
 }
 
+configure_anti_vpn() {
+  : "${ANTI_VPN_ENABLED:=false}"
+  : "${ANTI_VPN_MODE:=log-only}"
+  : "${ANTI_VPN_CACHE_TTL:=6h}"
+  : "${ANTI_VPN_SCORE_THRESHOLD:=90}"
+  : "${ANTI_VPN_ALLOWLIST:=}"
+  : "${ANTI_VPN_PROXYCHECK_API_KEY:=}"
+  : "${ANTI_VPN_IPAPIIS_API_KEY:=}"
+  : "${ANTI_VPN_IPHUB_API_KEY:=}"
+  : "${ANTI_VPN_VPNAPI_IO_API_KEY:=}"
+  : "${ANTI_VPN_TIMEOUT_MS:=1500}"
+  : "${ANTI_VPN_LOG_DECISIONS:=true}"
+  : "${ANTI_VPN_CACHE_PATH:=/home/container/.cache/taystjk-antivpn/cache.json}"
+  : "${ANTI_VPN_BAN_COMMAND:=addip %IP%}"
+  : "${ANTI_VPN_KICK_COMMAND:=clientkick %SLOT%}"
+  : "${ANTI_VPN_LOG_PATH:=/home/container/${active_game_dir}/server.log}"
+
+  ANTI_VPN_MODE_NORMALIZED="$(printf '%s' "$ANTI_VPN_MODE" | tr '[:upper:]' '[:lower:]')"
+  case "$ANTI_VPN_MODE_NORMALIZED" in
+    off|log-only|block) ;;
+    *)
+      warn "ANTI_VPN_MODE=${ANTI_VPN_MODE} is invalid, falling back to off"
+      ANTI_VPN_MODE_NORMALIZED="off"
+      ;;
+  esac
+
+  if [[ "${ANTI_VPN_ENABLED,,}" != "true" || "$ANTI_VPN_MODE_NORMALIZED" == "off" ]]; then
+    ANTI_VPN_EFFECTIVE_MODE="off"
+  else
+    ANTI_VPN_EFFECTIVE_MODE="$ANTI_VPN_MODE_NORMALIZED"
+  fi
+
+  mkdir -p "$(dirname "$ANTI_VPN_CACHE_PATH")"
+}
+
+anti_vpn_provider_summary() {
+  local providers=()
+
+  if [[ -n "$ANTI_VPN_PROXYCHECK_API_KEY" ]]; then
+    providers+=("proxycheck.io")
+  else
+    providers+=("proxycheck.io (anonymous)")
+  fi
+
+  if [[ -n "$ANTI_VPN_IPAPIIS_API_KEY" ]]; then
+    providers+=("ipapi.is")
+  else
+    providers+=("ipapi.is (anonymous)")
+  fi
+
+  if [[ -n "$ANTI_VPN_IPHUB_API_KEY" ]]; then
+    providers+=("IPHub")
+  fi
+
+  if [[ -n "$ANTI_VPN_VPNAPI_IO_API_KEY" ]]; then
+    providers+=("vpnapi.io")
+  fi
+
+  join_csv "${providers[@]}"
+}
+
+anti_vpn_allowlist_status() {
+  if [[ -n "${ANTI_VPN_ALLOWLIST//[[:space:],]/}" ]]; then
+    printf 'configured\n'
+  else
+    printf 'not set\n'
+  fi
+}
+
 print_runtime_summary() {
   section "Runtime Summary"
   kv "Image creator  :" "akiondev"
@@ -258,6 +350,31 @@ print_runtime_summary() {
     kv "Debug startup  :" "enabled"
   else
     kv "Debug startup  :" "disabled"
+  fi
+}
+
+print_anti_vpn_summary() {
+  section "Anti-VPN"
+  kv "Enabled         :" "$(bool_state "$ANTI_VPN_ENABLED")"
+  kv "Configured mode :" "$ANTI_VPN_MODE_NORMALIZED"
+  kv "Effective mode  :" "$ANTI_VPN_EFFECTIVE_MODE"
+  kv "Cache TTL       :" "$ANTI_VPN_CACHE_TTL"
+  kv "Threshold       :" "$ANTI_VPN_SCORE_THRESHOLD"
+  kv "Timeout         :" "$ANTI_VPN_TIMEOUT_MS"
+  kv "Decision logs   :" "$(bool_state "$ANTI_VPN_LOG_DECISIONS")"
+  kv "Allowlist       :" "$(anti_vpn_allowlist_status)"
+  kv "Log path        :" "$ANTI_VPN_LOG_PATH"
+  kv "Providers       :" "$(anti_vpn_provider_summary)"
+
+  if [[ "$ANTI_VPN_EFFECTIVE_MODE" == "off" ]]; then
+    warn "Anti-VPN supervision is disabled"
+    return
+  fi
+
+  if [[ -x /usr/local/bin/taystjk-antivpn ]]; then
+    ok "Anti-VPN supervisor binary found at /usr/local/bin/taystjk-antivpn"
+  else
+    warn "Anti-VPN supervisor binary is missing; startup will continue without anti-VPN enforcement"
   fi
 }
 
@@ -312,7 +429,23 @@ print_launch_decision() {
   section "Launch Decision"
   ok "Preflight complete"
   print_command_preview
-  info "Launching TaystJK dedicated server now..."
+  if [[ "$ANTI_VPN_EFFECTIVE_MODE" == "off" ]]; then
+    info "Launching TaystJK dedicated server now..."
+  else
+    info "Launching TaystJK dedicated server under anti-VPN supervision..."
+  fi
+}
+
+launch_server() {
+  if [[ "$ANTI_VPN_EFFECTIVE_MODE" != "off" && -x /usr/local/bin/taystjk-antivpn ]]; then
+    exec /usr/local/bin/taystjk-antivpn supervise -- "${STARTUP_COMMAND[@]}"
+  fi
+
+  if [[ "$ANTI_VPN_EFFECTIVE_MODE" != "off" ]]; then
+    warn "Continuing without anti-VPN supervision because the helper binary is unavailable"
+  fi
+
+  exec "${STARTUP_COMMAND[@]}"
 }
 
 cd /home/container
@@ -333,6 +466,7 @@ require_safe_component "$SERVER_CONFIG" "SERVER_CONFIG"
 server_binary_name="$(normalize_server_binary_name)"
 active_game_dir="$(resolve_active_game_dir "$FS_GAME_MOD")"
 server_binary_path="/home/container/${server_binary_name}"
+configure_anti_vpn
 
 mkdir -p /home/container/base /home/container/logs "/home/container/${active_game_dir}"
 sync_runtime_files
@@ -358,6 +492,9 @@ export HOME=/home/container
 if [[ "$#" -gt 0 && "$1" != "--panel-startup" ]]; then
   section "Launch Decision"
   info "Custom startup command detected"
+  if [[ "$ANTI_VPN_EFFECTIVE_MODE" != "off" ]]; then
+    warn "Anti-VPN supervision is bypassed for custom startup commands"
+  fi
   info "Executing: $*"
   exec "$@"
 fi
@@ -378,6 +515,7 @@ print_preflight_checks
 print_asset_detection
 print_mod_detection
 print_file_inventory
+print_anti_vpn_summary
 require_base_assets
 print_launch_decision
-exec "${STARTUP_COMMAND[@]}"
+launch_server
