@@ -15,6 +15,7 @@ RUN dpkg --add-architecture i386 \
         libjpeg-dev \
         libpng-dev \
         make \
+        zip \
         zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
@@ -33,8 +34,8 @@ RUN mkdir -p build \
         -DBuildMPRdVulkan=OFF \
         -DBuildMPRend2=OFF \
         -DBuildMPUI=OFF \
-        -DBuildMPGame=OFF \
-        -DBuildMPCGame=OFF \
+        -DBuildMPGame=ON \
+        -DBuildMPCGame=ON \
         -DBuildDiscordRichPresence=OFF \
         -DBuildTests=OFF \
         .. \
@@ -48,7 +49,14 @@ LABEL org.opencontainers.image.description="Runtime image for TaystJK dedicated 
 LABEL org.opencontainers.image.licenses="GPL-2.0-only"
 
 USER root
-RUN apt-get update \
+RUN set -eux; \
+    for list in /etc/apt/sources.list /etc/apt/sources.list.d/*.list; do \
+      [ -f "$list" ] || continue; \
+      sed -i 's|deb.debian.org/debian|archive.debian.org/debian|g' "$list"; \
+      sed -i 's|security.debian.org/debian-security|archive.debian.org/debian-security|g' "$list"; \
+    done; \
+    printf 'Acquire::Check-Valid-Until "false";\nAcquire::AllowInsecureRepositories "true";\n' > /etc/apt/apt.conf.d/99archive-fallback; \
+    apt-get update \
     && apt-get install -y --no-install-recommends \
         bash \
         ca-certificates \
