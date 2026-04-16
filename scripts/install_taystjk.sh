@@ -4,9 +4,33 @@ set -euo pipefail
 log() {
   echo "[install] $*"
 }
+
 fail() {
   echo "[install][error] $*" >&2
   exit 1
+}
+
+require_safe_component() {
+  local value="$1"
+  local variable_name="$2"
+
+  if [[ -z "$value" || "$value" == "." || "$value" == ".." || "$value" == *"/"* || "$value" == *"\\"* || ! "$value" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+    fail "${variable_name} must be a simple relative name using only letters, numbers, dots, underscores or dashes"
+  fi
+}
+
+resolve_active_game_dir() {
+  local requested="$1"
+  local requested_lower
+
+  requested_lower="$(printf '%s' "$requested" | tr '[:upper:]' '[:lower:]')"
+  if [[ -z "$requested_lower" || "$requested_lower" == "base" ]]; then
+    printf 'base\n'
+    return
+  fi
+
+  require_safe_component "$requested" "FS_GAME_MOD"
+  printf '%s\n' "$requested"
 }
 
 cd /mnt/server
@@ -24,13 +48,8 @@ cd /mnt/server
 
 mkdir -p /mnt/server/base /mnt/server/logs /tmp/taystjk-install
 
-mod_dir="${FS_GAME_MOD}"
-mod_dir_lower="$(printf '%s' "$mod_dir" | tr '[:upper:]' '[:lower:]')"
-if [[ -z "$mod_dir_lower" || "$mod_dir_lower" == "base" ]]; then
-  active_game_dir="base"
-else
-  active_game_dir="$mod_dir"
-fi
+require_safe_component "$SERVER_CONFIG" "SERVER_CONFIG"
+active_game_dir="$(resolve_active_game_dir "$FS_GAME_MOD")"
 mkdir -p "/mnt/server/${active_game_dir}"
 
 extract_assets_archive() {
