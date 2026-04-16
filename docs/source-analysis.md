@@ -1,25 +1,25 @@
-# Källkods- och modanalys som styr fas 3
+# Source and mod analysis that drives phase 3
 
-## Huvudfynd från TaystJK-källkoden
+## Key findings from the TaystJK source code
 
-1. `CMakeLists.txt` definierar dedikerad server som `taystjkded.${Architecture}`.
-2. `README.md` visar att TaystJK ska extraheras till Jedi Academy `GameData/` och fortfarande kräver originalspelet.
-3. `codemp/CMakeLists.txt` skapar `japro-assets.pk3` från `assets/japro/`.
-4. Samma fil installerar `japro-assets.pk3` till **`JediAcademy/taystjk/`**, inte till `JediAcademy/japro/`.
-5. Därför är korrekt default-`fs_game` för TaystJK:s inbyggda modinnehåll **`taystjk`**.
-6. Andra mods som `japlus`, `japro`, `mbii` eller andra tredjepartsmods måste ses som **manuellt installerade alternativa modmappar**.
+1. `CMakeLists.txt` defines the dedicated server binary as `taystjkded.${Architecture}`.
+2. The project `README.md` shows TaystJK should be extracted into Jedi Academy `GameData/` and still requires the original game.
+3. `codemp/CMakeLists.txt` builds `japro-assets.pk3` from `assets/japro/`.
+4. The same file installs `japro-assets.pk3` into **`JediAcademy/taystjk/`**, not into `JediAcademy/japro/`.
+5. Therefore the correct default `fs_game` for TaystJK bundled mod content is **`taystjk`**.
+6. Other mods such as `japlus`, `japro`, `mbii`, or other third-party mods must be treated as **manually installed alternative mod folders**.
 
-## Huvudfynd från research om `fs_game`
+## Key findings from `fs_game` research
 
-1. Jedi Academy/OpenJK-servrar använder `+set fs_game <modmapp>` för att byta aktiv modkatalog.
-2. JA+/JA++-guider visar att man typiskt startar dedikerad server med `+set fs_game japlus`.
-3. Dokumentation och community-guider visar också att modspecifik `server.cfg` normalt ligger i den aktiva modmappen, inte alltid i huvudkatalogen.
-4. För base/vanilla används normalt ingen separat `fs_game`-override alls, eller ett tomt värde.
+1. Jedi Academy/OpenJK servers use `+set fs_game <modfolder>` to switch the active mod directory.
+2. JA+/JA++ guides show that dedicated servers are typically started with `+set fs_game japlus`.
+3. Documentation and community guides also show that a mod-specific `server.cfg` is normally placed in the active mod folder, not always in the root directory.
+4. For vanilla/base setups there is normally no separate `fs_game` override, or it is left empty.
 
-## Praktisk påverkan på egg/projektet
+## Practical impact on the egg/project
 
-- default ska fortsätta vara `taystjk`
-- egg ska samtidigt låta användaren byta modmapp via variabler
-- `base` ska hanteras särskilt så att startup kan köras utan `+set fs_game base`
-- `server.cfg` bör skapas i aktuell modmapp (`taystjk`, `japlus`, `japro`, osv.)
-- själva modfilerna ska inte automatiskt hämtas av detta egg, utan läggas in manuellt av användaren
+- the default should remain `taystjk`
+- the egg should still allow users to change mod folder through variables
+- `base` should be treated as a special case so startup can run without `+set fs_game base`
+- `server.cfg` should be created in the active mod folder (`taystjk`, `japlus`, `japro`, etc.)
+- mod files should not be automatically downloaded by this egg, but added manually by the user
