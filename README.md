@@ -1,5 +1,11 @@
 # Jedi Academy Pterodactyl (TaystJK)
 
+![Build](https://img.shields.io/github/actions/workflow/status/akiondev/jedi-academy-pterodactyl/ci.yml?branch=main&style=for-the-badge&label=build)
+![Release](https://img.shields.io/github/v/release/akiondev/jedi-academy-pterodactyl?style=for-the-badge&label=release)
+![GHCR](https://img.shields.io/badge/ghcr-image-blue?style=for-the-badge)
+![Anti-VPN](https://img.shields.io/badge/anti--vpn-enabled-purple?style=for-the-badge)
+![Assets](https://img.shields.io/badge/game_assets-not_included-red?style=for-the-badge)
+
 Pterodactyl Docker image and egg for running a **TaystJK** dedicated server without redistributing copyrighted **Jedi Academy** game assets.
 
 ## What this repo contains
