@@ -53,7 +53,6 @@ RUN set -eux; \
       [ -f "$list" ] || continue; \
       sed -i 's|deb.debian.org/debian|archive.debian.org/debian|g' "$list"; \
       sed -i 's|security.debian.org/debian-security|archive.debian.org/debian-security|g' "$list"; \
-      sed -i 's|/updates|/debian-security|g' "$list"; \
     done; \
     printf 'Acquire::Check-Valid-Until "false";\nAcquire::AllowInsecureRepositories "true";\n' > /etc/apt/apt.conf.d/99archive-fallback; \
     apt-get update \
