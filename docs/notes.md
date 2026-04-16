@@ -1,10 +1,10 @@
 # Notes
 
-## Fas 4 slutsatser
+## Phase 4 conclusions
 
-1. TaystJK:s dedikerade server byggs som `taystjkded.<arch>`.
-2. TaystJK:s förinstallerade jaPRO-orienterade innehåll installeras i `taystjk/`, inte i en separat `japro/`-mapp.
-3. Därför ska default i egget vara `FS_GAME_MOD=taystjk`.
-4. Externa mods måste fortfarande installeras manuellt som egna mappar.
-5. Egg-startupen bör inte använda både `FS_GAME_MOD` och en separat `FS_GAME_STARTUP`, eftersom de kan divergera och skapa felsökta fel.
-6. Docker imagen ska byggas från projektroten med `docker build -f docker/Dockerfile ... .` för att `COPY scripts/entrypoint.sh` ska fungera stabilt.
+1. TaystJK dedicated server is built as `taystjkded.<arch>`.
+2. TaystJK bundled jaPRO-oriented content is installed into `taystjk/`, not a separate `japro/` folder.
+3. Therefore the egg default should be `FS_GAME_MOD=taystjk`.
+4. External mods still need to be installed manually as separate folders.
+5. Egg startup should not use both `FS_GAME_MOD` and a separate `FS_GAME_STARTUP`, because they can diverge and create hard-to-debug errors.
+6. The Docker image should be built from the project root with `docker build -f docker/Dockerfile ... .` so that `COPY scripts/entrypoint.sh` works reliably.
