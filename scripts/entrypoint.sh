@@ -7,6 +7,7 @@ COLOR_INFO=""
 COLOR_OK=""
 COLOR_WARN=""
 COLOR_ERROR=""
+COLOR_SECTION=""
 LAST_FAILURE_MESSAGE=""
 
 setup_colors() {
@@ -17,18 +18,20 @@ setup_colors() {
     COLOR_OK=$'\033[32m'
     COLOR_WARN=$'\033[33m'
     COLOR_ERROR=$'\033[31m'
+    COLOR_SECTION=$'\033[97m'
   fi
 }
 
 print_header() {
-  printf '%s\n' "============================================================"
-  printf '%s\n' " TaystJK Pterodactyl Runtime"
-  printf '%s\n' " Created by akiondev"
-  printf '%s\n\n' "============================================================"
+  printf '%b\n' "${COLOR_BOLD}============================================================${COLOR_RESET}"
+  printf '%b\n' "${COLOR_BOLD} TaystJK Pterodactyl Runtime${COLOR_RESET}"
+  printf '%b\n' "${COLOR_INFO} Created by akiondev${COLOR_RESET}"
+  printf '%b\n\n' "${COLOR_BOLD}============================================================${COLOR_RESET}"
 }
 
 section() {
-  printf '%b\n' "${COLOR_BOLD}${1}${COLOR_RESET}"
+  printf '\n'
+  printf '%b\n' "${COLOR_SECTION}${COLOR_BOLD}[SECTION]${COLOR_RESET} ${COLOR_BOLD}${1}${COLOR_RESET}"
 }
 
 kv() {
@@ -239,6 +242,7 @@ print_runtime_summary() {
   section "Runtime Summary"
   kv "Image creator  :" "akiondev"
   kv "Startup source :" "$startup_source"
+  kv "Startup detail :" "$startup_detail"
   kv "Runtime mode   :" "dedicated server"
   kv "Mod directory  :" "$active_game_dir"
   kv "Server config  :" "${active_game_dir}/${SERVER_CONFIG}"
@@ -255,7 +259,6 @@ print_runtime_summary() {
   else
     kv "Debug startup  :" "disabled"
   fi
-  printf '\n'
 }
 
 print_preflight_checks() {
@@ -268,14 +271,12 @@ print_preflight_checks() {
   else
     warn "Extra startup args not set"
   fi
-  printf '\n'
 }
 
 print_asset_detection() {
   section "Asset Detection"
   print_path_status "Base assets" "/home/container/base/assets0.pk3"
   print_path_status "Bundled TaystJK files" "/home/container/taystjk" "dir"
-  printf '\n'
 }
 
 print_mod_detection() {
@@ -294,7 +295,6 @@ print_mod_detection() {
   else
     warn "Active mod directory exists but appears empty"
   fi
-  printf '\n'
 }
 
 print_file_inventory() {
@@ -306,7 +306,6 @@ print_file_inventory() {
   else
     kv "Logs directory  :" "missing"
   fi
-  printf '\n'
 }
 
 print_launch_decision() {
@@ -364,9 +363,11 @@ if [[ "$#" -gt 0 && "$1" != "--panel-startup" ]]; then
 fi
 
 if [[ "$#" -gt 0 ]]; then
-  startup_source="Pterodactyl panel"
+  startup_source="Pterodactyl panel sentinel"
+  startup_detail="Wings passed --panel-startup and the image built the final server command"
 else
-  startup_source="image fallback"
+  startup_source="automatic image startup"
+  startup_detail="No startup arguments were passed, so the image built the dedicated server command from environment variables"
 fi
 
 parse_extra_startup_args
