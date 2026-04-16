@@ -15,6 +15,7 @@ RUN dpkg --add-architecture i386 \
         libjpeg-dev \
         libpng-dev \
         make \
+        zip \
         zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
