@@ -43,11 +43,11 @@ section() {
 }
 
 kv() {
-  printf '%-16s %s\n' "$1" "$2"
+  printf '%-14s : %s\n' "$1" "$2"
 }
 
 kv_highlight() {
-  printf '%-16s %b%s%b\n' "$1" "${COLOR_BOLD}" "$2" "${COLOR_RESET}"
+  printf '%-14s : %b%s%b\n' "$1" "${COLOR_BOLD}" "$2" "${COLOR_RESET}"
 }
 
 info() {
@@ -365,37 +365,37 @@ anti_vpn_allowlist_status() {
 
 print_runtime_summary() {
   section "SERVER"
-  kv "Image creator  :" "akiondev"
-  kv "Startup source :" "$startup_source"
-  kv_highlight "Mode          :" "Dedicated server"
-  kv_highlight "Mod           :" "$active_game_dir"
-  kv_highlight "Config        :" "${active_game_dir}/${SERVER_CONFIG}"
-  kv_highlight "Port          :" "$SERVER_PORT"
-  kv_highlight "Binary        :" "$server_binary_name"
-  kv "Copyright ack  :" "$COPYRIGHT_ACKNOWLEDGED"
+  kv_highlight "Mode" "Dedicated server"
+  kv_highlight "Mod" "$active_game_dir"
+  kv_highlight "Config" "${active_game_dir}/${SERVER_CONFIG}"
+  kv_highlight "Port" "$SERVER_PORT"
+  kv_highlight "Binary" "$server_binary_name"
+  kv "Copyright" "$COPYRIGHT_ACKNOWLEDGED"
   if [[ "${#EXTRA_STARTUP_ARGV[@]}" -gt 0 ]]; then
-    kv "Extra args     :" "set"
+    kv "Extra args" "set"
   else
-    kv "Extra args     :" "not set"
+    kv "Extra args" "not set"
   fi
-  kv "Debug startup  :" "$(bool_state "$DEBUG_STARTUP")"
+  kv "Debug" "$(bool_state "$DEBUG_STARTUP")"
+  debug "Image creator: akiondev"
+  debug "Startup source: ${startup_source}"
   debug "Startup detail: ${startup_detail}"
 }
 
 print_anti_vpn_summary() {
   section "ANTI-VPN"
-  kv_highlight "Status        :" "$(printf '%s' "$(bool_state "$ANTI_VPN_ENABLED")" | tr '[:lower:]' '[:upper:]')"
-  kv_highlight "Mode          :" "$(printf '%s' "$ANTI_VPN_EFFECTIVE_MODE" | tr '[:lower:]' '[:upper:]')"
-  kv_highlight "Broadcast     :" "$(printf '%s' "$ANTI_VPN_BROADCAST_MODE_NORMALIZED" | tr '[:lower:]' '[:upper:]')"
-  kv_highlight "Threshold     :" "$ANTI_VPN_SCORE_THRESHOLD"
-  kv "Capture mode   :" "stdout-first with server.log fallback"
-  kv "Providers      :" "$(anti_vpn_provider_summary)"
-  kv "Decision logs  :" "$(printf '%s' "$(bool_state "$ANTI_VPN_LOG_DECISIONS")" | tr '[:lower:]' '[:upper:]')"
-  kv "Allowlist      :" "$(anti_vpn_allowlist_status)"
-  kv "Cache TTL      :" "$ANTI_VPN_CACHE_TTL"
-  kv "Cache flush    :" "$ANTI_VPN_CACHE_FLUSH_INTERVAL"
-  kv "Timeout        :" "$ANTI_VPN_TIMEOUT_MS"
-  kv "Broadcast cd   :" "$ANTI_VPN_BROADCAST_COOLDOWN"
+  kv_highlight "Status" "$(printf '%s' "$(bool_state "$ANTI_VPN_ENABLED")" | tr '[:lower:]' '[:upper:]')"
+  kv_highlight "Mode" "$(printf '%s' "$ANTI_VPN_EFFECTIVE_MODE" | tr '[:lower:]' '[:upper:]')"
+  kv_highlight "Broadcast" "$(printf '%s' "$ANTI_VPN_BROADCAST_MODE_NORMALIZED" | tr '[:lower:]' '[:upper:]')"
+  kv_highlight "Threshold" "$ANTI_VPN_SCORE_THRESHOLD"
+  kv "Providers" "$(anti_vpn_provider_summary)"
+  kv "Allowlist" "$(anti_vpn_allowlist_status)"
+  debug "Capture mode: stdout-first with server.log fallback"
+  debug "Decision logs: $(printf '%s' "$(bool_state "$ANTI_VPN_LOG_DECISIONS")" | tr '[:lower:]' '[:upper:]')"
+  debug "Cache TTL: ${ANTI_VPN_CACHE_TTL}"
+  debug "Cache flush: ${ANTI_VPN_CACHE_FLUSH_INTERVAL}"
+  debug "Timeout: ${ANTI_VPN_TIMEOUT_MS}"
+  debug "Broadcast cooldown: ${ANTI_VPN_BROADCAST_COOLDOWN}"
 
   if [[ "$ANTI_VPN_EFFECTIVE_MODE" == "off" ]]; then
     warn "Anti-VPN supervision is disabled"
@@ -403,7 +403,8 @@ print_anti_vpn_summary() {
   fi
 
   if [[ -x /usr/local/bin/taystjk-antivpn ]]; then
-    ok "Anti-VPN supervisor binary found at /usr/local/bin/taystjk-antivpn"
+    ok "Anti-VPN supervisor ready"
+    debug "Supervisor binary: /usr/local/bin/taystjk-antivpn"
   else
     warn "Anti-VPN supervisor binary is missing; startup will continue without anti-VPN enforcement"
   fi
@@ -475,29 +476,29 @@ count_dir_files() {
 
 print_paths() {
   section "PATHS"
-  kv "Binary path    :" "$server_binary_path"
-  kv "Mod path       :" "/home/container/${active_game_dir}"
-  kv "Log path       :" "$ANTI_VPN_LOG_PATH"
-  kv "Audit log      :" "$ANTI_VPN_AUDIT_LOG_PATH"
-  kv "Cache path     :" "$ANTI_VPN_CACHE_PATH"
+  kv "Binary path" "$server_binary_path"
+  kv "Mod path" "/home/container/${active_game_dir}"
+  kv "Log path" "$ANTI_VPN_LOG_PATH"
+  kv "Audit log" "$ANTI_VPN_AUDIT_LOG_PATH"
+  kv "Cache path" "$ANTI_VPN_CACHE_PATH"
 }
 
 print_inventory_summary() {
   section "INVENTORY"
-  kv "Base files     :" "$(count_dir_files /home/container/base 'assets*.pk3') found"
-  kv "Mod files      :" "$(count_dir_files "/home/container/${active_game_dir}") found"
+  kv "Base files" "$(count_dir_files /home/container/base 'assets*.pk3') found"
+  kv "Mod files" "$(count_dir_files "/home/container/${active_game_dir}") found"
   if [[ -d /home/container/logs ]]; then
-    kv "Logs directory :" "present"
+    kv "Logs dir" "present"
   else
-    kv "Logs directory :" "missing"
+    kv "Logs dir" "missing"
   fi
 }
 
 print_debug_inventory() {
   [[ "${DEBUG_STARTUP}" == "true" ]] || return 0
   section "DEBUG INVENTORY"
-  kv "Base files     :" "$(list_dir_files /home/container/base 'assets*.pk3')"
-  kv "Mod files      :" "$(list_dir_files "/home/container/${active_game_dir}")"
+  kv "Base files" "$(list_dir_files /home/container/base 'assets*.pk3')"
+  kv "Mod files" "$(list_dir_files "/home/container/${active_game_dir}")"
 }
 
 print_launch_decision() {
