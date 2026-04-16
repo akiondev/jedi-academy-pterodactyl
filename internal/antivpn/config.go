@@ -14,6 +14,7 @@ type Config struct {
 	Enabled               bool
 	Mode                  Mode
 	BroadcastMode         BroadcastMode
+	EnforcementMode       EnforcementMode
 	CacheTTL              time.Duration
 	CacheFlushInterval    time.Duration
 	ScoreThreshold        int
@@ -71,6 +72,12 @@ func LoadConfigFromEnv() (Config, error) {
 		return Config{}, err
 	}
 	cfg.Mode = mode
+
+	enforcementMode, err := parseEnforcementMode(envString("ANTI_VPN_ENFORCEMENT_MODE", string(EnforcementKickOnly)))
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.EnforcementMode = enforcementMode
 
 	broadcastMode, err := parseBroadcastMode(envString("ANTI_VPN_BROADCAST_MODE", string(BroadcastPassAndBlock)))
 	if err != nil {
@@ -180,6 +187,21 @@ func parseBroadcastMode(value string) (BroadcastMode, error) {
 		return BroadcastPassAndBlock, nil
 	default:
 		return "", fmt.Errorf("ANTI_VPN_BROADCAST_MODE must be one of off, block-only, pass-and-block")
+	}
+}
+
+func parseEnforcementMode(value string) (EnforcementMode, error) {
+	switch EnforcementMode(strings.TrimSpace(strings.ToLower(value))) {
+	case EnforcementKickOnly:
+		return EnforcementKickOnly, nil
+	case EnforcementBanAndKick:
+		return EnforcementBanAndKick, nil
+	case EnforcementBanOnly:
+		return EnforcementBanOnly, nil
+	case EnforcementCustom:
+		return EnforcementCustom, nil
+	default:
+		return "", fmt.Errorf("ANTI_VPN_ENFORCEMENT_MODE must be one of kick-only, ban-and-kick, ban-only, custom")
 	}
 }
 

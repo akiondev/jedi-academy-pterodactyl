@@ -52,6 +52,12 @@ func TestParseBroadcastModeRejectsInvalidInput(t *testing.T) {
 	}
 }
 
+func TestParseEnforcementModeRejectsInvalidInput(t *testing.T) {
+	if _, err := parseEnforcementMode("ban"); err == nil {
+		t.Fatalf("expected invalid enforcement mode to fail")
+	}
+}
+
 func TestBuildProvidersOnlyAddsKeyedPremiumProviders(t *testing.T) {
 	providers := buildProviders(Config{}, nil)
 	if len(providers) != 2 {

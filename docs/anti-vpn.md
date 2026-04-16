@@ -177,6 +177,7 @@ Allowlisted addresses always bypass anti-VPN scoring.
 - `ANTI_VPN_LOG_DECISIONS`
 - `ANTI_VPN_AUDIT_LOG_PATH`
 - `ANTI_VPN_BROADCAST_MODE`
+- `ANTI_VPN_ENFORCEMENT_MODE`
 - `ANTI_VPN_BROADCAST_COOLDOWN`
 - `ANTI_VPN_BROADCAST_PASS_TEMPLATE`
 - `ANTI_VPN_BROADCAST_BLOCK_TEMPLATE`
@@ -190,7 +191,14 @@ Default commands:
 - ban command: empty by default (kick-only enforcement)
 - kick command: `clientkick %SLOT%`
 
-These are exposed as variables because different mods or server builds can use slightly different admin command conventions. If you want ban-plus-kick enforcement, set `ANTI_VPN_BAN_COMMAND` explicitly.
+Recommended enforcement mode defaults:
+
+- `kick-only`
+- `ban-and-kick`
+- `ban-only`
+- `custom`
+
+`ANTI_VPN_ENFORCEMENT_MODE` selects the standard behavior. The raw command templates remain available for advanced `custom` setups or mod-specific admin command layouts.
 
 ## Operational notes
 

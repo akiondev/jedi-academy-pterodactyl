@@ -289,6 +289,16 @@
       "field_type": "text"
     },
     {
+      "name": "Anti-VPN Enforcement Mode",
+      "description": "Runtime variable. Select kick-only, ban-and-kick, ban-only or custom.",
+      "env_variable": "ANTI_VPN_ENFORCEMENT_MODE",
+      "default_value": "kick-only",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|in:kick-only,ban-and-kick,ban-only,custom",
+      "field_type": "text"
+    },
+    {
       "name": "Anti-VPN Broadcast Cooldown",
       "description": "Runtime variable. Cooldown before repeating the same public anti-VPN result for the same slot/action. Supports Go-style durations such as 30s or 90s.",
       "env_variable": "ANTI_VPN_BROADCAST_COOLDOWN",
@@ -320,7 +330,7 @@
     },
     {
       "name": "Anti-VPN Ban Command",
-      "description": "Runtime variable. Optional console command template used before kick when a block decision is reached. Leave empty to use kick-only enforcement. Supports %IP%.",
+      "description": "Runtime variable. Advanced setting used only when Anti-VPN Enforcement Mode is custom. Supports %IP%.",
       "env_variable": "ANTI_VPN_BAN_COMMAND",
       "default_value": "",
       "user_viewable": true,
@@ -330,7 +340,7 @@
     },
     {
       "name": "Anti-VPN Kick Command",
-      "description": "Runtime variable. Default enforcement command used when blocking a matched player slot. Supports %SLOT% and %IP%.",
+      "description": "Runtime variable. Advanced setting used only when Anti-VPN Enforcement Mode is custom. Supports %SLOT% and %IP%.",
       "env_variable": "ANTI_VPN_KICK_COMMAND",
       "default_value": "clientkick %SLOT%",
       "user_viewable": true,

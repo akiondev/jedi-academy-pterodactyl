@@ -311,17 +311,38 @@ func (s *Supervisor) enforceDecision(stdin io.Writer, slot string, addr netip.Ad
 	ipText := addr.String()
 	commands := make([]string, 0, 2)
 
-	if strings.TrimSpace(s.cfg.BanCommand) != "" {
-		commands = append(commands, fillCommandTemplate(s.cfg.BanCommand, commandTemplateData{
+	appendBan := func(command string) {
+		if strings.TrimSpace(command) == "" {
+			return
+		}
+		commands = append(commands, fillCommandTemplate(command, commandTemplateData{
 			IP:   ipText,
 			Slot: slot,
 		}))
 	}
-	if slot != "" && strings.TrimSpace(s.cfg.KickCommand) != "" {
-		commands = append(commands, fillCommandTemplate(s.cfg.KickCommand, commandTemplateData{
+	appendKick := func(command string) {
+		if slot == "" || strings.TrimSpace(command) == "" {
+			return
+		}
+		commands = append(commands, fillCommandTemplate(command, commandTemplateData{
 			IP:   ipText,
 			Slot: slot,
 		}))
+	}
+
+	switch s.cfg.EnforcementMode {
+	case EnforcementKickOnly:
+		appendKick("clientkick %SLOT%")
+	case EnforcementBanAndKick:
+		appendBan("addip %IP%")
+		appendKick("clientkick %SLOT%")
+	case EnforcementBanOnly:
+		appendBan("addip %IP%")
+	case EnforcementCustom:
+		appendBan(s.cfg.BanCommand)
+		appendKick(s.cfg.KickCommand)
+	default:
+		appendKick("clientkick %SLOT%")
 	}
 
 	for _, command := range commands {

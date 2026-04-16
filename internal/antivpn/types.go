@@ -22,6 +22,15 @@ const (
 	BroadcastPassAndBlock BroadcastMode = "pass-and-block"
 )
 
+type EnforcementMode string
+
+const (
+	EnforcementKickOnly  EnforcementMode = "kick-only"
+	EnforcementBanAndKick EnforcementMode = "ban-and-kick"
+	EnforcementBanOnly   EnforcementMode = "ban-only"
+	EnforcementCustom    EnforcementMode = "custom"
+)
+
 type Signal struct {
 	Provider string `json:"provider"`
 	Category string `json:"category"`

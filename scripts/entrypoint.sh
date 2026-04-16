@@ -294,6 +294,7 @@ configure_anti_vpn() {
   : "${ANTI_VPN_CACHE_PATH:=/home/container/.cache/taystjk-antivpn/cache.json}"
   : "${ANTI_VPN_CACHE_FLUSH_INTERVAL:=2s}"
   : "${ANTI_VPN_AUDIT_LOG_PATH:=/home/container/logs/anti-vpn-audit.log}"
+  : "${ANTI_VPN_ENFORCEMENT_MODE:=kick-only}"
   : "${ANTI_VPN_BROADCAST_MODE:=pass-and-block}"
   : "${ANTI_VPN_BROADCAST_COOLDOWN:=90s}"
   : "${ANTI_VPN_BROADCAST_PASS_TEMPLATE:=say [Anti-VPN] VPN PASS: %PLAYER% cleared checks (%SCORE%/%THRESHOLD%). %SUMMARY%}"
@@ -320,6 +321,16 @@ configure_anti_vpn() {
       ;;
   esac
   ANTI_VPN_BROADCAST_MODE="$ANTI_VPN_BROADCAST_MODE_NORMALIZED"
+
+  ANTI_VPN_ENFORCEMENT_MODE_NORMALIZED="$(printf '%s' "$ANTI_VPN_ENFORCEMENT_MODE" | tr '[:upper:]' '[:lower:]')"
+  case "$ANTI_VPN_ENFORCEMENT_MODE_NORMALIZED" in
+    kick-only|ban-and-kick|ban-only|custom) ;;
+    *)
+      warn "ANTI_VPN_ENFORCEMENT_MODE=${ANTI_VPN_ENFORCEMENT_MODE} is invalid, falling back to kick-only"
+      ANTI_VPN_ENFORCEMENT_MODE_NORMALIZED="kick-only"
+      ;;
+  esac
+  ANTI_VPN_ENFORCEMENT_MODE="$ANTI_VPN_ENFORCEMENT_MODE_NORMALIZED"
 
   if [[ "${ANTI_VPN_ENABLED,,}" != "true" || "$ANTI_VPN_MODE_NORMALIZED" == "off" ]]; then
     ANTI_VPN_EFFECTIVE_MODE="off"
@@ -396,6 +407,7 @@ print_anti_vpn_summary() {
   section "ANTI-VPN"
   kv_highlight "Status" "$(printf '%s' "$(bool_state "$ANTI_VPN_ENABLED")" | tr '[:lower:]' '[:upper:]')"
   kv_highlight "Mode" "$(printf '%s' "$ANTI_VPN_EFFECTIVE_MODE" | tr '[:lower:]' '[:upper:]')"
+  kv_highlight "Enforce" "$(printf '%s' "$ANTI_VPN_ENFORCEMENT_MODE_NORMALIZED" | tr '[:lower:]' '[:upper:]')"
   kv_highlight "Broadcast" "$(printf '%s' "$ANTI_VPN_BROADCAST_MODE_NORMALIZED" | tr '[:lower:]' '[:upper:]')"
   kv_highlight "Threshold" "$ANTI_VPN_SCORE_THRESHOLD"
   kv "Providers" "$(anti_vpn_provider_summary)"
