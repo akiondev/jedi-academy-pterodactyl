@@ -279,7 +279,7 @@ build_startup_command() {
 
 configure_anti_vpn() {
   : "${ANTI_VPN_ENABLED:=false}"
-  : "${ANTI_VPN_MODE:=log-only}"
+  : "${ANTI_VPN_MODE:=block}"
   : "${ANTI_VPN_CACHE_TTL:=6h}"
   : "${ANTI_VPN_SCORE_THRESHOLD:=90}"
   : "${ANTI_VPN_ALLOWLIST:=}"
@@ -287,6 +287,8 @@ configure_anti_vpn() {
   : "${ANTI_VPN_IPAPIIS_API_KEY:=}"
   : "${ANTI_VPN_IPHUB_API_KEY:=}"
   : "${ANTI_VPN_VPNAPI_IO_API_KEY:=}"
+  : "${ANTI_VPN_IPQUALITYSCORE_API_KEY:=}"
+  : "${ANTI_VPN_IPLOCATE_API_KEY:=}"
   : "${ANTI_VPN_TIMEOUT_MS:=1500}"
   : "${ANTI_VPN_LOG_DECISIONS:=true}"
   : "${ANTI_VPN_CACHE_PATH:=/home/container/.cache/taystjk-antivpn/cache.json}"
@@ -350,6 +352,14 @@ anti_vpn_provider_summary() {
 
   if [[ -n "$ANTI_VPN_VPNAPI_IO_API_KEY" ]]; then
     providers+=("vpnapi.io")
+  fi
+
+  if [[ -n "$ANTI_VPN_IPQUALITYSCORE_API_KEY" ]]; then
+    providers+=("IPQualityScore")
+  fi
+
+  if [[ -n "$ANTI_VPN_IPLOCATE_API_KEY" ]]; then
+    providers+=("IPLocate")
   fi
 
   join_csv "${providers[@]}"

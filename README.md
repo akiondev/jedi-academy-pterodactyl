@@ -42,7 +42,7 @@ This repository includes a workflow at `.github/workflows/ci.yml` that:
 The anti-VPN feature is designed specifically for VPN / hosting / non-residential detection. It does not use offline proxy lists, Tor blocklists, or generic abuse feeds.
 
 - Runtime component: compiled Go binary inside the Docker image
-- Detection inputs: `proxycheck.io`, `ipapi.is`, `IPHub`, and optionally `vpnapi.io`
+- Detection inputs: `proxycheck.io`, `ipapi.is`, `IPQualityScore`, `IPLocate`, `IPHub`, and optionally `vpnapi.io`
 - Runtime behavior: captures join events from live server stdout while also watching `server.log`, caches decisions locally, writes a dedicated audit trail, and can log, broadcast, or block based on score
 - Safety defaults: external API failures do not stop server startup and do not hard-block players by themselves
 

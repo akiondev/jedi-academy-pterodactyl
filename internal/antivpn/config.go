@@ -11,58 +11,62 @@ import (
 )
 
 type Config struct {
-	Enabled              bool
-	Mode                 Mode
-	BroadcastMode        BroadcastMode
-	CacheTTL             time.Duration
-	CacheFlushInterval   time.Duration
-	ScoreThreshold       int
-	Allowlist            []netip.Prefix
-	ProxyCheckAPIKey     string
-	IPAPIISAPIKey        string
-	IPHubAPIKey          string
-	VPNAPIIoAPIKey       string
-	Timeout              time.Duration
-	LogDecisions         bool
-	CachePath            string
-	AuditLogPath         string
-	LogPath              string
-	RetryCount           int
-	ProviderMinInterval  time.Duration
-	LogPollInterval      time.Duration
-	BroadcastCooldown    time.Duration
-	BanCommand           string
-	KickCommand          string
-	BroadcastPassCommand string
+	Enabled               bool
+	Mode                  Mode
+	BroadcastMode         BroadcastMode
+	CacheTTL              time.Duration
+	CacheFlushInterval    time.Duration
+	ScoreThreshold        int
+	Allowlist             []netip.Prefix
+	ProxyCheckAPIKey      string
+	IPAPIISAPIKey         string
+	IPHubAPIKey           string
+	VPNAPIIoAPIKey        string
+	IPQualityScoreAPIKey  string
+	IPLocateAPIKey        string
+	Timeout               time.Duration
+	LogDecisions          bool
+	CachePath             string
+	AuditLogPath          string
+	LogPath               string
+	RetryCount            int
+	ProviderMinInterval   time.Duration
+	LogPollInterval       time.Duration
+	BroadcastCooldown     time.Duration
+	BanCommand            string
+	KickCommand           string
+	BroadcastPassCommand  string
 	BroadcastBlockCommand string
 }
 
 func LoadConfigFromEnv() (Config, error) {
 	cfg := Config{
-		Enabled:             envBool("ANTI_VPN_ENABLED", false),
-		CacheTTL:            envDuration("ANTI_VPN_CACHE_TTL", 6*time.Hour),
-		CacheFlushInterval:  envDuration("ANTI_VPN_CACHE_FLUSH_INTERVAL", 2*time.Second),
-		ScoreThreshold:      envInt("ANTI_VPN_SCORE_THRESHOLD", 90),
-		ProxyCheckAPIKey:    strings.TrimSpace(os.Getenv("ANTI_VPN_PROXYCHECK_API_KEY")),
-		IPAPIISAPIKey:       strings.TrimSpace(os.Getenv("ANTI_VPN_IPAPIIS_API_KEY")),
-		IPHubAPIKey:         strings.TrimSpace(os.Getenv("ANTI_VPN_IPHUB_API_KEY")),
-		VPNAPIIoAPIKey:      strings.TrimSpace(os.Getenv("ANTI_VPN_VPNAPI_IO_API_KEY")),
-		Timeout:             envDurationOrMilliseconds("ANTI_VPN_TIMEOUT_MS", 1500*time.Millisecond),
-		LogDecisions:        envBool("ANTI_VPN_LOG_DECISIONS", true),
-		CachePath:           envString("ANTI_VPN_CACHE_PATH", "/home/container/.cache/taystjk-antivpn/cache.json"),
-		AuditLogPath:        envString("ANTI_VPN_AUDIT_LOG_PATH", "/home/container/logs/anti-vpn-audit.log"),
-		LogPath:             envString("ANTI_VPN_LOG_PATH", defaultLogPath()),
-		RetryCount:          envInt("ANTI_VPN_RETRY_COUNT", 1),
-		ProviderMinInterval: envDuration("ANTI_VPN_PROVIDER_MIN_INTERVAL", 250*time.Millisecond),
-		LogPollInterval:     envDuration("ANTI_VPN_LOG_POLL_INTERVAL", 750*time.Millisecond),
-		BroadcastCooldown:   envDuration("ANTI_VPN_BROADCAST_COOLDOWN", 90*time.Second),
-		BanCommand:          envString("ANTI_VPN_BAN_COMMAND", "addip %IP%"),
-		KickCommand:         envString("ANTI_VPN_KICK_COMMAND", "clientkick %SLOT%"),
+		Enabled:              envBool("ANTI_VPN_ENABLED", false),
+		CacheTTL:             envDuration("ANTI_VPN_CACHE_TTL", 6*time.Hour),
+		CacheFlushInterval:   envDuration("ANTI_VPN_CACHE_FLUSH_INTERVAL", 2*time.Second),
+		ScoreThreshold:       envInt("ANTI_VPN_SCORE_THRESHOLD", 90),
+		ProxyCheckAPIKey:     strings.TrimSpace(os.Getenv("ANTI_VPN_PROXYCHECK_API_KEY")),
+		IPAPIISAPIKey:        strings.TrimSpace(os.Getenv("ANTI_VPN_IPAPIIS_API_KEY")),
+		IPHubAPIKey:          strings.TrimSpace(os.Getenv("ANTI_VPN_IPHUB_API_KEY")),
+		VPNAPIIoAPIKey:       strings.TrimSpace(os.Getenv("ANTI_VPN_VPNAPI_IO_API_KEY")),
+		IPQualityScoreAPIKey: strings.TrimSpace(os.Getenv("ANTI_VPN_IPQUALITYSCORE_API_KEY")),
+		IPLocateAPIKey:       strings.TrimSpace(os.Getenv("ANTI_VPN_IPLOCATE_API_KEY")),
+		Timeout:              envDurationOrMilliseconds("ANTI_VPN_TIMEOUT_MS", 1500*time.Millisecond),
+		LogDecisions:         envBool("ANTI_VPN_LOG_DECISIONS", true),
+		CachePath:            envString("ANTI_VPN_CACHE_PATH", "/home/container/.cache/taystjk-antivpn/cache.json"),
+		AuditLogPath:         envString("ANTI_VPN_AUDIT_LOG_PATH", "/home/container/logs/anti-vpn-audit.log"),
+		LogPath:              envString("ANTI_VPN_LOG_PATH", defaultLogPath()),
+		RetryCount:           envInt("ANTI_VPN_RETRY_COUNT", 1),
+		ProviderMinInterval:  envDuration("ANTI_VPN_PROVIDER_MIN_INTERVAL", 250*time.Millisecond),
+		LogPollInterval:      envDuration("ANTI_VPN_LOG_POLL_INTERVAL", 750*time.Millisecond),
+		BroadcastCooldown:    envDuration("ANTI_VPN_BROADCAST_COOLDOWN", 90*time.Second),
+		BanCommand:           envString("ANTI_VPN_BAN_COMMAND", "addip %IP%"),
+		KickCommand:          envString("ANTI_VPN_KICK_COMMAND", "clientkick %SLOT%"),
 		BroadcastPassCommand: envString("ANTI_VPN_BROADCAST_PASS_TEMPLATE", `say [Anti-VPN] VPN PASS: %PLAYER% cleared checks (%SCORE%/%THRESHOLD%). %SUMMARY%`),
 		BroadcastBlockCommand: envString("ANTI_VPN_BROADCAST_BLOCK_TEMPLATE", `say [Anti-VPN] VPN BLOCKED: %PLAYER% triggered anti-VPN (%SCORE%/%THRESHOLD%). %SUMMARY%`),
 	}
 
-	mode, err := parseMode(envString("ANTI_VPN_MODE", string(ModeLogOnly)))
+	mode, err := parseMode(envString("ANTI_VPN_MODE", string(ModeBlock)))
 	if err != nil {
 		return Config{}, err
 	}
@@ -125,6 +129,12 @@ func (c Config) ProviderKeysConfigured() int {
 		count++
 	}
 	if c.VPNAPIIoAPIKey != "" {
+		count++
+	}
+	if c.IPQualityScoreAPIKey != "" {
+		count++
+	}
+	if c.IPLocateAPIKey != "" {
 		count++
 	}
 	return count

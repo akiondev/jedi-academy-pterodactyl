@@ -30,6 +30,8 @@ The supervisor mirrors the dedicated server output back to Pterodactyl, extracts
 
 - `proxycheck.io`
 - `ipapi.is`
+- `IPQualityScore`
+- `IPLocate`
 - `IPHub`
 - `vpnapi.io` (optional)
 
@@ -46,7 +48,7 @@ If one provider fails, the others still run. If every provider fails, the decisi
 
 The default model is intentionally conservative:
 
-- strong VPN detections from `proxycheck.io`, `ipapi.is`, or `vpnapi.io` carry the most weight
+- strong VPN detections from `proxycheck.io`, `ipapi.is`, `IPQualityScore`, `IPLocate`, or `vpnapi.io` carry the most weight
 - hosting or datacenter signals carry medium weight
 - `IPHub` contributes medium or weak non-residential signals
 - a block normally requires the threshold to be met and either:
@@ -169,6 +171,8 @@ Allowlisted addresses always bypass anti-VPN scoring.
 - `ANTI_VPN_IPAPIIS_API_KEY`
 - `ANTI_VPN_IPHUB_API_KEY`
 - `ANTI_VPN_VPNAPI_IO_API_KEY`
+- `ANTI_VPN_IPQUALITYSCORE_API_KEY`
+- `ANTI_VPN_IPLOCATE_API_KEY`
 - `ANTI_VPN_TIMEOUT_MS`
 - `ANTI_VPN_LOG_DECISIONS`
 - `ANTI_VPN_AUDIT_LOG_PATH`
@@ -192,7 +196,8 @@ These are exposed as variables because different mods or server builds can use s
 
 - Primary event capture happens from the live server stdout stream, with `server.log` used as a fallback path.
 - Custom startup commands bypass the normal anti-VPN supervisor path and are logged as such by the entrypoint.
-- Anonymous provider access is allowed for `proxycheck.io` and `ipapi.is`, but production deployments should still configure API keys to avoid low shared limits.
+- Anonymous provider access is allowed for `proxycheck.io` and `ipapi.is`, but production deployments should still configure API keys there as well to avoid low shared limits.
+- `IPQualityScore`, `IPLocate`, `IPHub`, and `vpnapi.io` are only active when their API keys are configured.
 - Provider failures degrade the decision quality, but they do not fail server startup and they do not force a block by themselves.
 - The dedicated audit log is the best place to review why a player was allowed, would have been blocked, or was actively blocked.
 - Public broadcasts are rate-limited with a cooldown per slot and action to avoid repetitive spam from duplicate join events.
@@ -200,7 +205,7 @@ These are exposed as variables because different mods or server builds can use s
 ## Recommended defaults
 
 - `ANTI_VPN_ENABLED=true`
-- `ANTI_VPN_MODE=log-only`
+- `ANTI_VPN_MODE=block`
 - `ANTI_VPN_SCORE_THRESHOLD=90`
 - `ANTI_VPN_CACHE_TTL=6h`
 - `ANTI_VPN_CACHE_FLUSH_INTERVAL=2s`
@@ -210,4 +215,4 @@ These are exposed as variables because different mods or server builds can use s
 - `ANTI_VPN_BROADCAST_MODE=pass-and-block`
 - `ANTI_VPN_BROADCAST_COOLDOWN=90s`
 
-Move to `block` only after reviewing real console decisions on your own playerbase.
+If you want to tune before hard enforcement, switch to `log-only` temporarily and review the anti-VPN audit log on your own playerbase.

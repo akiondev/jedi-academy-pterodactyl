@@ -5,6 +5,19 @@ import (
 	"testing"
 )
 
+func TestLoadConfigDefaultsToBlockMode(t *testing.T) {
+	t.Setenv("ANTI_VPN_MODE", "")
+
+	cfg, err := LoadConfigFromEnv()
+	if err != nil {
+		t.Fatalf("LoadConfigFromEnv returned error: %v", err)
+	}
+
+	if cfg.Mode != ModeBlock {
+		t.Fatalf("expected default anti-vpn mode %q, got %q", ModeBlock, cfg.Mode)
+	}
+}
+
 func TestParseAllowlistSupportsIPsAndCIDRs(t *testing.T) {
 	allowlist, err := parseAllowlist("203.0.113.10, 198.51.100.0/24\n2001:db8::/32")
 	if err != nil {
@@ -36,5 +49,23 @@ func TestParseAllowlistRejectsInvalidInput(t *testing.T) {
 func TestParseBroadcastModeRejectsInvalidInput(t *testing.T) {
 	if _, err := parseBroadcastMode("all"); err == nil {
 		t.Fatalf("expected invalid broadcast mode to fail")
+	}
+}
+
+func TestBuildProvidersOnlyAddsKeyedPremiumProviders(t *testing.T) {
+	providers := buildProviders(Config{}, nil)
+	if len(providers) != 2 {
+		t.Fatalf("expected 2 default providers, got %d", len(providers))
+	}
+
+	cfg := Config{
+		IPHubAPIKey:          "hub",
+		VPNAPIIoAPIKey:       "vpnapi",
+		IPQualityScoreAPIKey: "ipqs",
+		IPLocateAPIKey:       "iplocate",
+	}
+	providers = buildProviders(cfg, nil)
+	if len(providers) != 6 {
+		t.Fatalf("expected 6 providers when all premium keys are configured, got %d", len(providers))
 	}
 }

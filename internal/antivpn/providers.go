@@ -92,12 +92,25 @@ func buildProviders(cfg Config, logger *slog.Logger) []Provider {
 		}
 	}
 
-	return []Provider{
+	providers := []Provider{
 		&proxyCheckProvider{base: newBase("proxycheck.io"), apiKey: cfg.ProxyCheckAPIKey},
 		&ipapiISProvider{base: newBase("ipapi.is"), apiKey: cfg.IPAPIISAPIKey},
-		&ipHubProvider{base: newBase("IPHub"), apiKey: cfg.IPHubAPIKey},
-		&vpnAPIIoProvider{base: newBase("vpnapi.io"), apiKey: cfg.VPNAPIIoAPIKey},
 	}
+
+	if cfg.IPQualityScoreAPIKey != "" {
+		providers = append(providers, &ipQualityScoreProvider{base: newBase("IPQualityScore"), apiKey: cfg.IPQualityScoreAPIKey})
+	}
+	if cfg.IPLocateAPIKey != "" {
+		providers = append(providers, &ipLocateProvider{base: newBase("IPLocate"), apiKey: cfg.IPLocateAPIKey})
+	}
+	if cfg.IPHubAPIKey != "" {
+		providers = append(providers, &ipHubProvider{base: newBase("IPHub"), apiKey: cfg.IPHubAPIKey})
+	}
+	if cfg.VPNAPIIoAPIKey != "" {
+		providers = append(providers, &vpnAPIIoProvider{base: newBase("vpnapi.io"), apiKey: cfg.VPNAPIIoAPIKey})
+	}
+
+	return providers
 }
 
 func getJSON(ctx context.Context, base providerBase, endpoint string, headers map[string]string, target any) (int, error) {
@@ -159,6 +172,14 @@ func getJSON(ctx context.Context, base providerBase, endpoint string, headers ma
 	}
 
 	return statusCode, lastErr
+}
+
+func looksHostingConnectionType(value string) bool {
+	value = strings.ToLower(strings.TrimSpace(value))
+	return strings.Contains(value, "data center") ||
+		strings.Contains(value, "datacenter") ||
+		strings.Contains(value, "hosting") ||
+		strings.Contains(value, "cloud")
 }
 
 type proxyCheckProvider struct {
@@ -458,6 +479,261 @@ func (p *ipHubProvider) Lookup(ctx context.Context, ip netip.Addr) ProviderResul
 		})
 	}
 
+	return result
+}
+
+type ipQualityScoreProvider struct {
+	base  providerBase
+	apiKey string
+}
+
+func (p *ipQualityScoreProvider) Name() string {
+	return p.base.Name()
+}
+
+type ipQualityScoreResponse struct {
+	Success        bool   `json:"success"`
+	Message        string `json:"message"`
+	Proxy          bool   `json:"proxy"`
+	VPN            bool   `json:"vpn"`
+	ActiveVPN      bool   `json:"active_vpn"`
+	RecentAbuse    bool   `json:"recent_abuse"`
+	FraudScore     int    `json:"fraud_score"`
+	ConnectionType string `json:"connection_type"`
+	ISP            string `json:"ISP"`
+	Organization   string `json:"organization"`
+}
+
+func (p *ipQualityScoreProvider) Lookup(ctx context.Context, ip netip.Addr) ProviderResult {
+	start := time.Now()
+	result := ProviderResult{
+		Provider: p.Name(),
+	}
+
+	if p.apiKey == "" {
+		result.Summary = "provider disabled because no API key is configured"
+		return result
+	}
+
+	query := url.Values{}
+	query.Set("strictness", "1")
+	query.Set("allow_public_access_points", "true")
+	query.Set("mobile", "true")
+	query.Set("fast", "true")
+	endpoint := fmt.Sprintf("https://www.ipqualityscore.com/api/json/ip/%s/%s?%s", url.PathEscape(p.apiKey), url.PathEscape(ip.String()), query.Encode())
+
+	var payload ipQualityScoreResponse
+	status, err := getJSON(ctx, p.base, endpoint, nil, &payload)
+	result.HTTPStatus = status
+	result.LatencyMS = time.Since(start).Milliseconds()
+	if err != nil {
+		result.Error = err.Error()
+		result.Summary = "lookup failed"
+		return result
+	}
+
+	if !payload.Success && strings.TrimSpace(payload.Message) != "" {
+		result.Error = payload.Message
+		result.Summary = payload.Message
+		return result
+	}
+
+	result.Success = true
+
+	connectionType := strings.TrimSpace(payload.ConnectionType)
+	operator := strings.TrimSpace(payload.Organization)
+	if operator == "" {
+		operator = strings.TrimSpace(payload.ISP)
+	}
+
+	summaryParts := []string{}
+	if payload.ActiveVPN {
+		summaryParts = append(summaryParts, "active_vpn=true")
+		result.Signals = append(result.Signals, Signal{
+			Provider: p.Name(),
+			Category: "vpn",
+			Strength: "strong",
+			Reason:   "IPQualityScore detected an active VPN connection",
+			Weight:   80,
+		})
+	} else if payload.VPN {
+		summaryParts = append(summaryParts, "vpn=true")
+		result.Signals = append(result.Signals, Signal{
+			Provider: p.Name(),
+			Category: "vpn",
+			Strength: "strong",
+			Reason:   "IPQualityScore detected a VPN-backed network",
+			Weight:   70,
+		})
+	}
+
+	if connectionType != "" {
+		summaryParts = append(summaryParts, "connection_type="+connectionType)
+	}
+
+	isHosting := looksHostingConnectionType(connectionType)
+	if payload.Proxy && isHosting {
+		result.Signals = append(result.Signals, Signal{
+			Provider: p.Name(),
+			Category: "hosting",
+			Strength: "medium",
+			Reason:   fmt.Sprintf("IPQualityScore reported anonymized traffic from a hosting-backed network (%s)", connectionType),
+			Weight:   25,
+		})
+		summaryParts = append(summaryParts, "proxy=true")
+	} else if isHosting {
+		result.Signals = append(result.Signals, Signal{
+			Provider: p.Name(),
+			Category: "hosting",
+			Strength: "weak",
+			Reason:   fmt.Sprintf("IPQualityScore classified the network as hosting-oriented (%s)", connectionType),
+			Weight:   10,
+		})
+	}
+
+	if payload.FraudScore >= 85 && (payload.ActiveVPN || payload.VPN || isHosting) {
+		result.Signals = append(result.Signals, Signal{
+			Provider: p.Name(),
+			Category: "risk",
+			Strength: "medium",
+			Reason:   fmt.Sprintf("IPQualityScore reported elevated risk %d alongside VPN/hosting signals", payload.FraudScore),
+			Weight:   15,
+		})
+	}
+
+	if payload.FraudScore > 0 {
+		summaryParts = append(summaryParts, fmt.Sprintf("fraud_score=%d", payload.FraudScore))
+	}
+	if payload.RecentAbuse {
+		summaryParts = append(summaryParts, "recent_abuse=true")
+	}
+	if operator != "" {
+		summaryParts = append(summaryParts, "provider="+operator)
+	}
+	if len(summaryParts) == 0 {
+		summaryParts = append(summaryParts, "no vpn or hosting signal")
+	}
+	result.Summary = strings.Join(summaryParts, " ")
+	return result
+}
+
+type ipLocateProvider struct {
+	base  providerBase
+	apiKey string
+}
+
+func (p *ipLocateProvider) Name() string {
+	return p.base.Name()
+}
+
+type ipLocateResponse struct {
+	IP      string `json:"ip"`
+	Company struct {
+		Name string `json:"name"`
+		Type string `json:"type"`
+	} `json:"company"`
+	ASN struct {
+		Org  string `json:"org"`
+		Type string `json:"type"`
+	} `json:"asn"`
+	Privacy struct {
+		IsVPN       bool   `json:"is_vpn"`
+		IsProxy     bool   `json:"is_proxy"`
+		IsHosting   bool   `json:"is_hosting"`
+		IsAnonymous bool   `json:"is_anonymous"`
+		Service     string `json:"service"`
+	} `json:"privacy"`
+}
+
+func (p *ipLocateProvider) Lookup(ctx context.Context, ip netip.Addr) ProviderResult {
+	start := time.Now()
+	result := ProviderResult{
+		Provider: p.Name(),
+	}
+
+	if p.apiKey == "" {
+		result.Summary = "provider disabled because no API key is configured"
+		return result
+	}
+
+	query := url.Values{}
+	query.Set("apikey", p.apiKey)
+	endpoint := fmt.Sprintf("https://www.iplocate.io/api/lookup/%s?%s", url.PathEscape(ip.String()), query.Encode())
+
+	var payload ipLocateResponse
+	status, err := getJSON(ctx, p.base, endpoint, nil, &payload)
+	result.HTTPStatus = status
+	result.LatencyMS = time.Since(start).Milliseconds()
+	if err != nil {
+		result.Error = err.Error()
+		result.Summary = "lookup failed"
+		return result
+	}
+
+	result.Success = true
+	summaryParts := []string{}
+
+	if payload.Privacy.IsVPN {
+		service := strings.TrimSpace(payload.Privacy.Service)
+		if service == "" {
+			service = "unknown"
+		}
+		summaryParts = append(summaryParts, "vpn="+service)
+		result.Signals = append(result.Signals, Signal{
+			Provider: p.Name(),
+			Category: "vpn",
+			Strength: "strong",
+			Reason:   fmt.Sprintf("IPLocate detected a VPN-backed network (%s)", service),
+			Weight:   70,
+		})
+	}
+
+	if payload.Privacy.IsHosting {
+		operator := strings.TrimSpace(payload.Company.Name)
+		if operator == "" {
+			operator = strings.TrimSpace(payload.ASN.Org)
+		}
+		if operator == "" {
+			operator = "hosting operator"
+		}
+		summaryParts = append(summaryParts, "hosting=true")
+		result.Signals = append(result.Signals, Signal{
+			Provider: p.Name(),
+			Category: "hosting",
+			Strength: "medium",
+			Reason:   fmt.Sprintf("IPLocate classified the IP as hosting-backed (%s)", operator),
+			Weight:   25,
+		})
+	}
+
+	if !payload.Privacy.IsHosting && (strings.EqualFold(payload.Company.Type, "hosting") || strings.EqualFold(payload.ASN.Type, "hosting")) {
+		owner := strings.TrimSpace(payload.Company.Name)
+		if owner == "" {
+			owner = strings.TrimSpace(payload.ASN.Org)
+		}
+		if owner == "" {
+			owner = "hosting operator"
+		}
+		summaryParts = append(summaryParts, "company_type=hosting")
+		result.Signals = append(result.Signals, Signal{
+			Provider: p.Name(),
+			Category: "hosting",
+			Strength: "weak",
+			Reason:   fmt.Sprintf("IPLocate ASN/ownership data is hosting-oriented (%s)", owner),
+			Weight:   10,
+		})
+	}
+
+	if payload.Privacy.IsProxy {
+		summaryParts = append(summaryParts, "proxy=true")
+	}
+	if payload.Privacy.IsAnonymous {
+		summaryParts = append(summaryParts, "anonymous=true")
+	}
+	if len(summaryParts) == 0 {
+		summaryParts = append(summaryParts, "no vpn or hosting signal")
+	}
+	result.Summary = strings.Join(summaryParts, " ")
 	return result
 }
 
