@@ -25,6 +25,17 @@ type Supervisor struct {
 	checkSlots    chan struct{}
 }
 
+type synchronizedWriter struct {
+	mu *sync.Mutex
+	w  io.Writer
+}
+
+func (w synchronizedWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.w.Write(p)
+}
+
 func NewSupervisor(cfg Config, logger *slog.Logger) (*Supervisor, error) {
 	engine, err := NewEngine(cfg, logger)
 	if err != nil {
@@ -66,6 +77,11 @@ func (s *Supervisor) Run(ctx context.Context, serverCommand []string) error {
 		return fmt.Errorf("start server command: %w", err)
 	}
 
+	serverInput := synchronizedWriter{
+		mu: &s.commandMu,
+		w:  stdin,
+	}
+
 	s.logger.Info(
 		"anti-vpn supervisor active",
 		"mode", s.cfg.EffectiveMode(),
@@ -80,9 +96,32 @@ func (s *Supervisor) Run(ctx context.Context, serverCommand []string) error {
 	go func() {
 		_, _ = io.Copy(os.Stderr, stderr)
 	}()
-	go s.monitorLogFile(ctx, stdin)
+	go s.forwardConsoleInput(ctx, serverInput)
+	go s.monitorLogFile(ctx, serverInput)
 
 	return command.Wait()
+}
+
+func (s *Supervisor) forwardConsoleInput(ctx context.Context, stdin io.Writer) {
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Buffer(make([]byte, 0, 4*1024), 1024*1024)
+
+	for scanner.Scan() {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		if _, err := fmt.Fprintln(stdin, scanner.Text()); err != nil {
+			s.logger.Warn("anti-vpn stdin forwarding failed", "error", err)
+			return
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		s.logger.Warn("anti-vpn stdin scanner failed", "error", err)
+	}
 }
 
 func (s *Supervisor) monitorLogFile(ctx context.Context, stdin io.Writer) {
@@ -193,9 +232,6 @@ func (s *Supervisor) enforceDecision(stdin io.Writer, slot string, addr netip.Ad
 	if slot != "" && strings.TrimSpace(s.cfg.KickCommand) != "" {
 		commands = append(commands, fillCommandTemplate(s.cfg.KickCommand, ipText, slot))
 	}
-
-	s.commandMu.Lock()
-	defer s.commandMu.Unlock()
 
 	for _, command := range commands {
 		if _, err := fmt.Fprintln(stdin, command); err != nil {
