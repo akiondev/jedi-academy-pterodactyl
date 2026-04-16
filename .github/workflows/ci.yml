@@ -46,6 +46,7 @@ jobs:
           context: .
           file: docker/Dockerfile
           push: false
+          load: true
           tags: ${{ steps.image.outputs.name }}:ci-${{ github.sha }}
 
   publish-ghcr:
