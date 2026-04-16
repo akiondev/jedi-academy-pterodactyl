@@ -7,7 +7,7 @@
     <img src="https://img.shields.io/github/actions/workflow/status/akiondev/jedi-academy-pterodactyl/ci.yml?branch=main&style=for-the-badge&label=build&logo=githubactions&logoColor=white" alt="Build status" />
   </a>
   <a href="https://github.com/akiondev/jedi-academy-pterodactyl/releases">
-    <img src="https://img.shields.io/github/v/release/akiondev/jedi-academy-pterodactyl?style=for-the-badge&label=release&logo=github&logoColor=white" alt="Latest release" />
+    <img src="https://img.shields.io/badge/release-ready_for_tag-2ea043?style=for-the-badge&logo=github&logoColor=white" alt="Release ready for tag" />
   </a>
   <a href="https://github.com/akiondev/jedi-academy-pterodactyl/pkgs/container/jedi-academy-taystjk">
     <img src="https://img.shields.io/badge/ghcr-container-blue?style=for-the-badge&logo=github&logoColor=white" alt="GHCR container" />
@@ -19,7 +19,7 @@
     <img src="https://img.shields.io/badge/anti--vpn-documented-6f42c1?style=for-the-badge" alt="Anti-VPN documented" />
   </a>
   <a href="https://github.com/akiondev/jedi-academy-pterodactyl/blob/main/egg/egg-taystjk-pterodactyl.json">
-    <img src="https://img.shields.io/badge/pterodactyl-egg-ready-1f6feb?style=for-the-badge" alt="Pterodactyl egg ready" />
+    <img src="https://img.shields.io/static/v1?label=pterodactyl&message=egg%20ready&color=1f6feb&style=for-the-badge" alt="Pterodactyl egg ready" />
   </a>
   <a href="https://github.com/akiondev/jedi-academy-pterodactyl#key-behavior">
     <img src="https://img.shields.io/badge/game_assets-not_included-b22222?style=for-the-badge" alt="Game assets not included" />
