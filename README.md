@@ -20,7 +20,7 @@
 <p align="center">
   <a href="https://github.com/akiondev/jedi-academy-pterodactyl/blob/main/egg/egg-taystjk-pterodactyl.json"><strong>Download EGG</strong></a>
   &nbsp;•&nbsp;
-  <a href="https://github.com/akiondev/taystjk"><strong>TaystJK</strong></a>
+  <a href="https://github.com/taysta/TaystJK"><strong>TaystJK</strong></a>
   &nbsp;•&nbsp;
   <a href="https://github.com/JACoders/OpenJK"><strong>OpenJK</strong></a>
   &nbsp;•&nbsp;
