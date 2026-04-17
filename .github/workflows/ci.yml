@@ -55,6 +55,7 @@ jobs:
               - "scripts/**"
               - "bundled-addons/**"
               - "docs/addon_readme.md"
+              - "docs/addon_readme_advanced.md"
               - "go.mod"
 
   validate:

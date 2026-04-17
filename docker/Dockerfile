@@ -93,6 +93,7 @@ COPY --from=antivpn-builder /out/taystjk-antivpn /usr/local/bin/taystjk-antivpn
 RUN mkdir -p /opt/taystjk-docs/addons
 RUN mkdir -p /opt/taystjk-bundled-addons
 COPY --chown=container:container docs/addon_readme.md /opt/taystjk-docs/addons/ADDON_README.md
+COPY --chown=container:container docs/addon_readme_advanced.md /opt/taystjk-docs/addons/ADDON_README_ADVANCED.md
 COPY --chown=container:container bundled-addons/ /opt/taystjk-bundled-addons/
 COPY --chown=container:container scripts/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh /usr/local/bin/taystjk-antivpn /opt/taystjk-dist/taystjkded.*
