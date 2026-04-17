@@ -7,9 +7,7 @@
   <a href="https://github.com/akiondev/jedi-academy-pterodactyl/stargazers"><img src="https://img.shields.io/github/stars/akiondev/jedi-academy-pterodactyl?style=for-the-badge&label=stars" alt="GitHub stars" /></a>
   <a href="https://github.com/akiondev/jedi-academy-pterodactyl/issues"><img src="https://img.shields.io/github/issues/akiondev/jedi-academy-pterodactyl?style=for-the-badge&label=issues" alt="GitHub issues" /></a>
   <a href="https://github.com/akiondev/jedi-academy-pterodactyl/blob/main/LICENSE"><img src="https://img.shields.io/github/license/akiondev/jedi-academy-pterodactyl?style=for-the-badge&label=license" alt="GPL-3.0 license" /></a>
-</p>
-
-<p align="center">
+  <br>
   <a href="https://hub.docker.com/r/akiondev/jedi-academy-taystjk"><img src="https://img.shields.io/badge/docker%20pulls-not%20published-2496ed?style=for-the-badge&logo=docker&logoColor=white" alt="Docker pulls not published" /></a>
   <a href="https://github.com/akiondev/jedi-academy-pterodactyl/pkgs/container/jedi-academy-taystjk"><img src="https://img.shields.io/static/v1?label=ghcr%20pulls&message=unlimited&color=0969da&style=for-the-badge&logo=github" alt="GHCR pulls unlimited" /></a>
   <a href="https://github.com/akiondev/jedi-academy-pterodactyl/blob/main/docs/anti-vpn.md"><img src="https://img.shields.io/badge/anti--vpn-documented-6f42c1?style=for-the-badge" alt="Anti-VPN documented" /></a>
