@@ -683,6 +683,37 @@ install_managed_status_helper() {
   fi
 }
 
+install_managed_chatlogger_helper() {
+  local helper_path="${ADDON_DEFAULTS_DIR}/40-chatlogger.py"
+  local helper_exit=0
+
+  if [[ ! -f "$helper_path" ]]; then
+    warn "Managed chat logger helper was not found at ${helper_path}"
+    return 0
+  fi
+
+  if [[ "$ADDON_CHATLOGGER_ENABLED" != "true" ]]; then
+    set +e
+    python3 "$helper_path" --stop
+    helper_exit=$?
+    set -e
+
+    if [[ "$helper_exit" -ne 0 ]]; then
+      warn "Managed chat logger helper failed to stop cleanly with exit code ${helper_exit}"
+    fi
+    return 0
+  fi
+
+  set +e
+  python3 "$helper_path"
+  helper_exit=$?
+  set -e
+
+  if [[ "$helper_exit" -ne 0 ]]; then
+    warn "Managed chat logger helper failed to refresh with exit code ${helper_exit}"
+  fi
+}
+
 require_base_assets() {
   [[ -f /home/container/base/assets0.pk3 ]] || fail "Missing /home/container/base/assets0.pk3. Provide your legally owned Jedi Academy base assets before starting the server."
 }
@@ -712,6 +743,7 @@ configure_addons() {
   : "${ADDONS_ENABLED:=true}"
   : "${ADDONS_DIR:=/home/container/addons}"
   : "${ADDON_CHECKSERVERSTATUS_ENABLED:=true}"
+  : "${ADDON_CHATLOGGER_ENABLED:=true}"
   : "${ADDONS_STRICT:=false}"
   : "${ADDONS_TIMEOUT_SECONDS:=30}"
   : "${ADDONS_LOG_OUTPUT:=true}"
@@ -739,6 +771,16 @@ configure_addons() {
       ;;
   esac
   ADDON_CHECKSERVERSTATUS_ENABLED="$ADDON_CHECKSERVERSTATUS_ENABLED_NORMALIZED"
+
+  ADDON_CHATLOGGER_ENABLED_NORMALIZED="$(printf '%s' "$ADDON_CHATLOGGER_ENABLED" | tr '[:upper:]' '[:lower:]')"
+  case "$ADDON_CHATLOGGER_ENABLED_NORMALIZED" in
+    true|false) ;;
+    *)
+      warn "ADDON_CHATLOGGER_ENABLED=${ADDON_CHATLOGGER_ENABLED} is invalid, falling back to true"
+      ADDON_CHATLOGGER_ENABLED_NORMALIZED="true"
+      ;;
+  esac
+  ADDON_CHATLOGGER_ENABLED="$ADDON_CHATLOGGER_ENABLED_NORMALIZED"
 
   ADDONS_STRICT_NORMALIZED="$(printf '%s' "$ADDONS_STRICT" | tr '[:upper:]' '[:lower:]')"
   case "$ADDONS_STRICT_NORMALIZED" in
@@ -902,6 +944,7 @@ print_addon_summary() {
   kv "Examples dir" "$ADDON_EXAMPLES_DIR"
   kv "Defaults dir" "$ADDON_DEFAULTS_DIR"
   kv "Checkserverstatus" "$(printf '%s' "$(bool_state "$ADDON_CHECKSERVERSTATUS_ENABLED")" | tr '[:lower:]' '[:upper:]')"
+  kv "Chatlogger" "$(printf '%s' "$(bool_state "$ADDON_CHATLOGGER_ENABLED")" | tr '[:lower:]' '[:upper:]')"
   kv "Strict" "$(printf '%s' "$(bool_state "$ADDONS_STRICT")" | tr '[:lower:]' '[:upper:]')"
   kv "Timeout" "${ADDONS_TIMEOUT_SECONDS}s"
   kv "Log output" "$(printf '%s' "$(bool_state "$ADDONS_LOG_OUTPUT")" | tr '[:lower:]' '[:upper:]')"
@@ -1179,6 +1222,7 @@ print_paths() {
   kv "Runtime env" "/home/container/.runtime/taystjk-effective.env"
   kv "Runtime json" "/home/container/.runtime/taystjk-effective.json"
   kv "Log path" "$ANTI_VPN_LOG_PATH"
+  kv "Chatlogs dir" "/home/container/chatlogs"
   kv "Audit log" "$ANTI_VPN_AUDIT_LOG_PATH"
   kv "Cache path" "$ANTI_VPN_CACHE_PATH"
 }
@@ -1259,6 +1303,7 @@ sync_addon_docs
 sync_managed_addon_examples
 sync_managed_addon_defaults
 install_managed_status_helper
+install_managed_chatlogger_helper
 determine_runtime_ownership
 
 validate_server_binary_selection

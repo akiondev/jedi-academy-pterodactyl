@@ -159,6 +159,16 @@
       "field_type": "text"
     },
     {
+      "name": "Addon Chatlogger Enabled",
+      "description": "Runtime variable. Enable or disable the built-in chat logger addon helper that tails the active server.log and writes clean daily player chat logs into /home/container/chatlogs during managed startup.",
+      "env_variable": "ADDON_CHATLOGGER_ENABLED",
+      "default_value": "true",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|in:true,false",
+      "field_type": "text"
+    },
+    {
       "name": "Addon Directory",
       "description": "Runtime variable. Directory under /home/container that stores user-owned top-level addons plus image-managed docs, examples, and helper defaults in docs/, examples/, and defaults/ subdirectories.",
       "env_variable": "ADDONS_DIR",

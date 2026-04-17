@@ -13,6 +13,7 @@ This guide is synced into:
 - Rename a top-level addon file to end with `.disable` if you want to keep it without running it.
 - Files inside `docs/`, `examples/`, and `defaults/` are **not** executed.
 - The built-in `checkserverstatus` helper is controlled by `ADDON_CHECKSERVERSTATUS_ENABLED`.
+- The built-in `chatlogger` helper is controlled by `ADDON_CHATLOGGER_ENABLED` and writes daily player chat logs into `/home/container/chatlogs`.
 - Scripts run in alphabetical order before normal managed startup.
 - If `ADDONS_STRICT=false`, failed addons are logged and startup continues.
 - If `ADDONS_STRICT=true`, a failed addon stops startup.

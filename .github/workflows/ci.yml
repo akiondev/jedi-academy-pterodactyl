@@ -106,6 +106,10 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         run: bash -n scripts/entrypoint.sh scripts/install_taystjk.sh bundled-addons/defaults/30-checkserverstatus.sh
 
+      - name: Validate Python addon helpers
+        if: steps.gate.outputs.run == 'true'
+        run: python3 -m py_compile bundled-addons/defaults/40-chatlogger.py bundled-addons/examples/20-python-announcer.py
+
       - name: Validate egg JSON
         if: steps.gate.outputs.run == 'true'
         run: jq . egg/egg-taystjk-pterodactyl.json >/dev/null

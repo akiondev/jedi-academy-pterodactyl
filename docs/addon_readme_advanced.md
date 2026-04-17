@@ -51,6 +51,7 @@ The addon system has four separate areas under `/home/container/addons`:
     20-python-announcer.messages.txt
   defaults/
     30-checkserverstatus.sh
+    40-chatlogger.py
 ```
 
 Meaning:
@@ -151,6 +152,7 @@ Relevant variables:
 
 - `ADDONS_ENABLED`
 - `ADDON_CHECKSERVERSTATUS_ENABLED`
+- `ADDON_CHATLOGGER_ENABLED`
 - `ADDONS_STRICT`
 - `ADDONS_TIMEOUT_SECONDS`
 - `ADDONS_LOG_OUTPUT`
@@ -260,15 +262,18 @@ Instead:
 - prefer `TAYSTJK_ACTIVE_MOD_DIR`
 - treat manual alternative binaries/mod folders as user-owned paths that must already exist
 
-## Built-in managed helper
+## Built-in managed helpers
 
-The project ships a managed helper:
+The project ships managed helpers:
 
 ```text
 /home/container/addons/defaults/30-checkserverstatus.sh
+/home/container/addons/defaults/40-chatlogger.py
 ```
 
-This helper is not a user addon.
+These helpers are not user addons.
+
+### checkserverstatus
 
 It exists to provide the built-in command:
 
@@ -289,6 +294,28 @@ What it does:
 - prints current server information
 - reads runtime state
 - performs a live RCON `status` lookup when RCON is configured
+
+### chatlogger
+
+The managed chat logger:
+
+- is refreshed from the image every managed startup
+- is controlled by the egg variable `ADDON_CHATLOGGER_ENABLED`
+- tails the active `server.log`
+- writes clean daily chat logs into `/home/container/chatlogs`
+- maintains `/home/container/chatlogs/latest.log` as a symlink to the current day
+- keeps recent logs as plain `.log` files
+- compresses older logs to `.gz`
+- deletes very old logs automatically
+
+Current chat log format:
+
+```text
+[2026-04-17 15:42:08 CEST] [PUBLIC] Akion: hello everyone
+[2026-04-17 15:42:15 CEST] [WHISPER] Akion -> Robin: meet me at duel room
+```
+
+The helper strips Quake color codes such as `^1` from names and messages before writing them.
 
 ## Bundled example template
 

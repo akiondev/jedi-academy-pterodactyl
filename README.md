@@ -112,6 +112,7 @@ This repository also includes a lightweight addon loader for self-hosted Pteroda
 - Built-in addon docs: synced into `/home/container/addons/docs`
 - Bundled examples: synced into `/home/container/addons/examples` and kept up to date by the image, but not executed until copied into the top-level addon directory
 - Managed defaults: synced into `/home/container/addons/defaults`; the built-in `checkserverstatus` helper is installed from there automatically on managed startup and can be toggled with `ADDON_CHECKSERVERSTATUS_ENABLED`
+- Managed chat logs: the built-in `chatlogger` helper is refreshed from `/home/container/addons/defaults`, can be toggled with `ADDON_CHATLOGGER_ENABLED`, and writes clean daily player chat logs into `/home/container/chatlogs`
 - Managed server settings: the runtime can publish effective server values into `/home/container/.runtime/taystjk-effective.env` and selected non-sensitive values into `.json` for addons and admin utilities
 - Optional server.cfg overrides: when enabled, non-empty egg override fields can write selected values such as `rconpassword` into the active `server.cfg`; otherwise addons fall back to the current config and runtime defaults
 - Supported file types: `.sh` for Bash and `.py` for Python 3
