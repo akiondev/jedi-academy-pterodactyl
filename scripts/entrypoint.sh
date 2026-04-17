@@ -740,6 +740,24 @@ build_startup_command() {
 }
 
 configure_addons() {
+  if [[ "${ADDONS_ENABLED+x}" == "x" ]]; then
+    ADDONS_ENABLED_WAS_SET="true"
+  else
+    ADDONS_ENABLED_WAS_SET="false"
+  fi
+
+  if [[ "${ADDON_CHECKSERVERSTATUS_ENABLED+x}" == "x" ]]; then
+    ADDON_CHECKSERVERSTATUS_ENABLED_WAS_SET="true"
+  else
+    ADDON_CHECKSERVERSTATUS_ENABLED_WAS_SET="false"
+  fi
+
+  if [[ "${ADDON_CHATLOGGER_ENABLED+x}" == "x" ]]; then
+    ADDON_CHATLOGGER_ENABLED_WAS_SET="true"
+  else
+    ADDON_CHATLOGGER_ENABLED_WAS_SET="false"
+  fi
+
   : "${ADDONS_ENABLED:=true}"
   : "${ADDONS_DIR:=/home/container/addons}"
   : "${ADDON_CHECKSERVERSTATUS_ENABLED:=true}"
@@ -937,14 +955,25 @@ anti_vpn_allowlist_status() {
 }
 
 print_addon_summary() {
+  local checkserverstatus_note=""
+  local chatlogger_note=""
+
+  if [[ "$ADDON_CHECKSERVERSTATUS_ENABLED" == "true" && "${ADDON_CHECKSERVERSTATUS_ENABLED_WAS_SET:-true}" != "true" ]]; then
+    checkserverstatus_note="(legacy default)"
+  fi
+
+  if [[ "$ADDON_CHATLOGGER_ENABLED" == "true" && "${ADDON_CHATLOGGER_ENABLED_WAS_SET:-true}" != "true" ]]; then
+    chatlogger_note="(legacy default)"
+  fi
+
   section "ADDONS"
   kv_highlight "Status" "$(printf '%s' "$(bool_state "$ADDONS_ENABLED")" | tr '[:lower:]' '[:upper:]')"
   kv "User dir" "$ADDONS_DIR"
   kv "Docs dir" "$ADDON_DOCS_DIR"
   kv "Examples dir" "$ADDON_EXAMPLES_DIR"
   kv "Defaults dir" "$ADDON_DEFAULTS_DIR"
-  kv "Checkserverstatus" "$(printf '%s' "$(bool_state "$ADDON_CHECKSERVERSTATUS_ENABLED")" | tr '[:lower:]' '[:upper:]')"
-  kv "Chatlogger" "$(printf '%s' "$(bool_state "$ADDON_CHATLOGGER_ENABLED")" | tr '[:lower:]' '[:upper:]')"
+  kv "Checkserverstatus" "$(printf '%s' "$(bool_state "$ADDON_CHECKSERVERSTATUS_ENABLED")" | tr '[:lower:]' '[:upper:]') ${checkserverstatus_note}"
+  kv "Chatlogger" "$(printf '%s' "$(bool_state "$ADDON_CHATLOGGER_ENABLED")" | tr '[:lower:]' '[:upper:]') ${chatlogger_note}"
   kv "Strict" "$(printf '%s' "$(bool_state "$ADDONS_STRICT")" | tr '[:lower:]' '[:upper:]')"
   kv "Timeout" "${ADDONS_TIMEOUT_SECONDS}s"
   kv "Log output" "$(printf '%s' "$(bool_state "$ADDONS_LOG_OUTPUT")" | tr '[:lower:]' '[:upper:]')"
@@ -959,6 +988,14 @@ print_addon_summary() {
 
   if [[ -d "${ADDONS_DIR}/bundled-addons" ]]; then
     warn "Legacy bundled-addons directory detected; it is no longer executed by the addon loader"
+  fi
+
+  if [[ "$ADDON_CHECKSERVERSTATUS_ENABLED" == "true" && "${ADDON_CHECKSERVERSTATUS_ENABLED_WAS_SET:-true}" != "true" ]]; then
+    warn "ADDON_CHECKSERVERSTATUS_ENABLED is unset in this server instance; runtime is using the legacy default true for backwards compatibility"
+  fi
+
+  if [[ "$ADDON_CHATLOGGER_ENABLED" == "true" && "${ADDON_CHATLOGGER_ENABLED_WAS_SET:-true}" != "true" ]]; then
+    warn "ADDON_CHATLOGGER_ENABLED is unset in this server instance; runtime is using the legacy default true for backwards compatibility"
   fi
 }
 

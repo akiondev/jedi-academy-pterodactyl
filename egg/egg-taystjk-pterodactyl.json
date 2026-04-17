@@ -150,7 +150,7 @@
     },
     {
       "name": "Addon Checkserverstatus Enabled",
-      "description": "Runtime variable. Enable or disable the built-in checkserverstatus addon helper that is refreshed from the image and installed into /home/container/bin during managed startup.",
+      "description": "Runtime variable. Default is true on new installs. Enable or disable the built-in checkserverstatus addon helper that is refreshed from the image and installed into /home/container/bin during managed startup.",
       "env_variable": "ADDON_CHECKSERVERSTATUS_ENABLED",
       "default_value": "true",
       "user_viewable": true,
@@ -160,7 +160,7 @@
     },
     {
       "name": "Addon Chatlogger Enabled",
-      "description": "Runtime variable. Enable or disable the built-in chat logger addon helper that tails the active server.log and writes clean daily player chat logs into /home/container/chatlogs during managed startup.",
+      "description": "Runtime variable. Default is true on new installs. Enable or disable the built-in chat logger addon helper that tails the active server.log and writes clean daily player chat logs into /home/container/chatlogs during managed startup.",
       "env_variable": "ADDON_CHATLOGGER_ENABLED",
       "default_value": "true",
       "user_viewable": true,
