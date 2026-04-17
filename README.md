@@ -2,31 +2,21 @@
 
 <p align="center"><strong>Production-oriented Pterodactyl image and egg for TaystJK, with asset-safe delivery, lightweight Bash/Python addon loading, and optional anti-VPN runtime protection.</strong></p>
 
-<p align="center">
-  <a href="https://github.com/akiondev/jedi-academy-pterodactyl/actions/workflows/ci.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/akiondev/jedi-academy-pterodactyl/ci.yml?branch=main&style=for-the-badge&label=build&logo=githubactions&logoColor=white" alt="Build status" />
-  </a>
-  <a href="https://github.com/akiondev/jedi-academy-pterodactyl/releases">
-    <img src="https://img.shields.io/badge/release-ready_for_tag-2ea043?style=for-the-badge&logo=github&logoColor=white" alt="Release ready for tag" />
-  </a>
-  <a href="https://github.com/akiondev/jedi-academy-pterodactyl/pkgs/container/jedi-academy-taystjk">
-    <img src="https://img.shields.io/badge/ghcr-container-blue?style=for-the-badge&logo=github&logoColor=white" alt="GHCR container" />
-  </a>
-</p>
+<p align="center"><a href="https://github.com/akiondev/jedi-academy-pterodactyl/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/akiondev/jedi-academy-pterodactyl/ci.yml?branch=main&style=for-the-badge&label=build&logo=githubactions&logoColor=white" alt="Build status" /></a><a href="https://github.com/akiondev/jedi-academy-pterodactyl/stargazers"><img src="https://img.shields.io/github/stars/akiondev/jedi-academy-pterodactyl?style=for-the-badge&label=stars" alt="GitHub stars" /></a><a href="https://github.com/akiondev/jedi-academy-pterodactyl/issues"><img src="https://img.shields.io/github/issues/akiondev/jedi-academy-pterodactyl?style=for-the-badge&label=issues" alt="GitHub issues" /></a><a href="https://github.com/akiondev/jedi-academy-pterodactyl/blob/main/LICENSE"><img src="https://img.shields.io/github/license/akiondev/jedi-academy-pterodactyl?style=for-the-badge&label=license" alt="GPL-3.0 license" /></a></p>
 
-<p align="center">
-  <a href="https://github.com/akiondev/jedi-academy-pterodactyl/blob/main/docs/anti-vpn.md">
-    <img src="https://img.shields.io/badge/anti--vpn-documented-6f42c1?style=for-the-badge" alt="Anti-VPN documented" />
-  </a>
-  <a href="https://github.com/akiondev/jedi-academy-pterodactyl/blob/main/egg/egg-taystjk-pterodactyl.json">
-    <img src="https://img.shields.io/static/v1?label=pterodactyl&message=egg%20ready&color=1f6feb&style=for-the-badge" alt="Pterodactyl egg ready" />
-  </a>
-  <a href="https://github.com/akiondev/jedi-academy-pterodactyl#key-behavior">
-    <img src="https://img.shields.io/badge/game_assets-not_included-b22222?style=for-the-badge" alt="Game assets not included" />
-  </a>
-</p>
+<p align="center"><a href="https://hub.docker.com/r/akiondev/jedi-academy-taystjk"><img src="https://img.shields.io/docker/pulls/akiondev/jedi-academy-taystjk?style=for-the-badge&logo=docker&label=docker%20pulls" alt="Docker pulls" /></a><a href="https://github.com/akiondev/jedi-academy-pterodactyl/pkgs/container/jedi-academy-taystjk"><img src="https://img.shields.io/static/v1?label=ghcr%20pulls&message=unlimited&color=0969da&style=for-the-badge&logo=github" alt="GHCR pulls unlimited" /></a><a href="https://github.com/akiondev/jedi-academy-pterodactyl/releases"><img src="https://img.shields.io/badge/release-ready_for_tag-2ea043?style=for-the-badge&logo=github&logoColor=white" alt="Release ready for tag" /></a><a href="https://github.com/akiondev/jedi-academy-pterodactyl/blob/main/docs/anti-vpn.md"><img src="https://img.shields.io/badge/anti--vpn-documented-6f42c1?style=for-the-badge" alt="Anti-VPN documented" /></a><a href="https://github.com/akiondev/jedi-academy-pterodactyl/blob/main/egg/egg-taystjk-pterodactyl.json"><img src="https://img.shields.io/static/v1?label=pterodactyl&message=egg%20ready&color=1f6feb&style=for-the-badge" alt="Pterodactyl egg ready" /></a><a href="https://github.com/akiondev/jedi-academy-pterodactyl#key-behavior"><img src="https://img.shields.io/badge/game_assets-not_included-b22222?style=for-the-badge" alt="Game assets not included" /></a></p>
 
 Pterodactyl Docker image and egg for running a **TaystJK** dedicated server without redistributing copyrighted **Jedi Academy** game assets.
+
+License: **GPL-3.0**
+
+## Quick install
+
+1. Import [egg/egg-taystjk-pterodactyl.json](egg/egg-taystjk-pterodactyl.json) into Pterodactyl.
+2. Create a server with the default image `ghcr.io/akiondev/jedi-academy-taystjk:latest`.
+3. Set `COPYRIGHT_ACKNOWLEDGED=true`.
+4. Add your legally owned Jedi Academy base assets manually into `/home/container/base`.
+5. Start the server and verify that `/home/container/base/assets0.pk3` exists.
 
 ## What this repo contains
 
