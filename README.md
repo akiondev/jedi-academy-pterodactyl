@@ -45,7 +45,7 @@ Pterodactyl Docker image and egg for running a **TaystJK** dedicated server with
 
 - Builds the dedicated server from TaystJK source
 - Does **not** bundle `assets*.pk3` or other copyrighted base game files
-- Supports asset provisioning through `manual`, `url`, or `none`
+- Requires server owners to provide their own legally owned Jedi Academy base assets manually in `/home/container/base`
 - Uses `FS_GAME_MOD=taystjk` by default
 - Allows switching to manually installed mod folders such as `base`, `japlus`, `japro`, or `mbii`
 - Allows switching to a manually uploaded alternative dedicated server binary through `SERVER_BINARY`

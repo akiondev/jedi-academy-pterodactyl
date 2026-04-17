@@ -54,7 +54,7 @@ fail() {
   printf '%b\n' "${COLOR_ERROR}[ERROR]${COLOR_RESET} $*" >&2
   printf '\n' >&2
   section "What to Check Next" >&2
-  printf '%s\n' "- Confirm the selected asset archive contains GameData/base/assets0.pk3 or base/assets0.pk3" >&2
+  printf '%s\n' "- Confirm /mnt/server/base/assets0.pk3 exists and comes from your own legally owned Jedi Academy installation" >&2
   printf '%s\n' "- Confirm COPYRIGHT_ACKNOWLEDGED is set to true" >&2
   printf '%s\n' "- Confirm the selected mod directory and config names are valid" >&2
   exit 1
@@ -180,7 +180,6 @@ list_dir_files() {
 
 print_install_summary() {
   section "Installation Summary"
-  kv "Assets mode    :" "$GAME_ASSETS_MODE"
   kv "Mod directory  :" "$active_game_dir"
   kv "Mod mode       :" "$(describe_mod_ownership "$active_game_dir")"
   kv "Server config  :" "${active_game_dir}/${SERVER_CONFIG}"
@@ -225,10 +224,6 @@ cd /mnt/server
 setup_colors
 print_header
 
-: "${GAME_ASSETS_MODE:=manual}"
-: "${GAME_ASSETS_URL:=}"
-: "${GAME_ASSETS_ARCHIVE_TYPE:=auto}"
-: "${GAME_ASSETS_SHA256:=}"
 : "${COPYRIGHT_ACKNOWLEDGED:=false}"
 : "${SERVER_PORT:=29070}"
 : "${SERVER_CONFIG:=server.cfg}"
@@ -250,44 +245,6 @@ active_game_dir="$(resolve_active_game_dir "$FS_GAME_MOD")"
 prepare_selected_mod_directory
 print_install_summary
 
-extract_assets_archive() {
-  local archive="$1"
-  local workdir="/tmp/taystjk-install/assets"
-  rm -rf "$workdir"
-  mkdir -p "$workdir"
-
-  case "$GAME_ASSETS_ARCHIVE_TYPE" in
-    auto)
-      if tar -tzf "$archive" >/dev/null 2>&1; then
-        tar -xzf "$archive" -C "$workdir"
-      elif unzip -t "$archive" >/dev/null 2>&1; then
-        unzip -oq "$archive" -d "$workdir"
-      else
-        fail "Could not detect asset archive type automatically."
-      fi
-      ;;
-    tar.gz|tgz)
-      tar -xzf "$archive" -C "$workdir"
-      ;;
-    zip)
-      unzip -oq "$archive" -d "$workdir"
-      ;;
-    *)
-      fail "Unsupported GAME_ASSETS_ARCHIVE_TYPE: $GAME_ASSETS_ARCHIVE_TYPE"
-      ;;
-  esac
-
-  if [[ -d "$workdir/GameData/base" ]]; then
-    cp -an "$workdir/GameData/base"/* /mnt/server/base/ || true
-  elif [[ -d "$workdir/base" ]]; then
-    cp -an "$workdir/base"/* /mnt/server/base/ || true
-  else
-    cp -an "$workdir"/* /mnt/server/base/ || true
-  fi
-
-  [[ -f /mnt/server/base/assets0.pk3 ]] || fail "Asset archive extracted, but base/assets0.pk3 was not found."
-}
-
 if is_taystjk_managed_mod_dir "$active_game_dir" && [[ ! -f "/mnt/server/${active_game_dir}/${SERVER_CONFIG}" ]]; then
   cat > "/mnt/server/${active_game_dir}/${SERVER_CONFIG}" <<CFG
 seta sv_hostname "TaystJK Pterodactyl Server"
@@ -301,32 +258,9 @@ vstr d1
 CFG
 fi
 
-case "$GAME_ASSETS_MODE" in
-  manual)
-    info "GAME_ASSETS_MODE is set to manual"
-    warn "Upload your legally owned Jedi Academy files so that /mnt/server/base/assets0.pk3 exists"
-    ;;
-  url)
-    [[ -n "$GAME_ASSETS_URL" ]] || fail "GAME_ASSETS_MODE=url requires GAME_ASSETS_URL"
-    local_archive="/tmp/taystjk-install/game_assets"
-    info "Downloading user-provided game assets archive"
-    curl -L --fail --retry 3 "$GAME_ASSETS_URL" -o "$local_archive"
-
-    if [[ -n "$GAME_ASSETS_SHA256" ]]; then
-      info "Verifying SHA256"
-      echo "${GAME_ASSETS_SHA256}  ${local_archive}" | sha256sum -c -
-    fi
-
-    extract_assets_archive "$local_archive"
-    ;;
-  none)
-    info "GAME_ASSETS_MODE is set to none"
-    warn "Assuming assets will be mounted or added later"
-    ;;
-  *)
-    fail "Unsupported GAME_ASSETS_MODE: $GAME_ASSETS_MODE"
-    ;;
-esac
+info "Game assets are manual-only"
+warn "This egg does not download, upload, fetch, or unpack Jedi Academy assets"
+warn "Provide your own legally owned base assets manually in /mnt/server/base so that assets0.pk3 exists"
 
 print_install_checks
 print_install_inventory
