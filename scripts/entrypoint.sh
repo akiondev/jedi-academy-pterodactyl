@@ -455,6 +455,21 @@ normalize_server_binary_name() {
   printf '%s\n' "$requested"
 }
 
+is_taystjk_managed_mod_dir() {
+  local mod_dir="$1"
+  [[ "$mod_dir" == "taystjk" ]]
+}
+
+is_base_mode() {
+  local mod_dir="$1"
+  [[ "$mod_dir" == "base" ]]
+}
+
+is_image_managed_server_binary() {
+  local binary_name="$1"
+  [[ -f "/opt/taystjk-dist/${binary_name}" ]]
+}
+
 resolve_active_game_dir() {
   local requested="$1"
   local requested_lower
@@ -493,7 +508,7 @@ sync_runtime_files() {
   local found_runtime_binary=0
 
   if compgen -G "/opt/taystjk-dist/taystjkded.*" >/dev/null; then
-    log "Syncing image-managed runtime files into container volume"
+    log "Syncing image-managed TaystJK runtime files into container volume"
     for runtime_binary in /opt/taystjk-dist/taystjkded.*; do
       [[ -f "$runtime_binary" ]] || continue
       install -m 0755 "$runtime_binary" "/home/container/${runtime_binary##*/}"
@@ -509,6 +524,88 @@ sync_runtime_files() {
   if [[ "$found_runtime_binary" -eq 0 ]]; then
     log "No image-provided dedicated binaries were found under /opt/taystjk-dist"
   fi
+}
+
+determine_runtime_ownership() {
+  if is_image_managed_server_binary "$server_binary_name"; then
+    SERVER_BINARY_OWNERSHIP="image-managed TaystJK"
+  else
+    SERVER_BINARY_OWNERSHIP="manual user-supplied"
+  fi
+
+  if is_taystjk_managed_mod_dir "$active_game_dir"; then
+    ACTIVE_MOD_OWNERSHIP="image-managed TaystJK"
+  elif is_base_mode "$active_game_dir"; then
+    ACTIVE_MOD_OWNERSHIP="manual base assets"
+  else
+    ACTIVE_MOD_OWNERSHIP="manual user-supplied"
+  fi
+}
+
+validate_server_binary_selection() {
+  if [[ -f "$server_binary_path" ]]; then
+    return 0
+  fi
+
+  if is_image_managed_server_binary "$server_binary_name"; then
+    fail "Configured TaystJK server binary ${server_binary_name} was not found in the image-managed runtime"
+  fi
+
+  fail "Configured manual server binary ${server_binary_name} was not found under /home/container. Only TaystJK binaries are synced automatically; manual alternatives must be uploaded by the server owner"
+}
+
+ensure_managed_taystjk_server_config() {
+  local config_path="/home/container/${active_game_dir}/${SERVER_CONFIG}"
+
+  if ! is_taystjk_managed_mod_dir "$active_game_dir"; then
+    return 0
+  fi
+
+  if [[ -f "$config_path" ]]; then
+    return 0
+  fi
+
+  cat > "$config_path" <<CFG
+seta sv_hostname "TaystJK Pterodactyl Server"
+seta g_motd "Powered by TaystJK on Pterodactyl"
+seta sv_maxclients "16"
+seta dedicated "2"
+seta net_port "${SERVER_PORT}"
+seta g_gametype "0"
+set d1 "set g_gametype 0; map mp/ffa3; set nextmap vstr d1"
+vstr d1
+CFG
+}
+
+validate_selected_runtime_paths() {
+  local mod_path="/home/container/${active_game_dir}"
+  local config_path="${mod_path}/${SERVER_CONFIG}"
+
+  if is_taystjk_managed_mod_dir "$active_game_dir"; then
+    [[ -d "$mod_path" ]] || fail "Managed TaystJK mod directory ${active_game_dir} was not found in the image-managed runtime"
+  elif is_base_mode "$active_game_dir"; then
+    [[ -d "$mod_path" ]] || fail "Configured base assets directory was not found under /home/container/base"
+  else
+    [[ -d "$mod_path" ]] || fail "Configured manual mod directory ${active_game_dir} was not found under /home/container. Only TaystJK is prepared automatically; manual mod folders must be uploaded by the server owner"
+
+    if ! find "$mod_path" -maxdepth 1 -type f | read -r _; then
+      fail "Configured manual mod directory ${active_game_dir} exists but appears empty. Manual mod folders must already contain their own files before startup"
+    fi
+  fi
+
+  if [[ -f "$config_path" ]]; then
+    return 0
+  fi
+
+  if is_taystjk_managed_mod_dir "$active_game_dir"; then
+    fail "Managed TaystJK server config ${active_game_dir}/${SERVER_CONFIG} is missing after runtime preparation"
+  fi
+
+  if is_base_mode "$active_game_dir"; then
+    fail "Configured server config base/${SERVER_CONFIG} was not found. Base mode is allowed, but its config file must be provided manually"
+  fi
+
+  fail "Configured server config ${active_game_dir}/${SERVER_CONFIG} was not found. Manual mod directories must provide their own config file"
 }
 
 sync_addon_docs() {
@@ -931,9 +1028,11 @@ print_runtime_summary() {
   section "SERVER"
   kv_highlight "Mode" "Dedicated server"
   kv_highlight "Mod" "$active_game_dir"
+  kv "Mod mode" "$ACTIVE_MOD_OWNERSHIP"
   kv_highlight "Config" "${active_game_dir}/${SERVER_CONFIG}"
   kv_highlight "Port" "$TAYSTJK_EFFECTIVE_SERVER_PORT"
   kv_highlight "Binary" "$server_binary_name"
+  kv "Binary mode" "$SERVER_BINARY_OWNERSHIP"
   if [[ "$SERVER_CFG_OVERRIDES_ENABLED" == "true" ]]; then
     kv "Cfg mode" "managed"
   else
@@ -1028,12 +1127,12 @@ print_mod_detection() {
     warn "Server config missing"
   fi
 
-  if [[ "$active_game_dir" == "base" ]]; then
+  if is_taystjk_managed_mod_dir "$active_game_dir"; then
+    ok "Using image-managed TaystJK mod directory"
+  elif [[ "$active_game_dir" == "base" ]]; then
     info "Running in base mode without an fs_game override"
-  elif find "$mod_path" -maxdepth 1 -type f | read -r _; then
-    ok "Active mod directory contains files"
   else
-    warn "Active mod directory exists but appears empty"
+    ok "Using manually supplied mod directory"
   fi
 }
 
@@ -1087,9 +1186,9 @@ print_launch_decision() {
   ready "Startup checks passed"
   print_command_preview
   if [[ "$ANTI_VPN_EFFECTIVE_MODE" == "off" ]]; then
-    info "Launching TaystJK dedicated server now..."
+    info "Launching configured dedicated server now..."
   else
-    info "Launching TaystJK dedicated server under anti-VPN supervision..."
+    info "Launching configured dedicated server under anti-VPN supervision..."
   fi
 }
 
@@ -1127,12 +1226,16 @@ configure_addons
 configure_server_settings
 configure_anti_vpn
 
-mkdir -p /home/container/base /home/container/logs "/home/container/${active_game_dir}"
+mkdir -p /home/container/base /home/container/logs
+if is_taystjk_managed_mod_dir "$active_game_dir"; then
+  mkdir -p "/home/container/${active_game_dir}"
+fi
 sync_runtime_files
 sync_addon_docs
 sync_bundled_addon_defaults
+determine_runtime_ownership
 
-[[ -f "$server_binary_path" ]] || fail "Configured server binary ${server_binary_name} was not found in the container volume or image runtime"
+validate_server_binary_selection
 chmod +x "$server_binary_path"
 
 export HOME=/home/container
@@ -1151,18 +1254,8 @@ if [[ "$#" -gt 0 && "$1" != "--panel-startup" ]]; then
   exec "$@"
 fi
 
-if [[ ! -f "/home/container/${active_game_dir}/${SERVER_CONFIG}" ]]; then
-  cat > "/home/container/${active_game_dir}/${SERVER_CONFIG}" <<CFG
-seta sv_hostname "TaystJK Pterodactyl Server"
-seta g_motd "Powered by TaystJK on Pterodactyl"
-seta sv_maxclients "16"
-seta dedicated "2"
-seta net_port "${SERVER_PORT}"
-seta g_gametype "0"
-set d1 "set g_gametype 0; map mp/ffa3; set nextmap vstr d1"
-vstr d1
-CFG
-fi
+ensure_managed_taystjk_server_config
+validate_selected_runtime_paths
 
 resolve_effective_server_settings "/home/container/${active_game_dir}/${SERVER_CONFIG}"
 

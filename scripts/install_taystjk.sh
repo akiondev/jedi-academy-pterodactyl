@@ -83,6 +83,48 @@ resolve_active_game_dir() {
   printf '%s\n' "$requested"
 }
 
+is_taystjk_managed_mod_dir() {
+  local mod_dir="$1"
+  [[ "$mod_dir" == "taystjk" ]]
+}
+
+is_base_mode() {
+  local mod_dir="$1"
+  [[ "$mod_dir" == "base" ]]
+}
+
+describe_mod_ownership() {
+  local mod_dir="$1"
+
+  if is_taystjk_managed_mod_dir "$mod_dir"; then
+    printf 'image-managed TaystJK\n'
+  elif is_base_mode "$mod_dir"; then
+    printf 'manual base assets\n'
+  else
+    printf 'manual user-supplied\n'
+  fi
+}
+
+prepare_selected_mod_directory() {
+  local mod_path="/mnt/server/${active_game_dir}"
+
+  if is_taystjk_managed_mod_dir "$active_game_dir"; then
+    mkdir -p "$mod_path"
+    return 0
+  fi
+
+  if is_base_mode "$active_game_dir"; then
+    return 0
+  fi
+
+  if [[ -d "$mod_path" ]]; then
+    return 0
+  fi
+
+  warn "Configured manual mod directory ${active_game_dir} does not exist yet"
+  warn "Only taystjk is prepared automatically. Upload manual alternative mod folders into ${mod_path} before startup"
+}
+
 print_path_status() {
   local label="$1"
   local path="$2"
@@ -140,6 +182,7 @@ print_install_summary() {
   section "Installation Summary"
   kv "Assets mode    :" "$GAME_ASSETS_MODE"
   kv "Mod directory  :" "$active_game_dir"
+  kv "Mod mode       :" "$(describe_mod_ownership "$active_game_dir")"
   kv "Server config  :" "${active_game_dir}/${SERVER_CONFIG}"
   kv "Server port    :" "$SERVER_PORT"
   printf '\n'
@@ -148,7 +191,15 @@ print_install_summary() {
 print_install_checks() {
   section "Installation Checks"
   ok "Server directories created"
-  ok "Active mod directory prepared at /mnt/server/${active_game_dir}"
+  if is_taystjk_managed_mod_dir "$active_game_dir"; then
+    ok "Managed TaystJK mod directory prepared at /mnt/server/${active_game_dir}"
+  elif is_base_mode "$active_game_dir"; then
+    ok "Base assets directory ready at /mnt/server/base"
+  elif [[ -d "/mnt/server/${active_game_dir}" ]]; then
+    ok "Manual mod directory detected at /mnt/server/${active_game_dir}"
+  else
+    warn "Manual mod directory is not present yet at /mnt/server/${active_game_dir}"
+  fi
   print_path_status "Base assets" "/mnt/server/base/assets0.pk3"
   printf '\n'
 }
@@ -189,7 +240,7 @@ mkdir -p /mnt/server/base /mnt/server/logs /mnt/server/addons /mnt/server/addons
 
 require_safe_component "$SERVER_CONFIG" "SERVER_CONFIG"
 active_game_dir="$(resolve_active_game_dir "$FS_GAME_MOD")"
-mkdir -p "/mnt/server/${active_game_dir}"
+prepare_selected_mod_directory
 print_install_summary
 
 extract_assets_archive() {
@@ -230,7 +281,7 @@ extract_assets_archive() {
   [[ -f /mnt/server/base/assets0.pk3 ]] || fail "Asset archive extracted, but base/assets0.pk3 was not found."
 }
 
-if [[ ! -f "/mnt/server/${active_game_dir}/${SERVER_CONFIG}" ]]; then
+if is_taystjk_managed_mod_dir "$active_game_dir" && [[ ! -f "/mnt/server/${active_game_dir}/${SERVER_CONFIG}" ]]; then
   cat > "/mnt/server/${active_game_dir}/${SERVER_CONFIG}" <<CFG
 seta sv_hostname "TaystJK Pterodactyl Server"
 seta g_motd "Powered by TaystJK on Pterodactyl"
@@ -273,8 +324,11 @@ esac
 print_install_checks
 print_install_inventory
 info "Selected fs_game mod directory: ${active_game_dir}"
-if [[ "$active_game_dir" != "base" ]]; then
-  warn "If you switch to japlus, japro, mbii or another mod, install that mod manually into /mnt/server/${active_game_dir}"
+if is_taystjk_managed_mod_dir "$active_game_dir"; then
+  ok "taystjk remains the only automatically prepared mod directory"
+else
+  warn "Selected mod directory ${active_game_dir} is treated as a manual user-owned path"
+  warn "Provide ${active_game_dir}/${SERVER_CONFIG} and any required mod files yourself before startup"
 fi
 
 print_install_result

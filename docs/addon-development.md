@@ -43,6 +43,7 @@ Recommended rule:
 
 - use Bash for simple file/setup tasks
 - use Python for more advanced logic, API calls, parsing, and automation
+- do not hardcode `taystjk` unless your addon is intentionally TaystJK-specific
 
 ## Working directory and paths
 
@@ -61,7 +62,7 @@ Recommended practice:
 Good example:
 
 ```bash
-CONFIG_PATH="/home/container/${FS_GAME_MOD:-taystjk}/${SERVER_CONFIG:-server.cfg}"
+CONFIG_PATH="/home/container/${TAYSTJK_ACTIVE_MOD_DIR:-${FS_GAME_MOD:-}}/${TAYSTJK_ACTIVE_SERVER_CONFIG:-${SERVER_CONFIG:-server.cfg}}"
 ```
 
 Bad example:
@@ -108,13 +109,15 @@ The `.env` file includes the full effective runtime state, including the current
 
 The `SERVER_CFG_OVERRIDES_ENABLED` toggle controls whether non-empty egg override fields are written into the active `server.cfg`. When an override field is blank, your addon should expect the runtime state to fall back to the current config value and then to the built-in default.
 
+The image-managed runtime only auto-prepares the default `taystjk` path. If a server owner switches to a manual alternative binary or mod folder, treat those paths as user-owned and assume they must already exist.
+
 Use sensible defaults when reading them.
 
 ### Bash example
 
 ```bash
-MOD_DIR="${FS_GAME_MOD:-taystjk}"
-CONFIG_FILE="${SERVER_CONFIG:-server.cfg}"
+MOD_DIR="${TAYSTJK_ACTIVE_MOD_DIR:-${FS_GAME_MOD:-}}"
+CONFIG_FILE="${TAYSTJK_ACTIVE_SERVER_CONFIG:-${SERVER_CONFIG:-server.cfg}}"
 ```
 
 ### Python example
@@ -122,7 +125,7 @@ CONFIG_FILE="${SERVER_CONFIG:-server.cfg}"
 ```python
 import os
 
-mod_dir = os.getenv("TAYSTJK_ACTIVE_MOD_DIR", os.getenv("FS_GAME_MOD", "taystjk"))
+mod_dir = os.getenv("TAYSTJK_ACTIVE_MOD_DIR", os.getenv("FS_GAME_MOD", ""))
 config_file = os.getenv("TAYSTJK_ACTIVE_SERVER_CONFIG", os.getenv("SERVER_CONFIG", "server.cfg"))
 ```
 
@@ -152,8 +155,8 @@ set -euo pipefail
 
 echo "[addon:bash] Starting"
 
-MOD_DIR="${FS_GAME_MOD:-taystjk}"
-CONFIG_FILE="${SERVER_CONFIG:-server.cfg}"
+MOD_DIR="${TAYSTJK_ACTIVE_MOD_DIR:-${FS_GAME_MOD:-}}"
+CONFIG_FILE="${TAYSTJK_ACTIVE_SERVER_CONFIG:-${SERVER_CONFIG:-server.cfg}}"
 TARGET="/home/container/${MOD_DIR}/${CONFIG_FILE}"
 
 if [[ ! -f "${TARGET}" ]]; then
@@ -190,8 +193,8 @@ import sys
 
 print("[addon:python] Starting")
 
-mod_dir = os.getenv("FS_GAME_MOD", "taystjk")
-config_file = os.getenv("SERVER_CONFIG", "server.cfg")
+mod_dir = os.getenv("TAYSTJK_ACTIVE_MOD_DIR", os.getenv("FS_GAME_MOD", ""))
+config_file = os.getenv("TAYSTJK_ACTIVE_SERVER_CONFIG", os.getenv("SERVER_CONFIG", "server.cfg"))
 path = f"/home/container/{mod_dir}/{config_file}"
 
 if not os.path.isfile(path):
@@ -349,8 +352,8 @@ set -euo pipefail
 
 echo "[addon:bash] Patching hostname"
 
-MOD_DIR="${FS_GAME_MOD:-taystjk}"
-CONFIG_FILE="${SERVER_CONFIG:-server.cfg}"
+MOD_DIR="${TAYSTJK_ACTIVE_MOD_DIR:-${FS_GAME_MOD:-}}"
+CONFIG_FILE="${TAYSTJK_ACTIVE_SERVER_CONFIG:-${SERVER_CONFIG:-server.cfg}}"
 TARGET="/home/container/${MOD_DIR}/${CONFIG_FILE}"
 
 if [[ -f "${TARGET}" ]]; then

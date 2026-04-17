@@ -29,6 +29,8 @@ They do **not**:
 - affect other users' servers
 - affect other Pterodactyl containers
 
+The runtime stays TaystJK-first, but your addons should not assume the active binary or mod directory is always TaystJK. The image manages the default TaystJK runtime automatically, while manually supplied alternatives remain user-owned paths.
+
 ## Addon directory
 
 Place addon files here:
@@ -251,6 +253,8 @@ The `.env` file includes the full effective runtime state, including the current
 
 The optional `SERVER_CFG_OVERRIDES_ENABLED` toggle controls whether non-empty override variables from the egg are written back into the active `server.cfg`. When an override field is left blank, addons fall back to the current config value and then to the built-in runtime default.
 
+Only the default `taystjk` path is prepared automatically by the managed runtime. If the server owner points `SERVER_BINARY` or `FS_GAME_MOD` at a manual alternative, your addon should expect those files and folders to be user-owned and already present.
+
 ## Strict mode
 
 ### Best-effort mode
@@ -349,8 +353,8 @@ set -euo pipefail
 
 echo "[addon:bash] Starting config backup"
 
-MOD_DIR="${FS_GAME_MOD:-taystjk}"
-CONFIG_FILE="${SERVER_CONFIG:-server.cfg}"
+MOD_DIR="${TAYSTJK_ACTIVE_MOD_DIR:-${FS_GAME_MOD:-}}"
+CONFIG_FILE="${TAYSTJK_ACTIVE_SERVER_CONFIG:-${SERVER_CONFIG:-server.cfg}}"
 CONFIG_PATH="/home/container/${MOD_DIR}/${CONFIG_FILE}"
 BACKUP_DIR="/home/container/backups"
 
@@ -444,7 +448,7 @@ Check:
 
 - addon support is enabled
 - the server used the normal managed startup path
-- `30-checkserverstatus.sh` still exists in `/home/container/addons`
+- `30-checkserverstatus.sh` still exists in `/home/container/addons/bundled-addons`
 - `/home/container/bin/checkserverstatus` exists inside the container
 
 ### My Python addon fails

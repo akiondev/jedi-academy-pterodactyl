@@ -21,5 +21,7 @@
 - the default should remain `taystjk`
 - the egg should still allow users to change mod folder through variables
 - `base` should be treated as a special case so startup can run without `+set fs_game base`
-- `server.cfg` should be created in the active mod folder (`taystjk`, `japlus`, `japro`, etc.)
+- only the managed `taystjk` default path should get automatic mod-directory preparation and default `server.cfg` generation
+- `base` and other alternative mod folders should remain manual user-owned paths
+- when a manual alternative mod folder is selected, the project should validate that it already exists and contains the required files
 - mod files should not be automatically downloaded by this egg, but added manually by the user

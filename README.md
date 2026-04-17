@@ -48,11 +48,32 @@ Pterodactyl Docker image and egg for running a **TaystJK** dedicated server with
 - Supports asset provisioning through `manual`, `url`, or `none`
 - Uses `FS_GAME_MOD=taystjk` by default
 - Allows switching to manually installed mod folders such as `base`, `japlus`, `japro`, or `mbii`
+- Allows switching to a manually uploaded alternative dedicated server binary through `SERVER_BINARY`
 - Supports lightweight runtime addons from `/home/container/addons` using `.sh` and `.py` scripts executed alphabetically before normal startup
 - Syncs `ADDONS.md` and `ADDON_DEVELOPMENT.md` automatically into the addon directory for server owners
 - Ships two bundled example addons by default in `/home/container/addons/bundled-addons`: a Python RCON announcer and a Bash-powered `checkserverstatus` utility that can be run from the Pterodactyl console
 - Ships a stronger addon baseline in the runtime image with `python3`, `pip`, `venv`, `sqlite3`, `curl`, `wget`, `jq`, `git`, `rsync`, `procps`, `tar`, and `unzip`
 - Optional anti-VPN supervision using online API checks with cache, allowlist, structured logging and weighted decisions
+
+## Managed vs manual paths
+
+This repository is intentionally **TaystJK-first**:
+
+- the Docker image automatically builds and syncs the TaystJK dedicated server runtime
+- the default managed dedicated server binary is `taystjkded.*`
+- the default managed mod directory is `taystjk`
+
+Manual alternatives are still allowed, but they are **not** automatically managed:
+
+- `SERVER_BINARY` may point at a manually uploaded alternative binary under `/home/container`
+- `FS_GAME_MOD` may point at a manually uploaded mod directory under `/home/container`
+- manual alternatives must already exist and contain their own required files before startup
+- only the default `taystjk` path gets automatic mod-directory preparation and default `server.cfg` generation
+
+Practical rule:
+
+- `taystjkded.*` and `taystjk/` are image-managed TaystJK namespaces
+- other binaries and mod folders are user-owned namespaces
 
 ## Release process
 
