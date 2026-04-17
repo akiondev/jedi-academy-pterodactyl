@@ -59,8 +59,6 @@ License: **GPL-3.0**
 - `cmd/taystjk-antivpn` — Go-based anti-VPN supervisor for runtime join checks
 - `docs/addon_readme.md` — compact addon usage guide with quick examples
 - `docs/addon_readme_advanced.md` — full addon reference for developers and AI-guided scripting
-- `docs/source-analysis.md` — source-code findings that drove the project design
-- `docs/notes.md` — final revision notes
 - `docs/anti-vpn.md` — anti-VPN design, variables, scoring and operating notes
 
 ## Key behavior
@@ -97,21 +95,6 @@ Practical rule:
 
 - `taystjkded.*` and `taystjk/` are image-managed TaystJK namespaces
 - other binaries and mod folders are user-owned namespaces
-
-## Release process
-
-1. Copy release notes from `RELEASE_NOTES_v1.0.0.md` into a GitHub release.
-2. Create a tag and release named `v1.0.0` with title `TaystJK Pterodactyl v1.0.0`.
-3. (Optional) Publish image to GHCR and update the egg image reference.
-
-## CI / GitHub Actions
-
-This repository includes a workflow at `.github/workflows/ci.yml` that:
-
-- validates the Go anti-VPN component with `go test ./...`,
-- validates shell scripts and egg JSON on push/PR,
-- performs a Docker build test on push/PR,
-- publishes to GHCR automatically when pushing a tag like `v1.0.0`.
 
 ## Anti-VPN overview
 
@@ -152,6 +135,7 @@ Read [docs/addon_readme.md](docs/addon_readme.md) for the compact addon guide an
 - Standalone install helper: [scripts/install_taystjk.sh](scripts/install_taystjk.sh)
 - Pterodactyl egg: [egg/egg-taystjk-pterodactyl.json](egg/egg-taystjk-pterodactyl.json)
 - Docker image build: [docker/Dockerfile](docker/Dockerfile)
+- GitHub Actions CI: [.github/workflows/ci.yml](.github/workflows/ci.yml)
 - Anti-VPN runtime: [cmd/taystjk-antivpn](cmd/taystjk-antivpn) and [docs/anti-vpn.md](docs/anti-vpn.md)
 - Addon docs: [docs/addon_readme.md](docs/addon_readme.md) and [docs/addon_readme_advanced.md](docs/addon_readme_advanced.md)
 - Upstream runtime credit: [taysta/TaystJK](https://github.com/taysta/TaystJK)
