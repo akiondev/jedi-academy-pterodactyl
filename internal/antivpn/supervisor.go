@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"io"
 	"log/slog"
 	"net/netip"
@@ -193,7 +194,12 @@ func (s *Supervisor) forwardConsoleInput(ctx context.Context, stdin io.Writer) {
 		default:
 		}
 
-		if _, err := fmt.Fprintln(stdin, scanner.Text()); err != nil {
+		line := scanner.Text()
+		if s.handleBuiltinConsoleCommand(ctx, line) {
+			continue
+		}
+
+		if _, err := fmt.Fprintln(stdin, line); err != nil {
 			s.logger.Warn("anti-vpn stdin forwarding failed", "error", err)
 			return
 		}
@@ -202,6 +208,67 @@ func (s *Supervisor) forwardConsoleInput(ctx context.Context, stdin io.Writer) {
 	if err := scanner.Err(); err != nil {
 		s.logger.Warn("anti-vpn stdin scanner failed", "error", err)
 	}
+}
+
+func (s *Supervisor) handleBuiltinConsoleCommand(ctx context.Context, line string) bool {
+	command := strings.TrimSpace(line)
+	if command == "" {
+		return false
+	}
+
+	switch strings.ToLower(command) {
+	case "checkserverstatus", "rcon checkserverstatus":
+		s.runCheckServerStatus(ctx)
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Supervisor) runCheckServerStatus(ctx context.Context) {
+	commandPath := "/home/container/bin/checkserverstatus"
+
+	if _, err := os.Stat(commandPath); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			fmt.Fprintln(os.Stdout, "[addon:bash-status] checkserverstatus is not available in /home/container/bin")
+			fmt.Fprintln(os.Stdout, "[addon:bash-status] Confirm that 30-checkserverstatus.sh exists in /home/container/addons and that addons are enabled")
+			return
+		}
+		s.logger.Warn("checkserverstatus availability check failed", "path", commandPath, "error", err)
+		fmt.Fprintln(os.Stdout, "[addon:bash-status] Failed to inspect checkserverstatus command availability")
+		return
+	}
+
+	cmdCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	command := exec.CommandContext(cmdCtx, commandPath)
+	command.Dir = "/home/container"
+	command.Env = os.Environ()
+	output, err := command.CombinedOutput()
+
+	if len(output) > 0 {
+		if _, writeErr := os.Stdout.Write(output); writeErr != nil && s.logger != nil {
+			s.logger.Warn("checkserverstatus console output mirror failed", "error", writeErr)
+		}
+		if output[len(output)-1] != '\n' {
+			fmt.Fprintln(os.Stdout)
+		}
+	}
+
+	if err == nil {
+		return
+	}
+
+	if errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
+		fmt.Fprintln(os.Stdout, "[addon:bash-status] checkserverstatus timed out after 10s")
+		return
+	}
+
+	if s.logger != nil {
+		s.logger.Warn("checkserverstatus execution failed", "error", err)
+	}
+	fmt.Fprintln(os.Stdout, "[addon:bash-status] checkserverstatus failed")
 }
 
 func (s *Supervisor) monitorLogFile(ctx context.Context, stdin io.Writer) {

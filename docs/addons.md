@@ -168,7 +168,7 @@ File:
 What it does:
 
 - runs as a normal startup addon
-- makes a shell command named `checkserverstatus` available inside the container
+- makes a command named `checkserverstatus` available to the managed runtime
 - when that command is run, it prints:
   - basic current server information
   - current online players from a live RCON `status` query
@@ -179,9 +179,16 @@ How to run it:
 checkserverstatus
 ```
 
+You can run it from:
+
+- the Pterodactyl server console
+- the managed runtime console path using `rcon checkserverstatus`
+- a container shell, if you have shell access
+
 Important notes:
 
 - the command is installed into `/home/container/bin/checkserverstatus`
+- the anti-VPN supervisor intercepts `checkserverstatus` and `rcon checkserverstatus` from the Pterodactyl console and executes the bundled helper command
 - `/home/container/bin` is added to `PATH` by the managed runtime startup
 - live player output uses the effective runtime RCON password when available
 - you can provide that password through `SERVER_RCON_PASSWORD` in the egg or `rconpassword` in the active server config

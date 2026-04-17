@@ -281,6 +281,7 @@ This pattern is useful when you need periodic behavior without turning the core 
 
 - run once during startup
 - install a user-facing helper command
+- integrate with the managed runtime console bridge
 - reuse the same script as both the addon and the live command entry point
 
 This pattern is useful for admin commands, validators, and maintenance helpers that should be easy to run on demand.

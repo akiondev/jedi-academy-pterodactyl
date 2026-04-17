@@ -216,7 +216,7 @@ install_status_command() {
 
   ln -s "$SELF_PATH" "$INSTALL_TARGET"
   log "Installed ${COMMAND_NAME} into /home/container/bin"
-  log "Run '${COMMAND_NAME}' inside the container shell to view current server status"
+  log "Run '${COMMAND_NAME}' from the Pterodactyl console or inside the container shell to view current server status"
 }
 
 if [[ "$(basename "$0")" == "${COMMAND_NAME}" ]]; then

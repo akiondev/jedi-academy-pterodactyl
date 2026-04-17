@@ -50,7 +50,7 @@ Pterodactyl Docker image and egg for running a **TaystJK** dedicated server with
 - Allows switching to manually installed mod folders such as `base`, `japlus`, `japro`, or `mbii`
 - Supports lightweight runtime addons from `/home/container/addons` using `.sh` and `.py` scripts executed alphabetically before normal startup
 - Syncs `ADDONS.md` and `ADDON_DEVELOPMENT.md` automatically into the addon directory for server owners
-- Bootstraps two bundled example addons by default: a Python RCON announcer and a Bash-powered `checkserverstatus` utility
+- Bootstraps two bundled example addons by default: a Python RCON announcer and a Bash-powered `checkserverstatus` utility that can be run from the Pterodactyl console
 - Ships a stronger addon baseline in the runtime image with `python3`, `pip`, `venv`, `sqlite3`, `curl`, `wget`, `jq`, `git`, `rsync`, `procps`, `tar`, and `unzip`
 - Optional anti-VPN supervision using online API checks with cache, allowlist, structured logging and weighted decisions
 
