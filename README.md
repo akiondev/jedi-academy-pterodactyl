@@ -43,6 +43,13 @@ License: **GPL-3.0**
 4. Add your legally owned Jedi Academy base assets manually into `/home/container/base`.
 5. Start the server and verify that `/home/container/base/assets0.pk3` exists.
 
+## Manual alternatives
+
+1. Upload your own dedicated server binary into `/home/container`, then set `SERVER_BINARY` to that file, for example `./openjkded.x86_64`.
+2. Upload your own mod folder into `/home/container/<modname>`, then set `FS_GAME_MOD` to that folder name, for example `japlus` or `mbii`.
+3. Place the active config file inside that mod folder and set `SERVER_CONFIG` if you are not using `server.cfg`.
+4. Start the server. The runtime will launch manual binaries and mod folders if they exist, but it will not install, sync, or manage them for you.
+
 ## What this repo contains
 
 - `docker/Dockerfile` — source-built runtime image for TaystJK
