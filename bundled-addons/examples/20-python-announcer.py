@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-Bundled example addon: periodic Python announcer.
+Bundled example addon template: periodic Python announcer.
 
-This script is meant to be read and modified by server owners. When the addon
-loader executes it during startup, the script launches a detached background
-worker and exits quickly so the normal TaystJK startup can continue.
+This script is meant to be copied into /home/container/addons and then read
+and modified by server owners. When the addon loader executes it during
+startup, the script launches a detached background worker and exits quickly so
+the normal TaystJK startup can continue.
 
 The background worker reads:
   - 20-python-announcer.config.json

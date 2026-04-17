@@ -2,21 +2,21 @@
 
 ## Overview
 
-This project supports simple runtime addons for self-hosted Pterodactyl users.
+This project supports lightweight runtime addons for self-hosted Pterodactyl users.
 
-Addons are user-owned scripts placed inside the current server container. They are executed automatically before the normal Jedi Academy / TaystJK server startup.
+Addons are simple Bash or Python scripts that run inside the current server container before normal startup.
 
-This is **not** a plugin API for the TaystJK engine.
+This is **not** a TaystJK plugin API.
 This is **not** a secure sandbox.
-This is a lightweight runtime loader for user scripts inside the current server container.
+This is **not** a general application framework.
 
-This guide is also synced automatically by the runtime image into:
+It is a practical startup hook system for server owners who want to patch files, validate state, download extra content, call APIs, or run small preparation logic before the dedicated server starts.
+
+This guide is also synced automatically into:
 
 ```text
-/home/container/addons/ADDONS.md
+/home/container/addons/docs/ADDONS.md
 ```
-
-That copy is there to help server owners directly inside the container and may be refreshed by future image updates.
 
 ## What addons affect
 
@@ -26,61 +26,53 @@ They do **not**:
 
 - modify the GitHub repository
 - sync files back to the repository
-- affect other users' servers
-- affect other Pterodactyl containers
+- affect other servers
+- affect other containers
 
-The runtime stays TaystJK-first, but your addons should not assume the active binary or mod directory is always TaystJK. The image manages the default TaystJK runtime automatically, while manually supplied alternatives remain user-owned paths.
+The runtime stays TaystJK-first, but addons should not assume the active binary or mod directory is always TaystJK. The image only auto-manages the default TaystJK runtime path. Manual alternative binaries and mod folders remain user-owned.
 
-## Addon directory
+## Directory layout
 
-Place addon files here:
+The addon area now has a simple split between **user-owned executable scripts** and **image-managed reference material**:
 
 ```text
 /home/container/addons
-```
-
-Bundled example addons are synced here:
-
-```text
-/home/container/addons/bundled-addons
-```
-
-Example:
-
-```text
-addons/
-  ADDONS.md
-  ADDON_DEVELOPMENT.md
-  90-custom-webhook.py
-  bundled-addons/
+  10-my-script.sh
+  20-my-script.py
+  docs/
+    ADDONS.md
+    ADDON_DEVELOPMENT.md
+  examples/
     20-python-announcer.py
     20-python-announcer.config.json
     20-python-announcer.messages.txt
+  defaults/
     30-checkserverstatus.sh
 ```
 
-The two Markdown files are image-provided documentation. Your own `.sh` and `.py` files live directly in `/home/container/addons`. The announcer and status command are bundled example addons that live in `/home/container/addons/bundled-addons`.
+Meaning:
+
+- top-level `/home/container/addons/*.sh` and `*.py` are **your live addons**
+- `/home/container/addons/docs` is **image-managed documentation**
+- `/home/container/addons/examples` is **image-managed example material**
+- `/home/container/addons/defaults` is **image-managed helper/default material**
+
+Only the **top-level** `.sh` and `.py` files are executed by the addon loader.
+
+If you still have an older `/home/container/addons/bundled-addons` directory from previous image versions, treat it as legacy. The loader no longer executes files from that path.
 
 ## Supported file types
 
-The addon loader officially supports:
+The loader officially supports:
 
 - `.sh` -> executed with `bash`
 - `.py` -> executed with `python3`
 
-All other file types are ignored.
-
-The loader also ignores:
-
-- directories
-- hidden files
-- documentation files such as `.md`
-- addon support files such as `.json` and `.txt`
-- unsupported files
+Top-level support files such as `.md`, `.json`, and `.txt` are ignored, but the recommended pattern is to keep image-managed docs/examples in their dedicated subdirectories and to keep your own executable scripts directly at the top level.
 
 ## Execution order
 
-Addon files are executed in **alphabetical order**.
+Top-level addon scripts are executed in **alphabetical order**.
 
 Recommended naming style:
 
@@ -91,219 +83,188 @@ Recommended naming style:
 90-notify.py
 ```
 
-This makes startup order explicit and easy to reason about.
+That keeps startup order explicit and easy to debug.
 
 ## When addons run
 
-Addons run **before normal server startup**.
-
-Typical startup flow:
+Normal managed startup flow:
 
 1. runtime preparation
-2. image-managed addon docs are synced into the addon directory
-3. addon loading
-4. normal server startup
+2. image-managed addon docs are refreshed into `/home/container/addons/docs`
+3. image-managed addon examples are refreshed into `/home/container/addons/examples`
+4. image-managed helper defaults are refreshed into `/home/container/addons/defaults`
+5. top-level user addon scripts are executed
+6. normal server startup begins
 
-If addon support is disabled, addon execution is skipped. The image can still refresh the built-in addon documentation files in the addon directory.
+If addon support is disabled, step 5 is skipped, but the image-managed docs/examples/defaults still refresh.
 
-If the container is started with a custom startup command instead of the normal managed startup path, addon execution is intentionally bypassed.
+If the container is started with a fully custom startup command instead of the normal managed startup path, addon execution is intentionally bypassed.
 
-## Bundled example addons
+## Built-in helper: checkserverstatus
 
-The image now ships two ready-made example addons by default:
-
-- `20-python-announcer.py`
-- `30-checkserverstatus.sh`
-
-Their companion files are also included:
-
-- `20-python-announcer.config.json`
-- `20-python-announcer.messages.txt`
-
-These bundled files are synced into `/home/container/addons/bundled-addons` during every managed startup of a server container.
-
-Important behavior:
-
-- bundled examples are always refreshed from the current image
-- if you delete them, they come back on the next managed startup
-- if you edit them directly inside `bundled-addons`, your edits are replaced by the image-managed version on the next managed startup
-- if you want your own editable copy, copy the file out into `/home/container/addons` and customize that version there
-
-This keeps project-provided examples current while still leaving `/home/container/addons` available for your own runtime scripts.
-
-## Bundled example 1: Python announcer
-
-The bundled Python announcer is a real addon example for repeated background work.
-
-Files:
+The runtime ships a built-in helper command:
 
 ```text
-/home/container/addons/bundled-addons/20-python-announcer.py
-/home/container/addons/bundled-addons/20-python-announcer.config.json
-/home/container/addons/bundled-addons/20-python-announcer.messages.txt
-```
-
-What it does:
-
-- launches a small detached Python worker during addon loading
-- waits for a configurable startup delay
-- reads a message list from the bundled messages file
-- sends repeated `svsay` announcements over local RCON
-
-How to configure it:
-
-1. Edit `20-python-announcer.config.json`
-2. Edit `20-python-announcer.messages.txt`
-3. Set `SERVER_RCON_PASSWORD` in the egg or keep `rconpassword` in the active server config
-
-Important notes:
-
-- the addon is enabled by default in its JSON config
-- set `"enabled": false` if you want to disable it without deleting files
-- the addon writes its own worker log to `/home/container/logs/bundled-python-announcer.log`
-- it reads effective runtime settings from `/home/container/.runtime/taystjk-effective.env` first and then falls back to the JSON state file for non-sensitive values
-- it falls back to the active mod/config from `FS_GAME_MOD` and `SERVER_CONFIG`
-
-## Bundled example 2: Bash status command
-
-The bundled Bash status example demonstrates a practical admin utility addon.
-
-File:
-
-```text
-/home/container/addons/bundled-addons/30-checkserverstatus.sh
-```
-
-What it does:
-
-- runs as a normal startup addon
-- makes a command named `checkserverstatus` available to the managed runtime
-- when that command is run, it prints:
-  - basic current server information
-  - current online players from a live RCON `status` query
-
-How to run it:
-
-```bash
 checkserverstatus
 ```
 
-You can run it from:
+It is backed by the managed helper file:
 
-- the Pterodactyl server console
-- the managed runtime console path using `rcon checkserverstatus`
-- a container shell, if you have shell access
+```text
+/home/container/addons/defaults/30-checkserverstatus.sh
+```
 
-Important notes:
+Important behavior:
 
-- the command is installed into `/home/container/bin/checkserverstatus`
-- the anti-VPN supervisor intercepts `checkserverstatus` and `rcon checkserverstatus` from the Pterodactyl console and executes the bundled helper command
-- `/home/container/bin` is added to `PATH` by the managed runtime startup
-- live player output uses the effective runtime RCON password when available
-- you can provide that password through `SERVER_RCON_PASSWORD` in the egg or `rconpassword` in the active server config
-- if RCON is not configured, the command still shows basic server information
+- it is always refreshed from the current image during managed startup
+- it is installed automatically into `/home/container/bin/checkserverstatus`
+- it can be run from the Pterodactyl console
+- it can also be run from a container shell if shell access is available
 
-## Edit, disable, or remove bundled examples
+What it does:
 
-The bundled examples are image-managed runtime files inside `bundled-addons`.
+- prints basic current server information
+- reads effective runtime state from `/home/container/.runtime`
+- performs a live RCON `status` lookup when RCON is configured
+- shows current map and current online players when live RCON data is available
 
-That means you should treat them as read-mostly defaults:
+This helper is **not** part of the user addon loader. It is a project-managed admin helper that ships with the image.
 
-- they are always synced back from the image
-- deleting them does not permanently remove them
-- editing them in place does not permanently customize them
+## Bundled example: Python announcer
 
-Recommended approaches:
+The runtime also ships an example addon template:
 
-- disable the announcer by setting `"enabled": false` in `20-python-announcer.config.json`
-- disable execution of all bundled examples by setting `BUNDLED_ADDONS_ENABLED=false`
-- keep your own custom addons in `/home/container/addons`
-- copy a bundled example into `/home/container/addons` if you want your own editable variant
-- if you copy a bundled example into `/home/container/addons`, disable bundled execution or change the copied filename/behavior so you do not intentionally run two active variants of the same addon
-- remove the helper command by deleting `/home/container/bin/checkserverstatus` if you no longer want that live symlink
+```text
+/home/container/addons/examples/20-python-announcer.py
+/home/container/addons/examples/20-python-announcer.config.json
+/home/container/addons/examples/20-python-announcer.messages.txt
+```
 
-Your own custom addons in `/home/container/addons` and the bundled example addons in `/home/container/addons/bundled-addons` follow the same loader rules when enabled.
+What it demonstrates:
 
-## Environment variables
+- a Python addon that starts a detached worker
+- repeated `svsay` announcements over local RCON
+- simple JSON configuration
+- sibling support files beside the script
 
-The addon system uses these variables:
+Important behavior:
+
+- it is always refreshed from the image
+- it is **not** executed automatically from `examples/`
+- if you want to use it, copy it into the top-level addon directory
+
+Example enable flow:
+
+```text
+/home/container/addons/20-python-announcer.py
+/home/container/addons/20-python-announcer.config.json
+/home/container/addons/20-python-announcer.messages.txt
+```
+
+After that, the loader will execute the copied `20-python-announcer.py` because it is now a top-level addon script.
+
+## How to enable or disable addons
+
+### Enable your own addon
+
+Place a `.sh` or `.py` file directly in:
+
+```text
+/home/container/addons
+```
+
+That is enough to make it eligible for execution during the next managed startup.
+
+### Disable a top-level addon
+
+Use any of these approaches:
+
+- remove the file from `/home/container/addons`
+- rename it so it no longer ends with `.sh` or `.py`
+- move it into a non-executed subdirectory
+
+### Disable all top-level addon execution
+
+Set:
+
+```text
+ADDONS_ENABLED=false
+```
+
+That disables execution of user-owned top-level addon scripts, but the image-managed docs, examples, and defaults still refresh.
+
+### Disable the announcer example
+
+The example announcer is not active until you copy it into the top-level addon directory.
+
+If you copied it into the live addon directory, disable it by:
+
+- removing the copied files
+- renaming the copied `.py` file so it is no longer executable by the loader
+- or setting `"enabled": false` in the copied JSON config
+
+## Variables
+
+The addon system uses these runtime variables:
 
 - `ADDONS_ENABLED`
 - `ADDONS_DIR`
-- `BUNDLED_ADDONS_ENABLED`
 - `ADDONS_STRICT`
 - `ADDONS_TIMEOUT_SECONDS`
 - `ADDONS_LOG_OUTPUT`
 
-Your scripts may also use normal runtime variables such as:
-
-- `FS_GAME_MOD`
-- `SERVER_PORT`
-- `SERVER_CONFIG`
-- `SERVER_CFG_OVERRIDES_ENABLED`
-- `SERVER_RCON_PASSWORD`
-- `EXTRA_STARTUP_ARGS`
-
-The managed runtime also writes effective server values to:
+Useful runtime state for addons is published to:
 
 - `/home/container/.runtime/taystjk-effective.env`
 - `/home/container/.runtime/taystjk-effective.json`
 
-The `.env` file includes the full effective runtime state, including the current effective RCON password when one exists. The `.json` file contains selected non-sensitive values for addons that prefer JSON parsing.
+The `.env` file includes the full effective runtime state, including the effective RCON password when one exists. The `.json` file contains selected non-sensitive values only.
 
-The optional `SERVER_CFG_OVERRIDES_ENABLED` toggle controls whether non-empty override variables from the egg are written back into the active `server.cfg`. When an override field is left blank, addons fall back to the current config value and then to the built-in runtime default.
+The optional `SERVER_CFG_OVERRIDES_ENABLED` toggle controls whether non-empty override variables from the egg are written back into the active `server.cfg`. When an override field is blank, addons should expect the runtime state to fall back to the current config value and then to the built-in runtime default.
 
-Only the default `taystjk` path is prepared automatically by the managed runtime. If the server owner points `SERVER_BINARY` or `FS_GAME_MOD` at a manual alternative, your addon should expect those files and folders to be user-owned and already present.
+## Failure handling
 
-## Strict mode
+If an addon exits with a non-zero status or times out:
 
-### Best-effort mode
-
-If an addon fails:
-
-- the failure is logged
-- startup continues
-
-This is the default behavior.
-
-### Strict mode
-
-If an addon fails:
-
-- the failure is logged
-- startup stops
+- `ADDONS_STRICT=false` -> log the failure and continue startup
+- `ADDONS_STRICT=true` -> stop startup
 
 Use strict mode only when your addon is truly required for a correct startup.
 
 ## Timeout behavior
 
-Each addon has its own configurable timeout.
+Each top-level addon has its own timeout:
 
-If an addon exceeds the timeout:
+```text
+ADDONS_TIMEOUT_SECONDS
+```
 
-- the timeout is logged
-- the addon is treated as failed
-- behavior then depends on strict mode
+If a script exceeds that limit:
+
+- the loader marks it as timed out
+- startup either continues or stops depending on strict mode
 
 ## Logging
 
-Addon activity is logged clearly.
+The loader logs:
 
-Typical events:
+- addon detection
+- addon execution
+- addon success
+- addon timeout
+- addon failure
 
-- addon directory found
-- addon file detected
-- addon skipped
-- addon started
-- addon completed successfully
-- addon timed out
-- addon failed with a non-zero exit code
+If `ADDONS_LOG_OUTPUT=true`, addon stdout and stderr are also mirrored into the console.
 
-If `ADDONS_LOG_OUTPUT=true`, addon stdout and stderr are also shown in the Pterodactyl console.
+Recommended practice:
 
-## Runtime tools available in the image
+- print clear prefixes like `[addon:bash]` or `[addon:python]`
+- keep messages short and useful
+- log what you are changing and why
 
-The runtime image includes a strong but still focused addon baseline:
+## Runtime tooling available in the image
+
+The runtime image includes a focused addon baseline:
 
 - `bash`
 - `python3`
@@ -312,40 +273,29 @@ The runtime image includes a strong but still focused addon baseline:
 - `sqlite3`
 - `curl`
 - `wget`
-- `unzip`
 - `tar`
+- `unzip`
 - `jq`
-- `ca-certificates`
 - `git`
 - `rsync`
 - `procps`
-
-This gives Bash and Python addons enough freedom for common automation, validation, maintenance, and API workflows.
+- `ca-certificates`
 
 ## Common addon use cases
 
-Addons can be used for many server-local tasks, for example:
-
-- patch config files before startup
-- create backups of important files
-- validate required files exist
-- download extra files from trusted sources
-- send a Discord webhook when the server starts
-- run maintenance logic
-- clean up old logs
-- generate runtime-specific config content
-- store local helper state in SQLite
-- call JSON APIs from Bash with `curl` and `jq`
+- patch or validate config files before startup
+- download extra files before startup
+- send a webhook when the server starts
+- validate required files and fail fast if something is missing
+- run Bash or Python maintenance logic inside the current container
+- parse JSON APIs from Bash with `jq`
+- keep small local state in SQLite
 
 ## Example Bash addon
-
-File:
 
 ```text
 /home/container/addons/10-backup-servercfg.sh
 ```
-
-Example:
 
 ```bash
 #!/usr/bin/env bash
@@ -353,15 +303,13 @@ set -euo pipefail
 
 echo "[addon:bash] Starting config backup"
 
-MOD_DIR="${TAYSTJK_ACTIVE_MOD_DIR:-${FS_GAME_MOD:-}}"
-CONFIG_FILE="${TAYSTJK_ACTIVE_SERVER_CONFIG:-${SERVER_CONFIG:-server.cfg}}"
-CONFIG_PATH="/home/container/${MOD_DIR}/${CONFIG_FILE}"
+TARGET="${TAYSTJK_ACTIVE_SERVER_CONFIG_PATH:-}"
 BACKUP_DIR="/home/container/backups"
 
 mkdir -p "${BACKUP_DIR}"
 
-if [[ -f "${CONFIG_PATH}" ]]; then
-    cp "${CONFIG_PATH}" "${BACKUP_DIR}/${CONFIG_FILE}.bak"
+if [[ -n "${TARGET}" && -f "${TARGET}" ]]; then
+    cp "${TARGET}" "${BACKUP_DIR}/server.cfg.bak"
     echo "[addon:bash] Backup created"
 else
     echo "[addon:bash] Config file not found, skipping"
@@ -370,13 +318,9 @@ fi
 
 ## Example Python addon
 
-File:
-
 ```text
 /home/container/addons/20-discord-webhook.py
 ```
-
-Example:
 
 ```python
 #!/usr/bin/env python3
@@ -384,19 +328,18 @@ import json
 import os
 import urllib.request
 
-webhook_url = os.getenv("DISCORD_WEBHOOK_URL", "").strip()
-if not webhook_url:
+webhook = os.getenv("DISCORD_WEBHOOK_URL", "").strip()
+if not webhook:
     print("[addon:python] No DISCORD_WEBHOOK_URL set, skipping")
     raise SystemExit(0)
 
 payload = {
-    "content": "Jedi Academy server is starting."
+    "content": f"Server startup hook ran for {os.getenv('TAYSTJK_ACTIVE_MOD_DIR', 'unknown')}"
 }
 
-data = json.dumps(payload).encode("utf-8")
 request = urllib.request.Request(
-    webhook_url,
-    data=data,
+    webhook,
+    data=json.dumps(payload).encode("utf-8"),
     headers={"Content-Type": "application/json"},
     method="POST",
 )
@@ -405,21 +348,13 @@ with urllib.request.urlopen(request, timeout=10) as response:
     print(f"[addon:python] Webhook sent, status: {response.status}")
 ```
 
-## Responsibility and safety notes
+## Responsibility
 
-Addons are intentionally powerful within the current server container.
-
-They may:
-
-- read and write files
-- modify configs
-- call external APIs
-- download files
-- change the runtime environment of the current server
+Addons are intentionally powerful inside the current server container.
 
 That means addon behavior is the **server owner’s responsibility**.
 
-This project provides the addon loader, but does not guarantee the safety, correctness, or quality of user-provided addons.
+This project provides the loader, the managed helper/defaults, and the example material. It does not guarantee the safety, correctness, or quality of user-provided scripts.
 
 ## Troubleshooting
 
@@ -427,55 +362,40 @@ This project provides the addon loader, but does not guarantee the safety, corre
 
 Check:
 
-- the file is inside `/home/container/addons`
-- the file extension is `.sh` or `.py`
-- the file is not hidden
+- the file is directly inside `/home/container/addons`
+- the file ends with `.sh` or `.py`
 - addon support is enabled
-- the file is not just documentation or support data such as `.md`, `.json`, or `.txt`
+- the startup path is the normal managed startup path
 
-### My bundled announcer does not send messages
+### My addon runs in the wrong order
 
-Check:
+Rename the files with numeric prefixes such as:
 
-- `20-python-announcer.config.json` still has `"enabled": true`
-- `20-python-announcer.messages.txt` contains at least one non-empty message
-- `SERVER_RCON_PASSWORD` is set in the egg, or the active server config contains `rconpassword`
-- `/home/container/logs/bundled-python-announcer.log` for announcer worker output
-
-### The `checkserverstatus` command is missing
-
-Check:
-
-- addon support is enabled
-- the server used the normal managed startup path
-- `30-checkserverstatus.sh` still exists in `/home/container/addons/bundled-addons`
-- `/home/container/bin/checkserverstatus` exists inside the container
+- `00-...`
+- `10-...`
+- `20-...`
 
 ### My Python addon fails
 
 Check:
 
-- `python3` is installed in the image
-- the script uses only available dependencies
-- the script is valid Python 3
+- the file starts with `#!/usr/bin/env python3`
+- the script uses only standard-library modules unless you explicitly install more
+- the runtime variables and paths are spelled correctly
+
+### checkserverstatus is missing
+
+Check:
+
+- the server used the normal managed startup path
+- `/home/container/addons/defaults/30-checkserverstatus.sh` exists
+- `/home/container/bin/checkserverstatus` exists
 
 ### My server does not start after adding an addon
 
 Check:
 
-- whether strict mode is enabled
-- the container logs for addon failure output
+- the console output for addon failure messages
 - whether the addon timed out
-- whether the addon exited with a non-zero code
-
-### My addon runs in the wrong order
-
-Rename files so that alphabetical order matches the order you want.
-
-Example:
-
-```text
-00-first.sh
-10-second.py
-20-third.sh
-```
+- whether the addon exited with a non-zero status
+- whether `ADDONS_STRICT=true`

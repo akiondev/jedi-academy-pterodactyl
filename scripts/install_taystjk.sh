@@ -236,7 +236,14 @@ print_header
 
 [[ "${COPYRIGHT_ACKNOWLEDGED}" == "true" ]] || fail "COPYRIGHT_ACKNOWLEDGED must be true. This egg does not distribute Jedi Academy assets."
 
-mkdir -p /mnt/server/base /mnt/server/logs /mnt/server/addons /mnt/server/addons/bundled-addons /tmp/taystjk-install
+mkdir -p \
+  /mnt/server/base \
+  /mnt/server/logs \
+  /mnt/server/addons \
+  /mnt/server/addons/docs \
+  /mnt/server/addons/examples \
+  /mnt/server/addons/defaults \
+  /tmp/taystjk-install
 
 require_safe_component "$SERVER_CONFIG" "SERVER_CONFIG"
 active_game_dir="$(resolve_active_game_dir "$FS_GAME_MOD")"

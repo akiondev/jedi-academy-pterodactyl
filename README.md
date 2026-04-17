@@ -49,9 +49,10 @@ Pterodactyl Docker image and egg for running a **TaystJK** dedicated server with
 - Uses `FS_GAME_MOD=taystjk` by default
 - Allows switching to manually installed mod folders such as `base`, `japlus`, `japro`, or `mbii`
 - Allows switching to a manually uploaded alternative dedicated server binary through `SERVER_BINARY`
-- Supports lightweight runtime addons from `/home/container/addons` using `.sh` and `.py` scripts executed alphabetically before normal startup
-- Syncs `ADDONS.md` and `ADDON_DEVELOPMENT.md` automatically into the addon directory for server owners
-- Ships two bundled example addons by default in `/home/container/addons/bundled-addons`: a Python RCON announcer and a Bash-powered `checkserverstatus` utility that can be run from the Pterodactyl console
+- Supports lightweight runtime addons from `/home/container/addons` using top-level `.sh` and `.py` scripts executed alphabetically before normal startup
+- Syncs `ADDONS.md` and `ADDON_DEVELOPMENT.md` automatically into `/home/container/addons/docs`
+- Ships a managed `checkserverstatus` helper that is always refreshed from the image and can be run from the Pterodactyl console
+- Ships addon examples in `/home/container/addons/examples`, including a Python RCON announcer template that server owners can copy into `/home/container/addons` when they want to enable it
 - Ships a stronger addon baseline in the runtime image with `python3`, `pip`, `venv`, `sqlite3`, `curl`, `wget`, `jq`, `git`, `rsync`, `procps`, `tar`, and `unzip`
 - Optional anti-VPN supervision using online API checks with cache, allowlist, structured logging and weighted decisions
 
@@ -106,14 +107,15 @@ Read [docs/anti-vpn.md](docs/anti-vpn.md) for the full operating guide.
 This repository also includes a lightweight addon loader for self-hosted Pterodactyl users.
 
 - Addon directory: `/home/container/addons`
-- Built-in addon docs: `ADDONS.md` and `ADDON_DEVELOPMENT.md` are synced there automatically by the image
-- Bundled examples: `20-python-announcer.py` and `30-checkserverstatus.sh` are always synced into `/home/container/addons/bundled-addons`
+- User addons: only top-level `.sh` and `.py` files in `/home/container/addons` are executed by the addon loader
+- Built-in addon docs: synced into `/home/container/addons/docs`
+- Bundled examples: synced into `/home/container/addons/examples` and kept up to date by the image, but not executed until copied into the top-level addon directory
+- Managed defaults: synced into `/home/container/addons/defaults`; the built-in `checkserverstatus` helper is installed from there automatically on managed startup
 - Managed server settings: the runtime can publish effective server values into `/home/container/.runtime/taystjk-effective.env` and selected non-sensitive values into `.json` for addons and admin utilities
 - Optional server.cfg overrides: when enabled, non-empty egg override fields can write selected values such as `rconpassword` into the active `server.cfg`; otherwise addons fall back to the current config and runtime defaults
 - Supported file types: `.sh` for Bash and `.py` for Python 3
-- Support files: `.md`, `.json`, and `.txt` are ignored by the loader so addons can ship readable docs and config beside executable scripts
-- Bundled addon toggle: the bundled example addon directory is synced even when bundled example execution is disabled
-- Execution order: alphabetical by filename across user-owned addons and enabled bundled addons
+- Support files: `.md`, `.json`, and `.txt` are ignored if they are placed beside top-level addon scripts, but the recommended place for image-managed docs and examples is the dedicated `docs/`, `examples/`, and `defaults/` subdirectories
+- Execution order: alphabetical by filename across top-level user-owned addon scripts only
 - Runtime behavior: each addon is executed before normal managed server startup
 - Safety model: best-effort by default, with optional strict mode and per-addon timeouts
 - Scope: addons affect only the current server container and are fully owned by the server operator

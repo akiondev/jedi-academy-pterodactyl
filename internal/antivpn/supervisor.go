@@ -230,12 +230,12 @@ func (s *Supervisor) runCheckServerStatus(ctx context.Context) {
 
 	if _, err := os.Stat(commandPath); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			fmt.Fprintln(os.Stdout, "[addon:bash-status] checkserverstatus is not available in /home/container/bin")
-			fmt.Fprintln(os.Stdout, "[addon:bash-status] Confirm that 30-checkserverstatus.sh exists in /home/container/addons and that addons are enabled")
+			fmt.Fprintln(os.Stdout, "[helper:checkserverstatus] checkserverstatus is not available in /home/container/bin")
+			fmt.Fprintln(os.Stdout, "[helper:checkserverstatus] Confirm that /home/container/addons/defaults/30-checkserverstatus.sh exists and that the managed runtime startup path completed normally")
 			return
 		}
 		s.logger.Warn("checkserverstatus availability check failed", "path", commandPath, "error", err)
-		fmt.Fprintln(os.Stdout, "[addon:bash-status] Failed to inspect checkserverstatus command availability")
+		fmt.Fprintln(os.Stdout, "[helper:checkserverstatus] Failed to inspect checkserverstatus command availability")
 		return
 	}
 
@@ -261,14 +261,14 @@ func (s *Supervisor) runCheckServerStatus(ctx context.Context) {
 	}
 
 	if errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
-		fmt.Fprintln(os.Stdout, "[addon:bash-status] checkserverstatus timed out after 10s")
+		fmt.Fprintln(os.Stdout, "[helper:checkserverstatus] checkserverstatus timed out after 10s")
 		return
 	}
 
 	if s.logger != nil {
 		s.logger.Warn("checkserverstatus execution failed", "error", err)
 	}
-	fmt.Fprintln(os.Stdout, "[addon:bash-status] checkserverstatus failed")
+	fmt.Fprintln(os.Stdout, "[helper:checkserverstatus] checkserverstatus failed")
 }
 
 func (s *Supervisor) monitorLogFile(ctx context.Context, stdin io.Writer) {

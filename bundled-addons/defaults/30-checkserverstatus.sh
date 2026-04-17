@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Bundled example addon: install a practical admin command called
+# Managed default helper: install a practical admin command called
 # `checkserverstatus`. The same file acts as:
-# 1. the startup addon that ensures the command is available on PATH
+# 1. the managed startup helper that ensures the command is available on PATH
 # 2. the live command implementation when invoked as `checkserverstatus`
 
 COMMAND_NAME="checkserverstatus"
 INSTALL_TARGET="/home/container/bin/${COMMAND_NAME}"
-ADDON_LABEL="[addon:bash-status]"
+ADDON_LABEL="[helper:checkserverstatus]"
 SELF_PATH="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "${BASH_SOURCE[0]}")"
 RUNTIME_ENV_FILE="/home/container/.runtime/taystjk-effective.env"
 

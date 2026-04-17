@@ -609,50 +609,55 @@ validate_selected_runtime_paths() {
 }
 
 sync_addon_docs() {
-  local doc_source=""
-  local doc_name=""
-
-  mkdir -p "$ADDONS_DIR"
-
-  if [[ ! -d /opt/taystjk-docs/addons ]]; then
-    debug "No image-managed addon docs found under /opt/taystjk-docs/addons"
-    return 0
-  fi
-
-  for doc_source in /opt/taystjk-docs/addons/*; do
-    [[ -f "$doc_source" ]] || continue
-    doc_name="${doc_source##*/}"
-    install -m 0644 "$doc_source" "${ADDONS_DIR}/${doc_name}"
-  done
+  sync_image_managed_addon_tree "/opt/taystjk-docs/addons" "$ADDON_DOCS_DIR" "addon docs"
 }
 
-sync_bundled_addon_defaults() {
-  local addon_source=""
-  local addon_name=""
-  local addon_mode=""
-  mkdir -p "$ADDONS_DIR" "$BUNDLED_ADDONS_DIR" /home/container/bin
+sync_image_managed_addon_tree() {
+  local source_dir="$1"
+  local target_dir="$2"
+  local label="$3"
 
-  if [[ ! -d /opt/taystjk-bundled-addons ]]; then
-    debug "No bundled example addons found under /opt/taystjk-bundled-addons"
+  mkdir -p "$target_dir"
+
+  if [[ ! -d "$source_dir" ]]; then
+    debug "No image-managed ${label} found under ${source_dir}"
     return 0
   fi
 
-  info "Syncing bundled example addons into ${BUNDLED_ADDONS_DIR}"
+  rsync -a --delete "${source_dir}/" "${target_dir}/"
+  find "$target_dir" -maxdepth 1 -type f \( -name '*.sh' -o -name '*.py' \) -exec chmod 0755 {} +
+  debug "Refreshed image-managed ${label} in ${target_dir}"
+}
 
-  for addon_source in /opt/taystjk-bundled-addons/*; do
-    [[ -f "$addon_source" ]] || continue
-    addon_name="${addon_source##*/}"
+sync_managed_addon_examples() {
+  info "Syncing addon examples into ${ADDON_EXAMPLES_DIR}"
+  sync_image_managed_addon_tree "/opt/taystjk-bundled-addons/examples" "$ADDON_EXAMPLES_DIR" "addon examples"
+}
 
-    addon_mode="0644"
-    case "$addon_name" in
-      *.sh|*.py)
-        addon_mode="0755"
-        ;;
-    esac
+sync_managed_addon_defaults() {
+  info "Syncing managed addon helpers into ${ADDON_DEFAULTS_DIR}"
+  sync_image_managed_addon_tree "/opt/taystjk-bundled-addons/defaults" "$ADDON_DEFAULTS_DIR" "addon defaults"
+}
 
-    install -m "$addon_mode" "$addon_source" "${BUNDLED_ADDONS_DIR}/${addon_name}"
-    ok "Bundled example synced: ${addon_name}"
-  done
+install_managed_status_helper() {
+  local helper_path="${ADDON_DEFAULTS_DIR}/30-checkserverstatus.sh"
+  local helper_exit=0
+
+  mkdir -p /home/container/bin
+
+  if [[ ! -f "$helper_path" ]]; then
+    warn "Managed checkserverstatus helper was not found at ${helper_path}"
+    return 0
+  fi
+
+  set +e
+  bash "$helper_path"
+  helper_exit=$?
+  set -e
+
+  if [[ "$helper_exit" -ne 0 ]]; then
+    warn "Managed checkserverstatus helper failed to refresh with exit code ${helper_exit}"
+  fi
 }
 
 require_base_assets() {
@@ -683,7 +688,6 @@ build_startup_command() {
 configure_addons() {
   : "${ADDONS_ENABLED:=true}"
   : "${ADDONS_DIR:=/home/container/addons}"
-  : "${BUNDLED_ADDONS_ENABLED:=true}"
   : "${ADDONS_STRICT:=false}"
   : "${ADDONS_TIMEOUT_SECONDS:=30}"
   : "${ADDONS_LOG_OUTPUT:=true}"
@@ -701,16 +705,6 @@ configure_addons() {
       ;;
   esac
   ADDONS_ENABLED="$ADDONS_ENABLED_NORMALIZED"
-
-  BUNDLED_ADDONS_ENABLED_NORMALIZED="$(printf '%s' "$BUNDLED_ADDONS_ENABLED" | tr '[:upper:]' '[:lower:]')"
-  case "$BUNDLED_ADDONS_ENABLED_NORMALIZED" in
-    true|false) ;;
-    *)
-      warn "BUNDLED_ADDONS_ENABLED=${BUNDLED_ADDONS_ENABLED} is invalid, falling back to true"
-      BUNDLED_ADDONS_ENABLED_NORMALIZED="true"
-      ;;
-  esac
-  BUNDLED_ADDONS_ENABLED="$BUNDLED_ADDONS_ENABLED_NORMALIZED"
 
   ADDONS_STRICT_NORMALIZED="$(printf '%s' "$ADDONS_STRICT" | tr '[:upper:]' '[:lower:]')"
   case "$ADDONS_STRICT_NORMALIZED" in
@@ -738,7 +732,9 @@ configure_addons() {
   fi
 
   require_safe_container_path "$ADDONS_DIR" "ADDONS_DIR"
-  BUNDLED_ADDONS_DIR="${ADDONS_DIR}/bundled-addons"
+  ADDON_DOCS_DIR="${ADDONS_DIR}/docs"
+  ADDON_EXAMPLES_DIR="${ADDONS_DIR}/examples"
+  ADDON_DEFAULTS_DIR="${ADDONS_DIR}/defaults"
 
   ADDON_EXECUTED_COUNT=0
   ADDON_SKIPPED_COUNT=0
@@ -867,32 +863,33 @@ anti_vpn_allowlist_status() {
 print_addon_summary() {
   section "ADDONS"
   kv_highlight "Status" "$(printf '%s' "$(bool_state "$ADDONS_ENABLED")" | tr '[:lower:]' '[:upper:]')"
-  kv "Directory" "$ADDONS_DIR"
-  kv "Bundled" "$(printf '%s' "$(bool_state "$BUNDLED_ADDONS_ENABLED")" | tr '[:lower:]' '[:upper:]')"
-  kv "Bundled dir" "$BUNDLED_ADDONS_DIR"
+  kv "User dir" "$ADDONS_DIR"
+  kv "Docs dir" "$ADDON_DOCS_DIR"
+  kv "Examples dir" "$ADDON_EXAMPLES_DIR"
+  kv "Defaults dir" "$ADDON_DEFAULTS_DIR"
   kv "Strict" "$(printf '%s' "$(bool_state "$ADDONS_STRICT")" | tr '[:lower:]' '[:upper:]')"
   kv "Timeout" "${ADDONS_TIMEOUT_SECONDS}s"
   kv "Log output" "$(printf '%s' "$(bool_state "$ADDONS_LOG_OUTPUT")" | tr '[:lower:]' '[:upper:]')"
 
   if [[ "$ADDONS_ENABLED" != "true" ]]; then
-    warn "Addon loader is disabled"
+    warn "User addon execution is disabled; managed docs, examples, and helpers still refresh"
   elif [[ -d "$ADDONS_DIR" ]]; then
-    ok "Addon directory ready"
+    ok "User addon directory ready"
   else
-    info "No addon directory found; continuing without addons"
+    info "No user addon directory found; continuing without addon execution"
+  fi
+
+  if [[ -d "${ADDONS_DIR}/bundled-addons" ]]; then
+    warn "Legacy bundled-addons directory detected; it is no longer executed by the addon loader"
   fi
 }
 
 run_addons() {
   local entry_name=""
   local entry_path=""
-  local entry_label=""
-  local entry_sort_key=""
   local addon_kind=""
   local addon_exit=0
   local addon_entries=()
-  local scan_dirs=()
-  local scan_dir=""
   local addon_count=0
   local addon_candidate_count=0
 
@@ -904,35 +901,18 @@ run_addons() {
     return 0
   fi
 
-  scan_dirs+=("$ADDONS_DIR")
-  if [[ "$BUNDLED_ADDONS_ENABLED" == "true" && -d "$BUNDLED_ADDONS_DIR" ]]; then
-    scan_dirs+=("$BUNDLED_ADDONS_DIR")
-  fi
+  while IFS= read -r entry_name; do
+    addon_entries+=("$entry_name")
+  done < <(find "$ADDONS_DIR" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)
 
-  for scan_dir in "${scan_dirs[@]}"; do
-    if [[ "$scan_dir" == "$ADDONS_DIR" ]]; then
-      while IFS= read -r entry_name; do
-        addon_entries+=("${entry_name}"$'\t'"${entry_name}"$'\t'"${ADDONS_DIR}/${entry_name}")
-      done < <(find "$ADDONS_DIR" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)
-    else
-      while IFS= read -r entry_name; do
-        addon_entries+=("${entry_name}"$'\t'"bundled-addons/${entry_name}"$'\t'"${BUNDLED_ADDONS_DIR}/${entry_name}")
-      done < <(find "$BUNDLED_ADDONS_DIR" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)
-    fi
-  done
-
-  if [[ "${#addon_entries[@]}" -gt 0 ]]; then
-    mapfile -t addon_entries < <(printf '%s\n' "${addon_entries[@]}" | LC_ALL=C sort)
-  fi
   addon_count="${#addon_entries[@]}"
 
   if [[ "$addon_count" -eq 0 ]]; then
-    info "Addon directory is empty; continuing without addon execution"
+    info "No top-level addon files found in ${ADDONS_DIR}; continuing without addon execution"
     return 0
   fi
 
-  for entry_sort_key in "${addon_entries[@]}"; do
-    IFS=$'\t' read -r entry_name entry_label entry_path <<< "$entry_sort_key"
+  for entry_name in "${addon_entries[@]}"; do
     [[ "$entry_name" == .* ]] && continue
     case "$entry_name" in
       *.md|*.json|*.txt)
@@ -943,35 +923,35 @@ run_addons() {
   done
 
   if [[ "$addon_candidate_count" -eq 0 ]]; then
-    info "Addon directory contains documentation only; continuing without addon execution"
+    info "No executable top-level addon scripts were found in ${ADDONS_DIR}; continuing without addon execution"
     return 0
   fi
 
-  info "Scanning ${addon_candidate_count} addon candidate$( [[ "$addon_candidate_count" -eq 1 ]] && printf '' || printf 's' ) across ${ADDONS_DIR} and bundled addons"
+  info "Scanning ${addon_candidate_count} user addon candidate$( [[ "$addon_candidate_count" -eq 1 ]] && printf '' || printf 's' ) in ${ADDONS_DIR}"
 
-  for entry_sort_key in "${addon_entries[@]}"; do
-    IFS=$'\t' read -r entry_name entry_label entry_path <<< "$entry_sort_key"
+  for entry_name in "${addon_entries[@]}"; do
+    entry_path="${ADDONS_DIR}/${entry_name}"
 
     if [[ "$entry_name" == .* ]]; then
-      warn "Skipping hidden addon entry: ${entry_label}"
+      warn "Skipping hidden addon entry: ${entry_name}"
       ADDON_SKIPPED_COUNT=$((ADDON_SKIPPED_COUNT + 1))
       continue
     fi
 
     if [[ ! -f "$entry_path" ]]; then
-      warn "Skipping non-file addon entry: ${entry_label}"
+      warn "Skipping non-file addon entry: ${entry_name}"
       ADDON_SKIPPED_COUNT=$((ADDON_SKIPPED_COUNT + 1))
       continue
     fi
 
     case "$entry_name" in
       *.md|*.json|*.txt)
-        debug "Ignoring addon support file: ${entry_label}"
+        debug "Ignoring addon support file: ${entry_name}"
         continue
         ;;
     esac
 
-    info "Addon detected: ${entry_label}"
+    info "Addon detected: ${entry_name}"
 
     case "$entry_name" in
       *.sh)
@@ -980,20 +960,20 @@ run_addons() {
       *.py)
         addon_kind="python3"
         if ! command -v python3 >/dev/null 2>&1; then
-          warn "Addon failed: python3 is not available for ${entry_label}"
+          warn "Addon failed: python3 is not available for ${entry_name}"
           ADDON_FAILED_COUNT=$((ADDON_FAILED_COUNT + 1))
-          [[ "$ADDONS_STRICT" == "true" ]] && fail "Addon ${entry_label} requires python3, but python3 is not available in the runtime image"
+          [[ "$ADDONS_STRICT" == "true" ]] && fail "Addon ${entry_name} requires python3, but python3 is not available in the runtime image"
           continue
         fi
         ;;
       *)
-        warn "Skipping unsupported addon file: ${entry_label}"
+        warn "Skipping unsupported addon file: ${entry_name}"
         ADDON_SKIPPED_COUNT=$((ADDON_SKIPPED_COUNT + 1))
         continue
         ;;
     esac
 
-    info "Executing ${addon_kind} addon: ${entry_label}"
+    info "Executing ${addon_kind} addon: ${entry_name}"
     set +e
     if [[ "$ADDONS_LOG_OUTPUT" == "true" ]]; then
       timeout --foreground "${ADDONS_TIMEOUT_SECONDS}" "$addon_kind" "$entry_path"
@@ -1005,18 +985,18 @@ run_addons() {
 
     case "$addon_exit" in
       0)
-        ok "Addon completed successfully: ${entry_label}"
+        ok "Addon completed successfully: ${entry_name}"
         ADDON_EXECUTED_COUNT=$((ADDON_EXECUTED_COUNT + 1))
         ;;
       124|137)
-        warn "Addon timed out after ${ADDONS_TIMEOUT_SECONDS}s: ${entry_label}"
+        warn "Addon timed out after ${ADDONS_TIMEOUT_SECONDS}s: ${entry_name}"
         ADDON_TIMED_OUT_COUNT=$((ADDON_TIMED_OUT_COUNT + 1))
-        [[ "$ADDONS_STRICT" == "true" ]] && fail "Addon ${entry_label} timed out after ${ADDONS_TIMEOUT_SECONDS}s"
+        [[ "$ADDONS_STRICT" == "true" ]] && fail "Addon ${entry_name} timed out after ${ADDONS_TIMEOUT_SECONDS}s"
         ;;
       *)
-        warn "Addon failed with exit code ${addon_exit}: ${entry_label}"
+        warn "Addon failed with exit code ${addon_exit}: ${entry_name}"
         ADDON_FAILED_COUNT=$((ADDON_FAILED_COUNT + 1))
-        [[ "$ADDONS_STRICT" == "true" ]] && fail "Addon ${entry_label} failed with exit code ${addon_exit}"
+        [[ "$ADDONS_STRICT" == "true" ]] && fail "Addon ${entry_name} failed with exit code ${addon_exit}"
         ;;
     esac
   done
@@ -1153,7 +1133,9 @@ print_paths() {
   kv "Binary path" "$server_binary_path"
   kv "Mod path" "/home/container/${active_game_dir}"
   kv "Addons dir" "$ADDONS_DIR"
-  kv "Bundled addons" "$BUNDLED_ADDONS_DIR"
+  kv "Addon docs" "$ADDON_DOCS_DIR"
+  kv "Addon examples" "$ADDON_EXAMPLES_DIR"
+  kv "Addon defaults" "$ADDON_DEFAULTS_DIR"
   kv "Runtime env" "/home/container/.runtime/taystjk-effective.env"
   kv "Runtime json" "/home/container/.runtime/taystjk-effective.json"
   kv "Log path" "$ANTI_VPN_LOG_PATH"
@@ -1178,7 +1160,9 @@ print_debug_inventory() {
   kv "Base files" "$(list_dir_files /home/container/base 'assets*.pk3')"
   kv "Mod files" "$(list_dir_files "/home/container/${active_game_dir}")"
   kv "Addon files" "$(list_dir_files "$ADDONS_DIR")"
-  kv "Bundled addon files" "$(list_dir_files "$BUNDLED_ADDONS_DIR")"
+  kv "Addon docs" "$(list_dir_files "$ADDON_DOCS_DIR")"
+  kv "Addon examples" "$(list_dir_files "$ADDON_EXAMPLES_DIR")"
+  kv "Addon defaults" "$(list_dir_files "$ADDON_DEFAULTS_DIR")"
 }
 
 print_launch_decision() {
@@ -1232,7 +1216,9 @@ if is_taystjk_managed_mod_dir "$active_game_dir"; then
 fi
 sync_runtime_files
 sync_addon_docs
-sync_bundled_addon_defaults
+sync_managed_addon_examples
+sync_managed_addon_defaults
+install_managed_status_helper
 determine_runtime_ownership
 
 validate_server_binary_selection

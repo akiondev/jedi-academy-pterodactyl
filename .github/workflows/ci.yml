@@ -104,7 +104,7 @@ jobs:
 
       - name: Validate shell scripts
         if: steps.gate.outputs.run == 'true'
-        run: bash -n scripts/entrypoint.sh scripts/install_taystjk.sh bundled-addons/30-checkserverstatus.sh
+        run: bash -n scripts/entrypoint.sh scripts/install_taystjk.sh bundled-addons/defaults/30-checkserverstatus.sh
 
       - name: Validate egg JSON
         if: steps.gate.outputs.run == 'true'
