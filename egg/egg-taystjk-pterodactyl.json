@@ -16,7 +16,7 @@
   "startup": "--panel-startup",
   "config": {
     "files": "{}",
-    "startup": "{\"done\": \"Logging to players.log|Cleaned up racetimes|Resolving master.jkhub.org\"}",
+    "startup": "{\"done\": \"Resolving master.jkhub.org\"}",
     "logs": "{}",
     "stop": "quit"
   },
