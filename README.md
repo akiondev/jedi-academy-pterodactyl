@@ -17,6 +17,20 @@
   <a href="https://github.com/akiondev/jedi-academy-pterodactyl#key-behavior"><img src="https://img.shields.io/badge/game_assets-not_included-b22222?style=for-the-badge" alt="Game assets not included" /></a>
 </p>
 
+<p align="center">
+  <a href="https://github.com/akiondev/jedi-academy-pterodactyl/blob/main/egg/egg-taystjk-pterodactyl.json"><strong>Download EGG</strong></a>
+  &nbsp;•&nbsp;
+  <a href="https://github.com/akiondev/taystjk"><strong>TaystJK</strong></a>
+  &nbsp;•&nbsp;
+  <a href="https://github.com/JACoders/OpenJK"><strong>OpenJK</strong></a>
+  &nbsp;•&nbsp;
+  <a href="https://jkhub.org"><strong>JKHub.org</strong></a>
+  &nbsp;•&nbsp;
+  <a href="https://github.com/akiondev/jedi-academy-pterodactyl/issues/new?title=BUG:%20"><strong>Report Bug</strong></a>
+  &nbsp;•&nbsp;
+  <a href="https://github.com/akiondev/jedi-academy-pterodactyl/issues/new?title=REQUEST:%20"><strong>Request Feature</strong></a>
+</p>
+
 Pterodactyl Docker image and egg for running a **TaystJK** dedicated server without redistributing copyrighted **Jedi Academy** game assets.
 
 License: **GPL-3.0**
