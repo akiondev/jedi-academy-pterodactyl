@@ -50,7 +50,7 @@ Pterodactyl Docker image and egg for running a **TaystJK** dedicated server with
 - Allows switching to manually installed mod folders such as `base`, `japlus`, `japro`, or `mbii`
 - Supports lightweight runtime addons from `/home/container/addons` using `.sh` and `.py` scripts executed alphabetically before normal startup
 - Syncs `ADDONS.md` and `ADDON_DEVELOPMENT.md` automatically into the addon directory for server owners
-- Bootstraps two bundled example addons by default: a Python RCON announcer and a Bash-powered `checkserverstatus` utility that can be run from the Pterodactyl console
+- Ships two bundled example addons by default in `/home/container/addons/bundled-addons`: a Python RCON announcer and a Bash-powered `checkserverstatus` utility that can be run from the Pterodactyl console
 - Ships a stronger addon baseline in the runtime image with `python3`, `pip`, `venv`, `sqlite3`, `curl`, `wget`, `jq`, `git`, `rsync`, `procps`, `tar`, and `unzip`
 - Optional anti-VPN supervision using online API checks with cache, allowlist, structured logging and weighted decisions
 
@@ -86,12 +86,13 @@ This repository also includes a lightweight addon loader for self-hosted Pteroda
 
 - Addon directory: `/home/container/addons`
 - Built-in addon docs: `ADDONS.md` and `ADDON_DEVELOPMENT.md` are synced there automatically by the image
-- Bundled examples: `20-python-announcer.py` and `30-checkserverstatus.sh` are seeded into the addon directory on first startup
+- Bundled examples: `20-python-announcer.py` and `30-checkserverstatus.sh` are always synced into `/home/container/addons/bundled-addons`
 - Managed server settings: the runtime can publish effective server values into `/home/container/.runtime/taystjk-effective.env` and selected non-sensitive values into `.json` for addons and admin utilities
 - Optional server.cfg overrides: when enabled, non-empty egg override fields can write selected values such as `rconpassword` into the active `server.cfg`; otherwise addons fall back to the current config and runtime defaults
 - Supported file types: `.sh` for Bash and `.py` for Python 3
 - Support files: `.md`, `.json`, and `.txt` are ignored by the loader so addons can ship readable docs and config beside executable scripts
-- Execution order: alphabetical by filename
+- Bundled addon toggle: the bundled example addon directory is synced even when bundled example execution is disabled
+- Execution order: alphabetical by filename across user-owned addons and enabled bundled addons
 - Runtime behavior: each addon is executed before normal managed server startup
 - Safety model: best-effort by default, with optional strict mode and per-addon timeouts
 - Scope: addons affect only the current server container and are fully owned by the server operator

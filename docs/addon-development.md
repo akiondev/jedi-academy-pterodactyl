@@ -82,6 +82,7 @@ Useful variables may include:
 - `EXTRA_STARTUP_ARGS`
 - `ADDONS_ENABLED`
 - `ADDONS_DIR`
+- `BUNDLED_ADDONS_ENABLED`
 - `ADDONS_STRICT`
 - `ADDONS_TIMEOUT_SECONDS`
 - `ADDONS_LOG_OUTPUT`
@@ -261,7 +262,7 @@ That means your code should:
 
 ## Bundled example patterns in this project
 
-This repository now includes two bundled example addons that demonstrate two useful patterns:
+This repository now includes two bundled example addons under `/home/container/addons/bundled-addons` that demonstrate two useful patterns:
 
 ### Pattern 1: background worker addon
 
@@ -391,5 +392,8 @@ Bundled examples should feel educational first:
 
 - easy to read
 - easy to disable
-- easy to copy and rename
+- easy to copy into `/home/container/addons`
+- easy to rename as a user-owned variant
 - easy to replace with your own version
+
+If you copy a bundled example into `/home/container/addons`, remember that both the bundled copy and your custom copy can execute unless you disable bundled execution or deliberately change the behavior/order of your custom variant.

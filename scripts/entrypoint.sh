@@ -533,35 +533,18 @@ sync_bundled_addon_defaults() {
   local addon_source=""
   local addon_name=""
   local addon_mode=""
-  local bootstrap_dir="/home/container/.cache/taystjk-addon-bootstrap"
-  local addon_dir_marker=""
-  local bootstrap_marker=""
-
-  addon_dir_marker="$(printf '%s' "$ADDONS_DIR" | tr '/.' '__')"
-  bootstrap_marker="${bootstrap_dir}/${addon_dir_marker}.initialized"
-
-  mkdir -p "$ADDONS_DIR" /home/container/bin "$bootstrap_dir"
+  mkdir -p "$ADDONS_DIR" "$BUNDLED_ADDONS_DIR" /home/container/bin
 
   if [[ ! -d /opt/taystjk-bundled-addons ]]; then
     debug "No bundled example addons found under /opt/taystjk-bundled-addons"
     return 0
   fi
 
-  if [[ -f "$bootstrap_marker" ]]; then
-    debug "Bundled example addons already bootstrapped into ${ADDONS_DIR}"
-    return 0
-  fi
-
-  info "Bootstrapping bundled example addons into ${ADDONS_DIR}"
+  info "Syncing bundled example addons into ${BUNDLED_ADDONS_DIR}"
 
   for addon_source in /opt/taystjk-bundled-addons/*; do
     [[ -f "$addon_source" ]] || continue
     addon_name="${addon_source##*/}"
-
-    if [[ -e "${ADDONS_DIR}/${addon_name}" ]]; then
-      warn "Preserving existing addon file during bundled bootstrap: ${addon_name}"
-      continue
-    fi
 
     addon_mode="0644"
     case "$addon_name" in
@@ -570,11 +553,9 @@ sync_bundled_addon_defaults() {
         ;;
     esac
 
-    install -m "$addon_mode" "$addon_source" "${ADDONS_DIR}/${addon_name}"
+    install -m "$addon_mode" "$addon_source" "${BUNDLED_ADDONS_DIR}/${addon_name}"
     ok "Bundled example synced: ${addon_name}"
   done
-
-  : > "$bootstrap_marker"
 }
 
 require_base_assets() {
@@ -605,6 +586,7 @@ build_startup_command() {
 configure_addons() {
   : "${ADDONS_ENABLED:=true}"
   : "${ADDONS_DIR:=/home/container/addons}"
+  : "${BUNDLED_ADDONS_ENABLED:=true}"
   : "${ADDONS_STRICT:=false}"
   : "${ADDONS_TIMEOUT_SECONDS:=30}"
   : "${ADDONS_LOG_OUTPUT:=true}"
@@ -622,6 +604,16 @@ configure_addons() {
       ;;
   esac
   ADDONS_ENABLED="$ADDONS_ENABLED_NORMALIZED"
+
+  BUNDLED_ADDONS_ENABLED_NORMALIZED="$(printf '%s' "$BUNDLED_ADDONS_ENABLED" | tr '[:upper:]' '[:lower:]')"
+  case "$BUNDLED_ADDONS_ENABLED_NORMALIZED" in
+    true|false) ;;
+    *)
+      warn "BUNDLED_ADDONS_ENABLED=${BUNDLED_ADDONS_ENABLED} is invalid, falling back to true"
+      BUNDLED_ADDONS_ENABLED_NORMALIZED="true"
+      ;;
+  esac
+  BUNDLED_ADDONS_ENABLED="$BUNDLED_ADDONS_ENABLED_NORMALIZED"
 
   ADDONS_STRICT_NORMALIZED="$(printf '%s' "$ADDONS_STRICT" | tr '[:upper:]' '[:lower:]')"
   case "$ADDONS_STRICT_NORMALIZED" in
@@ -649,6 +641,7 @@ configure_addons() {
   fi
 
   require_safe_container_path "$ADDONS_DIR" "ADDONS_DIR"
+  BUNDLED_ADDONS_DIR="${ADDONS_DIR}/bundled-addons"
 
   ADDON_EXECUTED_COUNT=0
   ADDON_SKIPPED_COUNT=0
@@ -778,6 +771,8 @@ print_addon_summary() {
   section "ADDONS"
   kv_highlight "Status" "$(printf '%s' "$(bool_state "$ADDONS_ENABLED")" | tr '[:lower:]' '[:upper:]')"
   kv "Directory" "$ADDONS_DIR"
+  kv "Bundled" "$(printf '%s' "$(bool_state "$BUNDLED_ADDONS_ENABLED")" | tr '[:lower:]' '[:upper:]')"
+  kv "Bundled dir" "$BUNDLED_ADDONS_DIR"
   kv "Strict" "$(printf '%s' "$(bool_state "$ADDONS_STRICT")" | tr '[:lower:]' '[:upper:]')"
   kv "Timeout" "${ADDONS_TIMEOUT_SECONDS}s"
   kv "Log output" "$(printf '%s' "$(bool_state "$ADDONS_LOG_OUTPUT")" | tr '[:lower:]' '[:upper:]')"
@@ -794,9 +789,13 @@ print_addon_summary() {
 run_addons() {
   local entry_name=""
   local entry_path=""
+  local entry_label=""
+  local entry_sort_key=""
   local addon_kind=""
   local addon_exit=0
   local addon_entries=()
+  local scan_dirs=()
+  local scan_dir=""
   local addon_count=0
   local addon_candidate_count=0
 
@@ -808,7 +807,26 @@ run_addons() {
     return 0
   fi
 
-  mapfile -t addon_entries < <(find "$ADDONS_DIR" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)
+  scan_dirs+=("$ADDONS_DIR")
+  if [[ "$BUNDLED_ADDONS_ENABLED" == "true" && -d "$BUNDLED_ADDONS_DIR" ]]; then
+    scan_dirs+=("$BUNDLED_ADDONS_DIR")
+  fi
+
+  for scan_dir in "${scan_dirs[@]}"; do
+    if [[ "$scan_dir" == "$ADDONS_DIR" ]]; then
+      while IFS= read -r entry_name; do
+        addon_entries+=("${entry_name}"$'\t'"${entry_name}"$'\t'"${ADDONS_DIR}/${entry_name}")
+      done < <(find "$ADDONS_DIR" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)
+    else
+      while IFS= read -r entry_name; do
+        addon_entries+=("${entry_name}"$'\t'"bundled-addons/${entry_name}"$'\t'"${BUNDLED_ADDONS_DIR}/${entry_name}")
+      done < <(find "$BUNDLED_ADDONS_DIR" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)
+    fi
+  done
+
+  if [[ "${#addon_entries[@]}" -gt 0 ]]; then
+    mapfile -t addon_entries < <(printf '%s\n' "${addon_entries[@]}" | LC_ALL=C sort)
+  fi
   addon_count="${#addon_entries[@]}"
 
   if [[ "$addon_count" -eq 0 ]]; then
@@ -816,7 +834,8 @@ run_addons() {
     return 0
   fi
 
-  for entry_name in "${addon_entries[@]}"; do
+  for entry_sort_key in "${addon_entries[@]}"; do
+    IFS=$'\t' read -r entry_name entry_label entry_path <<< "$entry_sort_key"
     [[ "$entry_name" == .* ]] && continue
     case "$entry_name" in
       *.md|*.json|*.txt)
@@ -831,37 +850,31 @@ run_addons() {
     return 0
   fi
 
-  info "Scanning ${addon_candidate_count} addon candidate$( [[ "$addon_candidate_count" -eq 1 ]] && printf '' || printf 's' ) in ${ADDONS_DIR}"
+  info "Scanning ${addon_candidate_count} addon candidate$( [[ "$addon_candidate_count" -eq 1 ]] && printf '' || printf 's' ) across ${ADDONS_DIR} and bundled addons"
 
-  for entry_name in "${addon_entries[@]}"; do
-    entry_path="${ADDONS_DIR}/${entry_name}"
+  for entry_sort_key in "${addon_entries[@]}"; do
+    IFS=$'\t' read -r entry_name entry_label entry_path <<< "$entry_sort_key"
 
     if [[ "$entry_name" == .* ]]; then
-      warn "Skipping hidden addon entry: ${entry_name}"
-      ADDON_SKIPPED_COUNT=$((ADDON_SKIPPED_COUNT + 1))
-      continue
-    fi
-
-    if [[ -d "$entry_path" ]]; then
-      warn "Skipping addon directory: ${entry_name}"
+      warn "Skipping hidden addon entry: ${entry_label}"
       ADDON_SKIPPED_COUNT=$((ADDON_SKIPPED_COUNT + 1))
       continue
     fi
 
     if [[ ! -f "$entry_path" ]]; then
-      warn "Skipping non-file addon entry: ${entry_name}"
+      warn "Skipping non-file addon entry: ${entry_label}"
       ADDON_SKIPPED_COUNT=$((ADDON_SKIPPED_COUNT + 1))
       continue
     fi
 
     case "$entry_name" in
       *.md|*.json|*.txt)
-        debug "Ignoring addon support file: ${entry_name}"
+        debug "Ignoring addon support file: ${entry_label}"
         continue
         ;;
     esac
 
-    info "Addon detected: ${entry_name}"
+    info "Addon detected: ${entry_label}"
 
     case "$entry_name" in
       *.sh)
@@ -870,20 +883,20 @@ run_addons() {
       *.py)
         addon_kind="python3"
         if ! command -v python3 >/dev/null 2>&1; then
-          warn "Addon failed: python3 is not available for ${entry_name}"
+          warn "Addon failed: python3 is not available for ${entry_label}"
           ADDON_FAILED_COUNT=$((ADDON_FAILED_COUNT + 1))
-          [[ "$ADDONS_STRICT" == "true" ]] && fail "Addon ${entry_name} requires python3, but python3 is not available in the runtime image"
+          [[ "$ADDONS_STRICT" == "true" ]] && fail "Addon ${entry_label} requires python3, but python3 is not available in the runtime image"
           continue
         fi
         ;;
       *)
-        warn "Skipping unsupported addon file: ${entry_name}"
+        warn "Skipping unsupported addon file: ${entry_label}"
         ADDON_SKIPPED_COUNT=$((ADDON_SKIPPED_COUNT + 1))
         continue
         ;;
     esac
 
-    info "Executing ${addon_kind} addon: ${entry_name}"
+    info "Executing ${addon_kind} addon: ${entry_label}"
     set +e
     if [[ "$ADDONS_LOG_OUTPUT" == "true" ]]; then
       timeout --foreground "${ADDONS_TIMEOUT_SECONDS}" "$addon_kind" "$entry_path"
@@ -895,18 +908,18 @@ run_addons() {
 
     case "$addon_exit" in
       0)
-        ok "Addon completed successfully: ${entry_name}"
+        ok "Addon completed successfully: ${entry_label}"
         ADDON_EXECUTED_COUNT=$((ADDON_EXECUTED_COUNT + 1))
         ;;
       124|137)
-        warn "Addon timed out after ${ADDONS_TIMEOUT_SECONDS}s: ${entry_name}"
+        warn "Addon timed out after ${ADDONS_TIMEOUT_SECONDS}s: ${entry_label}"
         ADDON_TIMED_OUT_COUNT=$((ADDON_TIMED_OUT_COUNT + 1))
-        [[ "$ADDONS_STRICT" == "true" ]] && fail "Addon ${entry_name} timed out after ${ADDONS_TIMEOUT_SECONDS}s"
+        [[ "$ADDONS_STRICT" == "true" ]] && fail "Addon ${entry_label} timed out after ${ADDONS_TIMEOUT_SECONDS}s"
         ;;
       *)
-        warn "Addon failed with exit code ${addon_exit}: ${entry_name}"
+        warn "Addon failed with exit code ${addon_exit}: ${entry_label}"
         ADDON_FAILED_COUNT=$((ADDON_FAILED_COUNT + 1))
-        [[ "$ADDONS_STRICT" == "true" ]] && fail "Addon ${entry_name} failed with exit code ${addon_exit}"
+        [[ "$ADDONS_STRICT" == "true" ]] && fail "Addon ${entry_label} failed with exit code ${addon_exit}"
         ;;
     esac
   done
@@ -1041,6 +1054,7 @@ print_paths() {
   kv "Binary path" "$server_binary_path"
   kv "Mod path" "/home/container/${active_game_dir}"
   kv "Addons dir" "$ADDONS_DIR"
+  kv "Bundled addons" "$BUNDLED_ADDONS_DIR"
   kv "Runtime env" "/home/container/.runtime/taystjk-effective.env"
   kv "Runtime json" "/home/container/.runtime/taystjk-effective.json"
   kv "Log path" "$ANTI_VPN_LOG_PATH"
@@ -1065,6 +1079,7 @@ print_debug_inventory() {
   kv "Base files" "$(list_dir_files /home/container/base 'assets*.pk3')"
   kv "Mod files" "$(list_dir_files "/home/container/${active_game_dir}")"
   kv "Addon files" "$(list_dir_files "$ADDONS_DIR")"
+  kv "Bundled addon files" "$(list_dir_files "$BUNDLED_ADDONS_DIR")"
 }
 
 print_launch_decision() {

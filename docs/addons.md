@@ -37,20 +37,27 @@ Place addon files here:
 /home/container/addons
 ```
 
+Bundled example addons are synced here:
+
+```text
+/home/container/addons/bundled-addons
+```
+
 Example:
 
 ```text
 addons/
   ADDONS.md
   ADDON_DEVELOPMENT.md
-  20-python-announcer.py
-  20-python-announcer.config.json
-  20-python-announcer.messages.txt
-  30-checkserverstatus.sh
   90-custom-webhook.py
+  bundled-addons/
+    20-python-announcer.py
+    20-python-announcer.config.json
+    20-python-announcer.messages.txt
+    30-checkserverstatus.sh
 ```
 
-The two Markdown files are image-provided documentation. The announcer and status command are bundled example addons. Your own `.sh` and `.py` files can live beside them.
+The two Markdown files are image-provided documentation. Your own `.sh` and `.py` files live directly in `/home/container/addons`. The announcer and status command are bundled example addons that live in `/home/container/addons/bundled-addons`.
 
 ## Supported file types
 
@@ -111,16 +118,16 @@ Their companion files are also included:
 - `20-python-announcer.config.json`
 - `20-python-announcer.messages.txt`
 
-These bundled files are copied into `/home/container/addons` during the first managed startup of a server container.
+These bundled files are synced into `/home/container/addons/bundled-addons` during every managed startup of a server container.
 
 Important behavior:
 
-- bundled examples are meant to become **your live working copies**
-- the runtime does **not** blindly overwrite those live copies on later startups
-- if you edit them, your edits stay in place
-- if you remove them after bootstrap, they stay removed
+- bundled examples are always refreshed from the current image
+- if you delete them, they come back on the next managed startup
+- if you edit them directly inside `bundled-addons`, your edits are replaced by the image-managed version on the next managed startup
+- if you want your own editable copy, copy the file out into `/home/container/addons` and customize that version there
 
-This keeps the default experience simple while still treating the live addon directory as user-owned runtime space.
+This keeps project-provided examples current while still leaving `/home/container/addons` available for your own runtime scripts.
 
 ## Bundled example 1: Python announcer
 
@@ -129,9 +136,9 @@ The bundled Python announcer is a real addon example for repeated background wor
 Files:
 
 ```text
-/home/container/addons/20-python-announcer.py
-/home/container/addons/20-python-announcer.config.json
-/home/container/addons/20-python-announcer.messages.txt
+/home/container/addons/bundled-addons/20-python-announcer.py
+/home/container/addons/bundled-addons/20-python-announcer.config.json
+/home/container/addons/bundled-addons/20-python-announcer.messages.txt
 ```
 
 What it does:
@@ -162,7 +169,7 @@ The bundled Bash status example demonstrates a practical admin utility addon.
 File:
 
 ```text
-/home/container/addons/30-checkserverstatus.sh
+/home/container/addons/bundled-addons/30-checkserverstatus.sh
 ```
 
 What it does:
@@ -196,23 +203,24 @@ Important notes:
 
 ## Edit, disable, or remove bundled examples
 
-The bundled examples are just normal runtime files after bootstrap.
+The bundled examples are image-managed runtime files inside `bundled-addons`.
 
-That means you can:
+That means you should treat them as read-mostly defaults:
 
-- edit them directly
-- rename them
-- delete them
-- replace them with your own versions
+- they are always synced back from the image
+- deleting them does not permanently remove them
+- editing them in place does not permanently customize them
 
 Recommended approaches:
 
 - disable the announcer by setting `"enabled": false` in `20-python-announcer.config.json`
-- remove the announcer by deleting its `.py`, `.json`, and `.txt` files
-- remove the status example by deleting `30-checkserverstatus.sh`
-- remove the helper command by deleting `/home/container/bin/checkserverstatus`
+- disable execution of all bundled examples by setting `BUNDLED_ADDONS_ENABLED=false`
+- keep your own custom addons in `/home/container/addons`
+- copy a bundled example into `/home/container/addons` if you want your own editable variant
+- if you copy a bundled example into `/home/container/addons`, disable bundled execution or change the copied filename/behavior so you do not intentionally run two active variants of the same addon
+- remove the helper command by deleting `/home/container/bin/checkserverstatus` if you no longer want that live symlink
 
-Your own custom addons and the bundled example addons all follow the same loader rules.
+Your own custom addons in `/home/container/addons` and the bundled example addons in `/home/container/addons/bundled-addons` follow the same loader rules when enabled.
 
 ## Environment variables
 
@@ -220,6 +228,7 @@ The addon system uses these variables:
 
 - `ADDONS_ENABLED`
 - `ADDONS_DIR`
+- `BUNDLED_ADDONS_ENABLED`
 - `ADDONS_STRICT`
 - `ADDONS_TIMEOUT_SECONDS`
 - `ADDONS_LOG_OUTPUT`
