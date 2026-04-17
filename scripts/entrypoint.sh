@@ -641,9 +641,32 @@ sync_managed_addon_defaults() {
 
 install_managed_status_helper() {
   local helper_path="${ADDON_DEFAULTS_DIR}/30-checkserverstatus.sh"
+  local install_target="/home/container/bin/checkserverstatus"
+  local existing_target=""
   local helper_exit=0
 
   mkdir -p /home/container/bin
+
+  if [[ "$ADDON_CHECKSERVERSTATUS_ENABLED" != "true" ]]; then
+    if [[ -L "$install_target" ]]; then
+      existing_target="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$install_target" 2>/dev/null || true)"
+      if [[ "$existing_target" == "$helper_path" ]]; then
+        rm -f "$install_target"
+        info "Managed checkserverstatus helper is disabled"
+        return 0
+      fi
+      warn "ADDON_CHECKSERVERSTATUS_ENABLED=false, but preserving non-managed checkserverstatus symlink at ${install_target}"
+      return 0
+    fi
+
+    if [[ -e "$install_target" ]]; then
+      warn "ADDON_CHECKSERVERSTATUS_ENABLED=false, but preserving existing command file at ${install_target}"
+      return 0
+    fi
+
+    info "Managed checkserverstatus helper is disabled"
+    return 0
+  fi
 
   if [[ ! -f "$helper_path" ]]; then
     warn "Managed checkserverstatus helper was not found at ${helper_path}"
@@ -688,6 +711,7 @@ build_startup_command() {
 configure_addons() {
   : "${ADDONS_ENABLED:=true}"
   : "${ADDONS_DIR:=/home/container/addons}"
+  : "${ADDON_CHECKSERVERSTATUS_ENABLED:=true}"
   : "${ADDONS_STRICT:=false}"
   : "${ADDONS_TIMEOUT_SECONDS:=30}"
   : "${ADDONS_LOG_OUTPUT:=true}"
@@ -705,6 +729,16 @@ configure_addons() {
       ;;
   esac
   ADDONS_ENABLED="$ADDONS_ENABLED_NORMALIZED"
+
+  ADDON_CHECKSERVERSTATUS_ENABLED_NORMALIZED="$(printf '%s' "$ADDON_CHECKSERVERSTATUS_ENABLED" | tr '[:upper:]' '[:lower:]')"
+  case "$ADDON_CHECKSERVERSTATUS_ENABLED_NORMALIZED" in
+    true|false) ;;
+    *)
+      warn "ADDON_CHECKSERVERSTATUS_ENABLED=${ADDON_CHECKSERVERSTATUS_ENABLED} is invalid, falling back to true"
+      ADDON_CHECKSERVERSTATUS_ENABLED_NORMALIZED="true"
+      ;;
+  esac
+  ADDON_CHECKSERVERSTATUS_ENABLED="$ADDON_CHECKSERVERSTATUS_ENABLED_NORMALIZED"
 
   ADDONS_STRICT_NORMALIZED="$(printf '%s' "$ADDONS_STRICT" | tr '[:upper:]' '[:lower:]')"
   case "$ADDONS_STRICT_NORMALIZED" in
@@ -867,6 +901,7 @@ print_addon_summary() {
   kv "Docs dir" "$ADDON_DOCS_DIR"
   kv "Examples dir" "$ADDON_EXAMPLES_DIR"
   kv "Defaults dir" "$ADDON_DEFAULTS_DIR"
+  kv "Checkserverstatus" "$(printf '%s' "$(bool_state "$ADDON_CHECKSERVERSTATUS_ENABLED")" | tr '[:lower:]' '[:upper:]')"
   kv "Strict" "$(printf '%s' "$(bool_state "$ADDONS_STRICT")" | tr '[:lower:]' '[:upper:]')"
   kv "Timeout" "${ADDONS_TIMEOUT_SECONDS}s"
   kv "Log output" "$(printf '%s' "$(bool_state "$ADDONS_LOG_OUTPUT")" | tr '[:lower:]' '[:upper:]')"
@@ -915,7 +950,7 @@ run_addons() {
   for entry_name in "${addon_entries[@]}"; do
     [[ "$entry_name" == .* ]] && continue
     case "$entry_name" in
-      *.md|*.json|*.txt)
+      *.md|*.json|*.txt|*.disable)
         continue
         ;;
     esac
@@ -947,6 +982,11 @@ run_addons() {
     case "$entry_name" in
       *.md|*.json|*.txt)
         debug "Ignoring addon support file: ${entry_name}"
+        continue
+        ;;
+      *.disable)
+        info "Addon disabled by filename suffix: ${entry_name}"
+        ADDON_SKIPPED_COUNT=$((ADDON_SKIPPED_COUNT + 1))
         continue
         ;;
     esac

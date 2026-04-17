@@ -10,7 +10,9 @@ This guide is synced into:
 
 - Addons are simple startup scripts.
 - Only top-level `.sh` and `.py` files in `/home/container/addons` are executed.
+- Rename a top-level addon file to end with `.disable` if you want to keep it without running it.
 - Files inside `docs/`, `examples/`, and `defaults/` are **not** executed.
+- The built-in `checkserverstatus` helper is controlled by `ADDON_CHECKSERVERSTATUS_ENABLED`.
 - Scripts run in alphabetical order before normal managed startup.
 - If `ADDONS_STRICT=false`, failed addons are logged and startup continues.
 - If `ADDONS_STRICT=true`, a failed addon stops startup.
@@ -35,6 +37,12 @@ This guide is synced into:
 
 4. Watch the console for addon logs.
 
+To disable a top-level addon without deleting it, rename it like this:
+
+```text
+20-webhook.py.disable
+```
+
 Recommended naming:
 
 ```text
@@ -49,6 +57,12 @@ If you want to use the bundled announcer example, copy these files from `example
 /home/container/addons/examples/20-python-announcer.py
 /home/container/addons/examples/20-python-announcer.config.json
 /home/container/addons/examples/20-python-announcer.messages.txt
+```
+
+If you later want to keep that copied announcer without running it, rename the copied script to:
+
+```text
+/home/container/addons/20-python-announcer.py.disable
 ```
 
 ## 3. Short examples

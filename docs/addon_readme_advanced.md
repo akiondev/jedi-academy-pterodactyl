@@ -62,6 +62,8 @@ Meaning:
 
 Only the **top-level** `.sh` and `.py` files are executed by the addon loader.
 
+If a top-level addon filename ends with `.disable`, it is treated as intentionally disabled and is not executed.
+
 Files inside `docs/`, `examples/`, and `defaults/` are not executed by the loader.
 
 ## Ownership model
@@ -108,6 +110,7 @@ The loader does not execute:
 - files in subdirectories
 - directories
 - hidden files
+- top-level files ending with `.disable`
 - top-level support files such as `.md`, `.json`, and `.txt`
 - image-managed docs/examples/defaults
 
@@ -147,6 +150,7 @@ If the server is started with a fully custom startup command instead of the mana
 Relevant variables:
 
 - `ADDONS_ENABLED`
+- `ADDON_CHECKSERVERSTATUS_ENABLED`
 - `ADDONS_STRICT`
 - `ADDONS_TIMEOUT_SECONDS`
 - `ADDONS_LOG_OUTPUT`
@@ -278,6 +282,7 @@ Behavior:
 - it installs/updates `/home/container/bin/checkserverstatus`
 - it is available from the Pterodactyl console through the runtime bridge
 - it can also be run from a shell inside the container
+- it is controlled by the egg variable `ADDON_CHECKSERVERSTATUS_ENABLED`
 
 What it does:
 
@@ -306,6 +311,8 @@ To activate it, copy those files into the top-level addon directory:
 ```
 
 Once copied there, the loader treats `20-python-announcer.py` as a live addon script.
+
+To keep the copied example without running it, rename the copied executable file to end with `.disable`.
 
 ## Authoring rules
 
@@ -384,15 +391,16 @@ Patterns to avoid:
 If an AI or code generator is producing an addon for this project, it should follow these rules:
 
 1. Place executable scripts only in top-level `/home/container/addons`.
-2. Place support files beside the top-level script only when necessary.
-3. Never place live executable addons in `docs/`, `examples/`, or `defaults/`.
-4. Prefer runtime state over hardcoded assumptions.
-5. Use explicit absolute paths under `/home/container`.
-6. Keep scripts non-interactive.
-7. Use clear log prefixes.
-8. Fail clearly when required files or values are missing.
-9. Prefer simple startup hooks over detached workers unless the use case truly requires background behavior.
-10. Treat TaystJK as the default managed runtime, but do not hardcode it unless the addon is intentionally TaystJK-specific.
+2. If a script should stay present but not run, rename it to end with `.disable`.
+3. Place support files beside the top-level script only when necessary.
+4. Never place live executable addons in `docs/`, `examples/`, or `defaults/`.
+5. Prefer runtime state over hardcoded assumptions.
+6. Use explicit absolute paths under `/home/container`.
+7. Keep scripts non-interactive.
+8. Use clear log prefixes.
+9. Fail clearly when required files or values are missing.
+10. Prefer simple startup hooks over detached workers unless the use case truly requires background behavior.
+11. Treat TaystJK as the default managed runtime, but do not hardcode it unless the addon is intentionally TaystJK-specific.
 
 ## Minimal examples
 
@@ -438,6 +446,7 @@ Check:
 
 - the file is directly inside `/home/container/addons`
 - the filename ends with `.sh` or `.py`
+- the filename does not end with `.disable`
 - the startup path is the normal managed startup path
 - `ADDONS_ENABLED=true`
 
@@ -471,6 +480,7 @@ Check:
 
 Check:
 
+- `ADDON_CHECKSERVERSTATUS_ENABLED=true`
 - the server used the normal managed startup path
 - `/home/container/addons/defaults/30-checkserverstatus.sh` exists
 - `/home/container/bin/checkserverstatus` exists

@@ -231,7 +231,7 @@ func (s *Supervisor) runCheckServerStatus(ctx context.Context) {
 	if _, err := os.Stat(commandPath); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			fmt.Fprintln(os.Stdout, "[helper:checkserverstatus] checkserverstatus is not available in /home/container/bin")
-			fmt.Fprintln(os.Stdout, "[helper:checkserverstatus] Confirm that /home/container/addons/defaults/30-checkserverstatus.sh exists and that the managed runtime startup path completed normally")
+			fmt.Fprintln(os.Stdout, "[helper:checkserverstatus] Confirm that ADDON_CHECKSERVERSTATUS_ENABLED=true, /home/container/addons/defaults/30-checkserverstatus.sh exists, and the managed runtime startup path completed normally")
 			return
 		}
 		s.logger.Warn("checkserverstatus availability check failed", "path", commandPath, "error", err)

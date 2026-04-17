@@ -140,8 +140,18 @@
     },
     {
       "name": "Addon Support Enabled",
-      "description": "Runtime variable. Enable the lightweight addon loader for top-level .sh and .py scripts in the addon directory before normal server startup.",
+      "description": "Runtime variable. Enable the lightweight addon loader for top-level .sh and .py scripts in the addon directory before normal server startup. Rename a top-level addon file to end with .disable if you want to keep it without running it.",
       "env_variable": "ADDONS_ENABLED",
+      "default_value": "true",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|in:true,false",
+      "field_type": "text"
+    },
+    {
+      "name": "Addon Checkserverstatus Enabled",
+      "description": "Runtime variable. Enable or disable the built-in checkserverstatus addon helper that is refreshed from the image and installed into /home/container/bin during managed startup.",
+      "env_variable": "ADDON_CHECKSERVERSTATUS_ENABLED",
       "default_value": "true",
       "user_viewable": true,
       "user_editable": true,
