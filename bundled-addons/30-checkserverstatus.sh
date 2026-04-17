@@ -265,12 +265,15 @@ install_status_command() {
   mkdir -p /home/container/bin
 
   if [[ -L "$INSTALL_TARGET" ]]; then
-    existing_target="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$INSTALL_TARGET")"
+    existing_target="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$INSTALL_TARGET" 2>/dev/null || true)"
     if [[ "$existing_target" == "$SELF_PATH" ]]; then
       log "Command already available at ${INSTALL_TARGET}"
       return 0
     fi
-    log "Preserving existing command symlink at ${INSTALL_TARGET}"
+
+    rm -f "$INSTALL_TARGET"
+    ln -s "$SELF_PATH" "$INSTALL_TARGET"
+    log "Updated command symlink at ${INSTALL_TARGET}"
     return 0
   fi
 
