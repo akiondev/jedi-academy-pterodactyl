@@ -1,6 +1,6 @@
 <h1 align="center">Jedi Academy Pterodactyl (TaystJK)</h1>
 
-<p align="center"><strong>Production-oriented Pterodactyl image and egg for TaystJK, with asset-safe delivery, lightweight Bash/Python addon loading, and optional anti-VPN runtime protection.</strong></p>
+<p align="center"><strong>Pterodactyl image and egg for TaystJK, with manual game asset handling, lightweight Bash/Python addons, and optional anti-VPN runtime protection.</strong></p>
 
 <p align="center">
   <a href="https://github.com/akiondev/jedi-academy-pterodactyl/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/akiondev/jedi-academy-pterodactyl/ci.yml?branch=main&style=for-the-badge&label=build&logo=githubactions&logoColor=white" alt="Build status" /></a>
@@ -30,6 +30,8 @@
 </p>
 
 Pterodactyl Docker image and egg for running a **TaystJK** dedicated server without redistributing copyrighted **Jedi Academy** game assets.
+
+Built around [TaystJK by taysta](https://github.com/taysta/TaystJK). This repository packages that runtime for Pterodactyl and adds the surrounding image, egg, startup, addon, and admin tooling.
 
 License: **GPL-3.0**
 
@@ -143,3 +145,13 @@ This repository also includes a lightweight addon loader for self-hosted Pteroda
 - Scope: addons affect only the current server container and are fully owned by the server operator
 
 Read [docs/addon_readme.md](docs/addon_readme.md) for the compact addon guide and [docs/addon_readme_advanced.md](docs/addon_readme_advanced.md) for the full advanced reference.
+
+## Developer
+
+- Core runtime entrypoint: [scripts/entrypoint.sh](scripts/entrypoint.sh)
+- Standalone install helper: [scripts/install_taystjk.sh](scripts/install_taystjk.sh)
+- Pterodactyl egg: [egg/egg-taystjk-pterodactyl.json](egg/egg-taystjk-pterodactyl.json)
+- Docker image build: [docker/Dockerfile](docker/Dockerfile)
+- Anti-VPN runtime: [cmd/taystjk-antivpn](cmd/taystjk-antivpn) and [docs/anti-vpn.md](docs/anti-vpn.md)
+- Addon docs: [docs/addon_readme.md](docs/addon_readme.md) and [docs/addon_readme_advanced.md](docs/addon_readme_advanced.md)
+- Upstream runtime credit: [taysta/TaystJK](https://github.com/taysta/TaystJK)
