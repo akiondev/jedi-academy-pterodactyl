@@ -43,11 +43,14 @@ Example:
 addons/
   ADDONS.md
   ADDON_DEVELOPMENT.md
-  10-backup-servercfg.sh
-  20-discord-webhook.py
+  20-python-announcer.py
+  20-python-announcer.config.json
+  20-python-announcer.messages.txt
+  30-checkserverstatus.sh
+  90-custom-webhook.py
 ```
 
-The two Markdown files are image-provided documentation. Your own `.sh` and `.py` files can live beside them.
+The two Markdown files are image-provided documentation. The announcer and status command are bundled example addons. Your own `.sh` and `.py` files can live beside them.
 
 ## Supported file types
 
@@ -63,6 +66,7 @@ The loader also ignores:
 - directories
 - hidden files
 - documentation files such as `.md`
+- addon support files such as `.json` and `.txt`
 - unsupported files
 
 ## Execution order
@@ -95,6 +99,114 @@ If addon support is disabled, addon execution is skipped. The image can still re
 
 If the container is started with a custom startup command instead of the normal managed startup path, addon execution is intentionally bypassed.
 
+## Bundled example addons
+
+The image now ships two ready-made example addons by default:
+
+- `20-python-announcer.py`
+- `30-checkserverstatus.sh`
+
+Their companion files are also included:
+
+- `20-python-announcer.config.json`
+- `20-python-announcer.messages.txt`
+
+These bundled files are copied into `/home/container/addons` during the first managed startup of a server container.
+
+Important behavior:
+
+- bundled examples are meant to become **your live working copies**
+- the runtime does **not** blindly overwrite those live copies on later startups
+- if you edit them, your edits stay in place
+- if you remove them after bootstrap, they stay removed
+
+This keeps the default experience simple while still treating the live addon directory as user-owned runtime space.
+
+## Bundled example 1: Python announcer
+
+The bundled Python announcer is a real addon example for repeated background work.
+
+Files:
+
+```text
+/home/container/addons/20-python-announcer.py
+/home/container/addons/20-python-announcer.config.json
+/home/container/addons/20-python-announcer.messages.txt
+```
+
+What it does:
+
+- launches a small detached Python worker during addon loading
+- waits for a configurable startup delay
+- reads a message list from the bundled messages file
+- sends repeated `svsay` announcements over local RCON
+
+How to configure it:
+
+1. Edit `20-python-announcer.config.json`
+2. Edit `20-python-announcer.messages.txt`
+3. Set `SERVER_RCON_PASSWORD` in the egg or keep `rconpassword` in the active server config
+
+Important notes:
+
+- the addon is enabled by default in its JSON config
+- set `"enabled": false` if you want to disable it without deleting files
+- the addon writes its own worker log to `/home/container/logs/bundled-python-announcer.log`
+- it reads effective runtime settings from `/home/container/.runtime/taystjk-effective.env` first and then falls back to the JSON state file for non-sensitive values
+- it falls back to the active mod/config from `FS_GAME_MOD` and `SERVER_CONFIG`
+
+## Bundled example 2: Bash status command
+
+The bundled Bash status example demonstrates a practical admin utility addon.
+
+File:
+
+```text
+/home/container/addons/30-checkserverstatus.sh
+```
+
+What it does:
+
+- runs as a normal startup addon
+- makes a shell command named `checkserverstatus` available inside the container
+- when that command is run, it prints:
+  - basic current server information
+  - current online players from a live RCON `status` query
+
+How to run it:
+
+```bash
+checkserverstatus
+```
+
+Important notes:
+
+- the command is installed into `/home/container/bin/checkserverstatus`
+- `/home/container/bin` is added to `PATH` by the managed runtime startup
+- live player output uses the effective runtime RCON password when available
+- you can provide that password through `SERVER_RCON_PASSWORD` in the egg or `rconpassword` in the active server config
+- if RCON is not configured, the command still shows basic server information
+
+## Edit, disable, or remove bundled examples
+
+The bundled examples are just normal runtime files after bootstrap.
+
+That means you can:
+
+- edit them directly
+- rename them
+- delete them
+- replace them with your own versions
+
+Recommended approaches:
+
+- disable the announcer by setting `"enabled": false` in `20-python-announcer.config.json`
+- remove the announcer by deleting its `.py`, `.json`, and `.txt` files
+- remove the status example by deleting `30-checkserverstatus.sh`
+- remove the helper command by deleting `/home/container/bin/checkserverstatus`
+
+Your own custom addons and the bundled example addons all follow the same loader rules.
+
 ## Environment variables
 
 The addon system uses these variables:
@@ -110,7 +222,18 @@ Your scripts may also use normal runtime variables such as:
 - `FS_GAME_MOD`
 - `SERVER_PORT`
 - `SERVER_CONFIG`
+- `SERVER_CFG_OVERRIDES_ENABLED`
+- `SERVER_RCON_PASSWORD`
 - `EXTRA_STARTUP_ARGS`
+
+The managed runtime also writes effective server values to:
+
+- `/home/container/.runtime/taystjk-effective.env`
+- `/home/container/.runtime/taystjk-effective.json`
+
+The `.env` file includes the full effective runtime state, including the current effective RCON password when one exists. The `.json` file contains selected non-sensitive values for addons that prefer JSON parsing.
+
+The optional `SERVER_CFG_OVERRIDES_ENABLED` toggle controls whether non-empty override variables from the egg are written back into the active `server.cfg`. When an override field is left blank, addons fall back to the current config value and then to the built-in runtime default.
 
 ## Strict mode
 
@@ -288,7 +411,25 @@ Check:
 - the file extension is `.sh` or `.py`
 - the file is not hidden
 - addon support is enabled
-- the file is not just documentation such as `.md`
+- the file is not just documentation or support data such as `.md`, `.json`, or `.txt`
+
+### My bundled announcer does not send messages
+
+Check:
+
+- `20-python-announcer.config.json` still has `"enabled": true`
+- `20-python-announcer.messages.txt` contains at least one non-empty message
+- `SERVER_RCON_PASSWORD` is set in the egg, or the active server config contains `rconpassword`
+- `/home/container/logs/bundled-python-announcer.log` for announcer worker output
+
+### The `checkserverstatus` command is missing
+
+Check:
+
+- addon support is enabled
+- the server used the normal managed startup path
+- `30-checkserverstatus.sh` still exists in `/home/container/addons`
+- `/home/container/bin/checkserverstatus` exists inside the container
 
 ### My Python addon fails
 

@@ -1,0 +1,7 @@
+# Bundled example announcer messages
+# Blank lines and lines starting with # are ignored.
+
+Welcome to the bundled TaystJK example announcer.
+Edit 20-python-announcer.messages.txt to change these recurring server messages.
+Set SERVER_RCON_PASSWORD in the egg or rconpassword in the active server config to enable bundled RCON announcements.
+Rename or remove 20-python-announcer.py if you do not want to run the bundled announcer.

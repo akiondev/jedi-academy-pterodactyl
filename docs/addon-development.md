@@ -33,6 +33,12 @@ Officially supported addon types:
 - Bash scripts: `.sh`
 - Python 3 scripts: `.py`
 
+Common bundled support files that may live beside addons:
+
+- `.md`
+- `.json`
+- `.txt`
+
 Recommended rule:
 
 - use Bash for simple file/setup tasks
@@ -80,6 +86,27 @@ Useful variables may include:
 - `ADDONS_TIMEOUT_SECONDS`
 - `ADDONS_LOG_OUTPUT`
 
+For resolved runtime values, prefer the effective state published by the entrypoint:
+
+- `TAYSTJK_ACTIVE_MOD_DIR`
+- `TAYSTJK_ACTIVE_SERVER_CONFIG`
+- `TAYSTJK_ACTIVE_SERVER_CONFIG_PATH`
+- `TAYSTJK_EFFECTIVE_SERVER_PORT`
+- `TAYSTJK_EFFECTIVE_SERVER_HOSTNAME`
+- `TAYSTJK_EFFECTIVE_SERVER_MOTD`
+- `TAYSTJK_EFFECTIVE_SERVER_MAXCLIENTS`
+- `TAYSTJK_EFFECTIVE_SERVER_GAMETYPE`
+- `TAYSTJK_EFFECTIVE_SERVER_RCON_PASSWORD`
+
+Those values are also written to:
+
+- `/home/container/.runtime/taystjk-effective.env`
+- `/home/container/.runtime/taystjk-effective.json`
+
+The `.env` file includes the full effective runtime state, including the current effective RCON password when one exists. The `.json` file contains selected non-sensitive values only.
+
+The `SERVER_CFG_OVERRIDES_ENABLED` toggle controls whether non-empty egg override fields are written into the active `server.cfg`. When an override field is blank, your addon should expect the runtime state to fall back to the current config value and then to the built-in default.
+
 Use sensible defaults when reading them.
 
 ### Bash example
@@ -94,8 +121,8 @@ CONFIG_FILE="${SERVER_CONFIG:-server.cfg}"
 ```python
 import os
 
-mod_dir = os.getenv("FS_GAME_MOD", "taystjk")
-config_file = os.getenv("SERVER_CONFIG", "server.cfg")
+mod_dir = os.getenv("TAYSTJK_ACTIVE_MOD_DIR", os.getenv("FS_GAME_MOD", "taystjk"))
+config_file = os.getenv("TAYSTJK_ACTIVE_SERVER_CONFIG", os.getenv("SERVER_CONFIG", "server.cfg"))
 ```
 
 ## Bash authoring guidelines
@@ -232,6 +259,32 @@ That means your code should:
 - avoid long uncontrolled network calls
 - use explicit timeouts for HTTP/API work
 
+## Bundled example patterns in this project
+
+This repository now includes two bundled example addons that demonstrate two useful patterns:
+
+### Pattern 1: background worker addon
+
+`20-python-announcer.py` shows how an addon can:
+
+- launch a detached background worker
+- exit cleanly so normal server startup can continue
+- read a JSON config file
+- read a separate message list
+- use local RCON for repeated actions
+
+This pattern is useful when you need periodic behavior without turning the core runtime into a framework feature.
+
+### Pattern 2: command installer addon
+
+`30-checkserverstatus.sh` shows how an addon can:
+
+- run once during startup
+- install a user-facing helper command
+- reuse the same script as both the addon and the live command entry point
+
+This pattern is useful for admin commands, validators, and maintenance helpers that should be easy to run on demand.
+
 ## Good use cases for addons
 
 Addons work well for:
@@ -332,3 +385,10 @@ Keep addons:
 - safe around file writes
 
 If a script grows too large or too critical, split it into smaller steps or document it clearly so future maintenance stays manageable.
+
+Bundled examples should feel educational first:
+
+- easy to read
+- easy to disable
+- easy to copy and rename
+- easy to replace with your own version

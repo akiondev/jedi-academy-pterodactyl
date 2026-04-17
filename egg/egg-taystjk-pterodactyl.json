@@ -59,6 +59,66 @@
       "field_type": "text"
     },
     {
+      "name": "Server Config Overrides Enabled",
+      "description": "Runtime variable. If true, non-empty override fields such as SERVER_RCON_PASSWORD, SERVER_HOSTNAME, SERVER_MOTD, SERVER_MAXCLIENTS and SERVER_GAMETYPE are written into the active server.cfg. If false, those config values stay user-owned and runtime helpers read directly from the active config/defaults.",
+      "env_variable": "SERVER_CFG_OVERRIDES_ENABLED",
+      "default_value": "true",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|in:true,false",
+      "field_type": "text"
+    },
+    {
+      "name": "Server RCON Password",
+      "description": "Runtime variable. Optional managed override for rconpassword in the active server.cfg when server config overrides are enabled. Leave blank to use the current config value instead. Bundled addons and helper commands can read the effective value automatically through the runtime state files.",
+      "env_variable": "SERVER_RCON_PASSWORD",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string|max:256",
+      "field_type": "text"
+    },
+    {
+      "name": "Server Hostname Override",
+      "description": "Runtime variable. Optional managed override for sv_hostname in the active server.cfg when server config overrides are enabled. Leave blank to use the current config value instead.",
+      "env_variable": "SERVER_HOSTNAME",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string|max:256",
+      "field_type": "text"
+    },
+    {
+      "name": "Server MOTD Override",
+      "description": "Runtime variable. Optional managed override for g_motd in the active server.cfg when server config overrides are enabled. Leave blank to use the current config value instead.",
+      "env_variable": "SERVER_MOTD",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string|max:256",
+      "field_type": "text"
+    },
+    {
+      "name": "Server Max Clients Override",
+      "description": "Runtime variable. Optional managed override for sv_maxclients in the active server.cfg when server config overrides are enabled. Leave blank to use the current config value instead.",
+      "env_variable": "SERVER_MAXCLIENTS",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|integer|between:1,128",
+      "field_type": "text"
+    },
+    {
+      "name": "Server Gametype Override",
+      "description": "Runtime variable. Optional managed override for g_gametype in the active server.cfg when server config overrides are enabled. Leave blank to use the current config value instead.",
+      "env_variable": "SERVER_GAMETYPE",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|integer|between:0,16",
+      "field_type": "text"
+    },
+    {
       "name": "Extra Startup Args",
       "description": "Runtime variable. Optional additional startup flags. Use shell-style quotes around values with spaces; shell control operators are not allowed.",
       "env_variable": "EXTRA_STARTUP_ARGS",
