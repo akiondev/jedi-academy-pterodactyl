@@ -35,8 +35,7 @@ Pterodactyl Docker image and egg for running a **TaystJK** dedicated server with
 - `scripts/entrypoint.sh` — runtime preparation and launch helper
 - `scripts/install_taystjk.sh` — standalone install helper
 - `cmd/taystjk-antivpn` — Go-based anti-VPN supervisor for runtime join checks
-- `docs/addons.md` — addon usage, runtime behavior, and configuration
-- `docs/addon-development.md` — Bash and Python addon development guidelines
+- `docs/addon_readme.md` — compact addon usage guide with quick examples
 - `docs/source-analysis.md` — source-code findings that drove the project design
 - `docs/notes.md` — final revision notes
 - `docs/anti-vpn.md` — anti-VPN design, variables, scoring and operating notes
@@ -50,7 +49,7 @@ Pterodactyl Docker image and egg for running a **TaystJK** dedicated server with
 - Allows switching to manually installed mod folders such as `base`, `japlus`, `japro`, or `mbii`
 - Allows switching to a manually uploaded alternative dedicated server binary through `SERVER_BINARY`
 - Supports lightweight runtime addons from `/home/container/addons` using top-level `.sh` and `.py` scripts executed alphabetically before normal startup
-- Syncs `ADDONS.md` and `ADDON_DEVELOPMENT.md` automatically into `/home/container/addons/docs`
+- Syncs `ADDON_README.md` automatically into `/home/container/addons/docs`
 - Ships a managed `checkserverstatus` helper that is always refreshed from the image and can be run from the Pterodactyl console
 - Ships addon examples in `/home/container/addons/examples`, including a Python RCON announcer template that server owners can copy into `/home/container/addons` when they want to enable it
 - Ships a stronger addon baseline in the runtime image with `python3`, `pip`, `venv`, `sqlite3`, `curl`, `wget`, `jq`, `git`, `rsync`, `procps`, `tar`, and `unzip`
@@ -120,4 +119,4 @@ This repository also includes a lightweight addon loader for self-hosted Pteroda
 - Safety model: best-effort by default, with optional strict mode and per-addon timeouts
 - Scope: addons affect only the current server container and are fully owned by the server operator
 
-Read [docs/addons.md](docs/addons.md) for usage and [docs/addon-development.md](docs/addon-development.md) for development guidelines.
+Read [docs/addon_readme.md](docs/addon_readme.md) for the compact addon guide.

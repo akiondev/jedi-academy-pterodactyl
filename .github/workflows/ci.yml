@@ -54,8 +54,7 @@ jobs:
               - "internal/**"
               - "scripts/**"
               - "bundled-addons/**"
-              - "docs/addons.md"
-              - "docs/addon-development.md"
+              - "docs/addon_readme.md"
               - "go.mod"
 
   validate:
