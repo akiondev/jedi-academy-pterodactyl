@@ -49,6 +49,7 @@ Pterodactyl Docker image and egg for running a **TaystJK** dedicated server with
 - Uses `FS_GAME_MOD=taystjk` by default
 - Allows switching to manually installed mod folders such as `base`, `japlus`, `japro`, or `mbii`
 - Supports lightweight runtime addons from `/home/container/addons` using `.sh` and `.py` scripts executed alphabetically before normal startup
+- Syncs `ADDONS.md` and `ADDON_DEVELOPMENT.md` automatically into the addon directory for server owners
 - Ships a stronger addon baseline in the runtime image with `python3`, `pip`, `venv`, `sqlite3`, `curl`, `wget`, `jq`, `git`, `rsync`, `procps`, `tar`, and `unzip`
 - Optional anti-VPN supervision using online API checks with cache, allowlist, structured logging and weighted decisions
 
@@ -83,6 +84,7 @@ Read [docs/anti-vpn.md](docs/anti-vpn.md) for the full operating guide.
 This repository also includes a lightweight addon loader for self-hosted Pterodactyl users.
 
 - Addon directory: `/home/container/addons`
+- Built-in addon docs: `ADDONS.md` and `ADDON_DEVELOPMENT.md` are synced there automatically by the image
 - Supported file types: `.sh` for Bash and `.py` for Python 3
 - Execution order: alphabetical by filename
 - Runtime behavior: each addon is executed before normal managed server startup

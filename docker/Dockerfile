@@ -90,6 +90,9 @@ RUN mkdir -p /opt/taystjk-dist
 COPY --from=builder /opt/taystjk/JediAcademy/taystjkded.* /opt/taystjk-dist/
 COPY --from=builder /opt/taystjk/JediAcademy/taystjk /opt/taystjk-dist/taystjk
 COPY --from=antivpn-builder /out/taystjk-antivpn /usr/local/bin/taystjk-antivpn
+RUN mkdir -p /opt/taystjk-docs/addons
+COPY --chown=container:container docs/addons.md /opt/taystjk-docs/addons/ADDONS.md
+COPY --chown=container:container docs/addon-development.md /opt/taystjk-docs/addons/ADDON_DEVELOPMENT.md
 COPY --chown=container:container scripts/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh /usr/local/bin/taystjk-antivpn /opt/taystjk-dist/taystjkded.*
 

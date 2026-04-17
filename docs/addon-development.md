@@ -1,144 +1,334 @@
-# Addon Development Guidelines
+# Addon Development Guide
 
-## Environment model
+## Purpose
 
-Addons run inside the same server container as TaystJK.
+This document explains how to write Bash and Python addons that work correctly inside this Jedi Academy / TaystJK Pterodactyl environment.
 
-Important assumptions:
-
-- working directory is `/home/container`
-- addons are executed as the `container` user
-- Bash addons run as `bash /home/container/addons/<file>.sh`
-- Python addons run as `python3 /home/container/addons/<file>.py`
-- addons are not sourced into the entrypoint shell
-
-Because addons run as child processes, exporting environment variables inside an addon does not change the parent entrypoint process. If you need to affect startup, do it through files or other runtime state that the server reads later.
-
-## Placement
-
-Put your addon files in:
-
-`/home/container/addons`
-
-Recommended naming style:
+This guide is also synced automatically by the runtime image into:
 
 ```text
-00-prepare.sh
-10-validate.py
-20-patch-config.sh
-30-send-webhook.py
+/home/container/addons/ADDON_DEVELOPMENT.md
 ```
 
-This keeps execution order explicit and predictable.
+That copy is there for server owners and addon authors working directly inside the running server container.
 
-## Bash addon guidance
+## Runtime model
 
-Recommended Bash practices:
+Addons are executed inside the current server container before normal server startup.
 
-- start with `#!/usr/bin/env bash` when you want local editor friendliness
-- prefer `set -euo pipefail`
-- keep scripts idempotent when possible
-- log clearly with `echo` or `printf`
-- fail intentionally with a non-zero exit code when something is truly wrong
+That means your addon code runs in the same container environment as the game server.
 
-Example Bash addon:
+Important implications:
+
+- your addon can access `/home/container`
+- your addon can read and write server files
+- your addon can use environment variables provided by the egg and entrypoint
+- your addon should assume it is running in a Linux container
+- your addon should not assume interactive input is available
+
+## Supported languages
+
+Officially supported addon types:
+
+- Bash scripts: `.sh`
+- Python 3 scripts: `.py`
+
+Recommended rule:
+
+- use Bash for simple file/setup tasks
+- use Python for more advanced logic, API calls, parsing, and automation
+
+## Working directory and paths
+
+Your addon should assume the main working area is:
+
+```text
+/home/container
+```
+
+Recommended practice:
+
+- build absolute paths explicitly
+- do not rely on unclear relative paths
+- do not assume a specific mod directory unless you read it from environment variables
+
+Good example:
+
+```bash
+CONFIG_PATH="/home/container/${FS_GAME_MOD:-taystjk}/${SERVER_CONFIG:-server.cfg}"
+```
+
+Bad example:
+
+```bash
+CONFIG_PATH="taystjk/server.cfg"
+```
+
+## Environment variables
+
+Your addon should prefer environment variables over hardcoded assumptions.
+
+Useful variables may include:
+
+- `FS_GAME_MOD`
+- `SERVER_PORT`
+- `SERVER_CONFIG`
+- `EXTRA_STARTUP_ARGS`
+- `ADDONS_ENABLED`
+- `ADDONS_DIR`
+- `ADDONS_STRICT`
+- `ADDONS_TIMEOUT_SECONDS`
+- `ADDONS_LOG_OUTPUT`
+
+Use sensible defaults when reading them.
+
+### Bash example
+
+```bash
+MOD_DIR="${FS_GAME_MOD:-taystjk}"
+CONFIG_FILE="${SERVER_CONFIG:-server.cfg}"
+```
+
+### Python example
+
+```python
+import os
+
+mod_dir = os.getenv("FS_GAME_MOD", "taystjk")
+config_file = os.getenv("SERVER_CONFIG", "server.cfg")
+```
+
+## Bash authoring guidelines
+
+Use this header:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+```
+
+Recommended practices:
+
+- quote variable expansions
+- check files exist before modifying them
+- log clearly
+- use explicit paths
+- keep scripts non-interactive
+- exit with non-zero on real failure
+
+### Good Bash example
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONFIG="/home/container/taystjk/server.cfg"
+echo "[addon:bash] Starting"
 
-if [[ -f "$CONFIG" ]]; then
-  grep -q 'seta sv_hostname' "$CONFIG" || echo 'seta sv_hostname "My Server"' >> "$CONFIG"
+MOD_DIR="${FS_GAME_MOD:-taystjk}"
+CONFIG_FILE="${SERVER_CONFIG:-server.cfg}"
+TARGET="/home/container/${MOD_DIR}/${CONFIG_FILE}"
+
+if [[ ! -f "${TARGET}" ]]; then
+    echo "[addon:bash] Missing config: ${TARGET}"
+    exit 1
 fi
+
+echo "[addon:bash] Found config: ${TARGET}"
 ```
 
-## Python addon guidance
+## Python authoring guidelines
 
-Recommended Python practices:
-
-- use Python 3 only
-- keep dependencies minimal unless you intentionally manage a venv or pip install flow
-- print explicit status messages for visibility in the console
-- exit non-zero when you want strict mode to stop startup
-
-Example Python addon:
+Use this header:
 
 ```python
 #!/usr/bin/env python3
-from pathlib import Path
-import sys
-
-required = Path("/home/container/base/assets0.pk3")
-
-if not required.exists():
-    print("Required file missing:", required)
-    sys.exit(1)
-
-print("Addon validation passed")
 ```
 
-## Recommended patterns
+Recommended practices:
 
-Good addon patterns:
+- prefer the Python standard library only
+- avoid assuming `pip` packages are installed
+- read environment variables with defaults
+- print clear log messages
+- exit with explicit status codes when needed
+- keep scripts deterministic and non-interactive
 
-- patching config files
-- validating required files
-- downloading optional content
-- sending webhooks
-- syncing extra runtime data with `rsync`
-- caching addon state in SQLite
-- calling JSON APIs with `curl` + `jq`
+### Good Python example
 
-## Strict vs best-effort behavior
+```python
+#!/usr/bin/env python3
+import os
+import sys
 
-With `ADDONS_STRICT=false`:
+print("[addon:python] Starting")
 
-- addon failures are logged
+mod_dir = os.getenv("FS_GAME_MOD", "taystjk")
+config_file = os.getenv("SERVER_CONFIG", "server.cfg")
+path = f"/home/container/{mod_dir}/{config_file}"
+
+if not os.path.isfile(path):
+    print(f"[addon:python] Missing config: {path}")
+    sys.exit(1)
+
+print(f"[addon:python] Found config: {path}")
+sys.exit(0)
+```
+
+## Exit codes and startup behavior
+
+Exit codes matter.
+
+### Success
+
+- `0` means success
+
+### Failure
+
+- any non-zero code means failure
+
+How failure is handled depends on addon mode:
+
+### Best-effort mode
+
+- failure is logged
 - startup continues
 
-With `ADDONS_STRICT=true`:
+### Strict mode
 
-- addon failures stop startup
-- addon timeouts stop startup
+- failure is logged
+- startup stops
 
-Choose strict mode only for addons that are truly required for a safe or correct server launch.
+## Logging conventions
 
-## Timeout-aware design
+Use clear prefixes so addon logs are easy to find.
 
-Each addon has a fixed timeout.
+### Bash
 
-To avoid unnecessary timeouts:
+```bash
+echo "[addon:bash] Doing something"
+```
 
-- keep startup-time network calls short
-- retry cautiously inside the addon
-- prefer local cached state when possible
-- avoid long blocking maintenance tasks during launch
+### Python
 
-If you need heavier maintenance logic, consider making it incremental or moving some work outside the critical startup path.
+```python
+print("[addon:python] Doing something")
+```
 
-## Logging guidance
+Recommended logging style:
 
-If `ADDONS_LOG_OUTPUT=true`, addon stdout and stderr are shown directly in the Pterodactyl console.
+- what the script is doing
+- what file/path it is using
+- what decision it made
+- why it failed, if it failed
 
-Good logging style:
+## Timeout awareness
 
-- short status messages
-- clear failure reasons
-- no secrets in output
+Your addon may be subject to a timeout.
 
-Avoid printing API keys, tokens, or sensitive config values.
+That means your code should:
 
-## Safety notes
+- avoid hanging forever
+- avoid waiting for user input
+- avoid long uncontrolled network calls
+- use explicit timeouts for HTTP/API work
 
-This addon loader is not a sandbox.
+## Good use cases for addons
 
-Addons can:
+Addons work well for:
 
-- change files
-- download content
-- call external services
-- consume CPU and memory
+- generating or patching config files
+- validating required files exist
+- downloading trusted resources
+- copying or backing up files
+- sending Discord/webhooks
+- calling APIs
+- log parsing
+- maintenance logic
+- cleanup tasks
 
-Only run addons you personally trust for your own container.
+## Poor use cases for addons
+
+Addons are not ideal for:
+
+- replacing the main server process
+- acting as a full plugin API for TaystJK
+- implementing deep engine/game logic
+- long-running uncontrolled daemon processes without clear intent
+
+## Common pitfalls
+
+### Hardcoding the mod directory
+
+Do not assume `taystjk` is always the active mod.
+
+Use:
+
+- `FS_GAME_MOD`
+- `SERVER_CONFIG`
+
+### Assuming files always exist
+
+Always check before reading, copying, or modifying.
+
+### Assuming internet is available
+
+Network calls can fail. Handle this cleanly.
+
+### Using unsupported dependencies
+
+Do not assume extra Python packages are installed unless you manage them explicitly yourself.
+
+### Forgetting exit codes
+
+If your addon fails silently, debugging becomes much harder.
+
+### Writing destructive code without safeguards
+
+Be careful with `rm`, overwrites, and large file operations.
+
+## Example Bash addon
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "[addon:bash] Patching hostname"
+
+MOD_DIR="${FS_GAME_MOD:-taystjk}"
+CONFIG_FILE="${SERVER_CONFIG:-server.cfg}"
+TARGET="/home/container/${MOD_DIR}/${CONFIG_FILE}"
+
+if [[ -f "${TARGET}" ]]; then
+    grep -q 'seta sv_hostname' "${TARGET}" || echo 'seta sv_hostname "Custom Server"' >> "${TARGET}"
+fi
+```
+
+## Example Python addon
+
+```python
+#!/usr/bin/env python3
+import json
+import os
+import sqlite3
+from pathlib import Path
+
+db_path = Path("/home/container/addons/addon-state.db")
+db = sqlite3.connect(db_path)
+db.execute("create table if not exists runs (id integer primary key, note text)")
+db.execute("insert into runs(note) values (?)", ("startup hook executed",))
+db.commit()
+
+print(json.dumps({"addon": "startup-state", "status": "ok", "db": str(db_path)}))
+```
+
+## Final advice
+
+Keep addons:
+
+- explicit
+- deterministic
+- well logged
+- small when possible
+- safe around file writes
+
+If a script grows too large or too critical, split it into smaller steps or document it clearly so future maintenance stays manageable.

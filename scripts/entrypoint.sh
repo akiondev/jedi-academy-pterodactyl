@@ -268,6 +268,24 @@ sync_runtime_files() {
   fi
 }
 
+sync_addon_docs() {
+  local doc_source=""
+  local doc_name=""
+
+  mkdir -p "$ADDONS_DIR"
+
+  if [[ ! -d /opt/taystjk-docs/addons ]]; then
+    debug "No image-managed addon docs found under /opt/taystjk-docs/addons"
+    return 0
+  fi
+
+  for doc_source in /opt/taystjk-docs/addons/*; do
+    [[ -f "$doc_source" ]] || continue
+    doc_name="${doc_source##*/}"
+    install -m 0644 "$doc_source" "${ADDONS_DIR}/${doc_name}"
+  done
+}
+
 require_base_assets() {
   [[ -f /home/container/base/assets0.pk3 ]] || fail "Missing /home/container/base/assets0.pk3. Provide your legally owned Jedi Academy base assets before starting the server."
 }
@@ -489,6 +507,7 @@ run_addons() {
   local addon_exit=0
   local addon_entries=()
   local addon_count=0
+  local addon_candidate_count=0
 
   if [[ "$ADDONS_ENABLED" != "true" ]]; then
     return 0
@@ -506,11 +525,21 @@ run_addons() {
     return 0
   fi
 
-  info "Scanning ${addon_count} addon entr$( [[ "$addon_count" -eq 1 ]] && printf 'y' || printf 'ies' ) in ${ADDONS_DIR}"
+  for entry_name in "${addon_entries[@]}"; do
+    [[ "$entry_name" == .* ]] && continue
+    [[ "$entry_name" == *.md ]] && continue
+    addon_candidate_count=$((addon_candidate_count + 1))
+  done
+
+  if [[ "$addon_candidate_count" -eq 0 ]]; then
+    info "Addon directory contains documentation only; continuing without addon execution"
+    return 0
+  fi
+
+  info "Scanning ${addon_candidate_count} addon candidate$( [[ "$addon_candidate_count" -eq 1 ]] && printf '' || printf 's' ) in ${ADDONS_DIR}"
 
   for entry_name in "${addon_entries[@]}"; do
     entry_path="${ADDONS_DIR}/${entry_name}"
-    info "Addon detected: ${entry_name}"
 
     if [[ "$entry_name" == .* ]]; then
       warn "Skipping hidden addon entry: ${entry_name}"
@@ -529,6 +558,15 @@ run_addons() {
       ADDON_SKIPPED_COUNT=$((ADDON_SKIPPED_COUNT + 1))
       continue
     fi
+
+    case "$entry_name" in
+      *.md)
+        debug "Ignoring addon documentation file: ${entry_name}"
+        continue
+        ;;
+    esac
+
+    info "Addon detected: ${entry_name}"
 
     case "$entry_name" in
       *.sh)
@@ -768,6 +806,7 @@ configure_anti_vpn
 
 mkdir -p /home/container/base /home/container/logs "/home/container/${active_game_dir}"
 sync_runtime_files
+sync_addon_docs
 
 [[ -f "$server_binary_path" ]] || fail "Configured server binary ${server_binary_name} was not found in the container volume or image runtime"
 chmod +x "$server_binary_path"
