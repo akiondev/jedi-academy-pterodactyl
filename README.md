@@ -1,6 +1,6 @@
 <h1 align="center">Jedi Academy Pterodactyl (TaystJK)</h1>
 
-<p align="center"><strong>Production-oriented Pterodactyl image and egg for TaystJK, with asset-safe delivery and optional anti-VPN runtime protection.</strong></p>
+<p align="center"><strong>Production-oriented Pterodactyl image and egg for TaystJK, with asset-safe delivery, lightweight Bash/Python addon loading, and optional anti-VPN runtime protection.</strong></p>
 
 <p align="center">
   <a href="https://github.com/akiondev/jedi-academy-pterodactyl/actions/workflows/ci.yml">
@@ -35,6 +35,8 @@ Pterodactyl Docker image and egg for running a **TaystJK** dedicated server with
 - `scripts/entrypoint.sh` — runtime preparation and launch helper
 - `scripts/install_taystjk.sh` — standalone install helper
 - `cmd/taystjk-antivpn` — Go-based anti-VPN supervisor for runtime join checks
+- `docs/addons.md` — addon usage, runtime behavior, and configuration
+- `docs/addon-development.md` — Bash and Python addon development guidelines
 - `docs/source-analysis.md` — source-code findings that drove the project design
 - `docs/notes.md` — final revision notes
 - `docs/anti-vpn.md` — anti-VPN design, variables, scoring and operating notes
@@ -46,6 +48,8 @@ Pterodactyl Docker image and egg for running a **TaystJK** dedicated server with
 - Supports asset provisioning through `manual`, `url`, or `none`
 - Uses `FS_GAME_MOD=taystjk` by default
 - Allows switching to manually installed mod folders such as `base`, `japlus`, `japro`, or `mbii`
+- Supports lightweight runtime addons from `/home/container/addons` using `.sh` and `.py` scripts executed alphabetically before normal startup
+- Ships a stronger addon baseline in the runtime image with `python3`, `pip`, `venv`, `sqlite3`, `curl`, `wget`, `jq`, `git`, `rsync`, `procps`, `tar`, and `unzip`
 - Optional anti-VPN supervision using online API checks with cache, allowlist, structured logging and weighted decisions
 
 ## Release process
@@ -72,4 +76,17 @@ The anti-VPN feature is designed specifically for VPN / hosting / non-residentia
 - Runtime behavior: captures join events from live server stdout while also watching `server.log`, caches decisions locally, writes a dedicated audit trail, and can log, broadcast, or block based on score
 - Safety defaults: external API failures do not stop server startup and do not hard-block players by themselves
 
-Read [docs/anti-vpn.md](/Users/robinblossing/Desktop/REPOS/jedi-academy-pterodactyl-main/docs/anti-vpn.md) for the full operating guide.
+Read [docs/anti-vpn.md](docs/anti-vpn.md) for the full operating guide.
+
+## Addon support overview
+
+This repository also includes a lightweight addon loader for self-hosted Pterodactyl users.
+
+- Addon directory: `/home/container/addons`
+- Supported file types: `.sh` for Bash and `.py` for Python 3
+- Execution order: alphabetical by filename
+- Runtime behavior: each addon is executed before normal managed server startup
+- Safety model: best-effort by default, with optional strict mode and per-addon timeouts
+- Scope: addons affect only the current server container and are fully owned by the server operator
+
+Read [docs/addons.md](docs/addons.md) for usage and [docs/addon-development.md](docs/addon-development.md) for development guidelines.

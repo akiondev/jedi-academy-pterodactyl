@@ -7,7 +7,7 @@
   "exported_at": "2026-04-16T14:05:00+02:00",
   "name": "TaystJK",
   "author": "admin@example.com",
-  "description": "Runs TaystJK dedicated server on Pterodactyl from a source-built runtime image without bundling copyrighted Jedi Academy game assets. Default fs_game is taystjk, which is where TaystJK installs its bundled jaPRO-oriented content. Includes an optional anti-VPN runtime supervisor with stdout-first event capture, online API checks, local cache, public decision broadcasts, audit logging, allowlist support and weighted log-only/block decisions.",
+  "description": "Runs TaystJK dedicated server on Pterodactyl from a source-built runtime image without bundling copyrighted Jedi Academy game assets. Default fs_game is taystjk, which is where TaystJK installs its bundled jaPRO-oriented content. Includes a lightweight runtime addon loader for user-owned Bash and Python scripts under /home/container/addons, plus an optional anti-VPN runtime supervisor with stdout-first event capture, online API checks, local cache, public decision broadcasts, audit logging, allowlist support and weighted log-only/block decisions.",
   "features": [],
   "docker_images": {
     "ghcr.io/akiondev/jedi-academy-taystjk:latest": "ghcr.io/akiondev/jedi-academy-taystjk:latest"
@@ -73,6 +73,56 @@
       "description": "Runtime variable. Enable extra startup diagnostics in the console output.",
       "env_variable": "DEBUG_STARTUP",
       "default_value": "false",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|in:true,false",
+      "field_type": "text"
+    },
+    {
+      "name": "Addon Support Enabled",
+      "description": "Runtime variable. Enable the lightweight addon loader for .sh and .py scripts before normal server startup.",
+      "env_variable": "ADDONS_ENABLED",
+      "default_value": "true",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|in:true,false",
+      "field_type": "text"
+    },
+    {
+      "name": "Addon Directory",
+      "description": "Runtime variable. Directory under /home/container that is scanned for user-owned addons. Files are executed alphabetically from this container path only.",
+      "env_variable": "ADDONS_DIR",
+      "default_value": "/home/container/addons",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|max:256|regex:/^\\/home\\/container(\\/[A-Za-z0-9._-]+)*\\/?$/",
+      "field_type": "text"
+    },
+    {
+      "name": "Addon Strict Mode",
+      "description": "Runtime variable. If true, addon failures or timeouts stop startup. If false, addon failures are logged and startup continues.",
+      "env_variable": "ADDONS_STRICT",
+      "default_value": "false",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|in:true,false",
+      "field_type": "text"
+    },
+    {
+      "name": "Addon Timeout Seconds",
+      "description": "Runtime variable. Per-addon timeout in seconds before the loader treats the script as timed out.",
+      "env_variable": "ADDONS_TIMEOUT_SECONDS",
+      "default_value": "30",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|integer|between:1,3600",
+      "field_type": "text"
+    },
+    {
+      "name": "Addon Log Output",
+      "description": "Runtime variable. If true, addon stdout and stderr are shown in the console. If false, only loader status messages are shown.",
+      "env_variable": "ADDONS_LOG_OUTPUT",
+      "default_value": "true",
       "user_viewable": true,
       "user_editable": true,
       "rules": "required|string|in:true,false",

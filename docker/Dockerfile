@@ -68,11 +68,20 @@ RUN apt-get update \
         ca-certificates \
         coreutils \
         curl \
+        git \
+        jq \
         libjpeg62-turbo \
         libpng16-16 \
         libstdc++6 \
+        procps \
+        python3 \
+        python3-pip \
+        python3-venv \
+        rsync \
+        sqlite3 \
         tar \
         unzip \
+        wget \
         zlib1g \
     && useradd --create-home --home-dir /home/container --shell /bin/bash container \
     && rm -rf /var/lib/apt/lists/*

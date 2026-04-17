@@ -195,6 +195,16 @@ require_safe_component() {
   fi
 }
 
+require_safe_container_path() {
+  local value="$1"
+  local variable_name="$2"
+
+  if [[ -z "$value" || "$value" != /home/container* || "$value" == *$'\n'* || "$value" == *$'\r'* || "$value" == *'..'* || "$value" == *'//'*
+        || "$value" == *'\\'* || ! "$value" =~ ^/home/container(/[A-Za-z0-9._-]+)*$ ]]; then
+    fail "${variable_name} must stay under /home/container and may use only letters, numbers, dots, underscores, dashes and slashes"
+  fi
+}
+
 normalize_server_binary_name() {
   local requested="${SERVER_BINARY#./}"
 
@@ -281,6 +291,60 @@ build_startup_command() {
   if [[ "${#EXTRA_STARTUP_ARGV[@]}" -gt 0 ]]; then
     STARTUP_COMMAND+=("${EXTRA_STARTUP_ARGV[@]}")
   fi
+}
+
+configure_addons() {
+  : "${ADDONS_ENABLED:=true}"
+  : "${ADDONS_DIR:=/home/container/addons}"
+  : "${ADDONS_STRICT:=false}"
+  : "${ADDONS_TIMEOUT_SECONDS:=30}"
+  : "${ADDONS_LOG_OUTPUT:=true}"
+
+  if [[ "$ADDONS_DIR" != "/home/container" ]]; then
+    ADDONS_DIR="${ADDONS_DIR%/}"
+  fi
+
+  ADDONS_ENABLED_NORMALIZED="$(printf '%s' "$ADDONS_ENABLED" | tr '[:upper:]' '[:lower:]')"
+  case "$ADDONS_ENABLED_NORMALIZED" in
+    true|false) ;;
+    *)
+      warn "ADDONS_ENABLED=${ADDONS_ENABLED} is invalid, falling back to true"
+      ADDONS_ENABLED_NORMALIZED="true"
+      ;;
+  esac
+  ADDONS_ENABLED="$ADDONS_ENABLED_NORMALIZED"
+
+  ADDONS_STRICT_NORMALIZED="$(printf '%s' "$ADDONS_STRICT" | tr '[:upper:]' '[:lower:]')"
+  case "$ADDONS_STRICT_NORMALIZED" in
+    true|false) ;;
+    *)
+      warn "ADDONS_STRICT=${ADDONS_STRICT} is invalid, falling back to false"
+      ADDONS_STRICT_NORMALIZED="false"
+      ;;
+  esac
+  ADDONS_STRICT="$ADDONS_STRICT_NORMALIZED"
+
+  ADDONS_LOG_OUTPUT_NORMALIZED="$(printf '%s' "$ADDONS_LOG_OUTPUT" | tr '[:upper:]' '[:lower:]')"
+  case "$ADDONS_LOG_OUTPUT_NORMALIZED" in
+    true|false) ;;
+    *)
+      warn "ADDONS_LOG_OUTPUT=${ADDONS_LOG_OUTPUT} is invalid, falling back to true"
+      ADDONS_LOG_OUTPUT_NORMALIZED="true"
+      ;;
+  esac
+  ADDONS_LOG_OUTPUT="$ADDONS_LOG_OUTPUT_NORMALIZED"
+
+  if [[ ! "$ADDONS_TIMEOUT_SECONDS" =~ ^[0-9]+$ || "$ADDONS_TIMEOUT_SECONDS" -lt 1 || "$ADDONS_TIMEOUT_SECONDS" -gt 3600 ]]; then
+    warn "ADDONS_TIMEOUT_SECONDS=${ADDONS_TIMEOUT_SECONDS} is invalid, falling back to 30"
+    ADDONS_TIMEOUT_SECONDS="30"
+  fi
+
+  require_safe_container_path "$ADDONS_DIR" "ADDONS_DIR"
+
+  ADDON_EXECUTED_COUNT=0
+  ADDON_SKIPPED_COUNT=0
+  ADDON_FAILED_COUNT=0
+  ADDON_TIMED_OUT_COUNT=0
 }
 
 configure_anti_vpn() {
@@ -401,6 +465,122 @@ anti_vpn_allowlist_status() {
   fi
 }
 
+print_addon_summary() {
+  section "ADDONS"
+  kv_highlight "Status" "$(printf '%s' "$(bool_state "$ADDONS_ENABLED")" | tr '[:lower:]' '[:upper:]')"
+  kv "Directory" "$ADDONS_DIR"
+  kv "Strict" "$(printf '%s' "$(bool_state "$ADDONS_STRICT")" | tr '[:lower:]' '[:upper:]')"
+  kv "Timeout" "${ADDONS_TIMEOUT_SECONDS}s"
+  kv "Log output" "$(printf '%s' "$(bool_state "$ADDONS_LOG_OUTPUT")" | tr '[:lower:]' '[:upper:]')"
+
+  if [[ "$ADDONS_ENABLED" != "true" ]]; then
+    warn "Addon loader is disabled"
+  elif [[ -d "$ADDONS_DIR" ]]; then
+    ok "Addon directory ready"
+  else
+    info "No addon directory found; continuing without addons"
+  fi
+}
+
+run_addons() {
+  local entry_name=""
+  local entry_path=""
+  local addon_kind=""
+  local addon_exit=0
+  local addon_entries=()
+  local addon_count=0
+
+  if [[ "$ADDONS_ENABLED" != "true" ]]; then
+    return 0
+  fi
+
+  if [[ ! -d "$ADDONS_DIR" ]]; then
+    return 0
+  fi
+
+  mapfile -t addon_entries < <(find "$ADDONS_DIR" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)
+  addon_count="${#addon_entries[@]}"
+
+  if [[ "$addon_count" -eq 0 ]]; then
+    info "Addon directory is empty; continuing without addon execution"
+    return 0
+  fi
+
+  info "Scanning ${addon_count} addon entr$( [[ "$addon_count" -eq 1 ]] && printf 'y' || printf 'ies' ) in ${ADDONS_DIR}"
+
+  for entry_name in "${addon_entries[@]}"; do
+    entry_path="${ADDONS_DIR}/${entry_name}"
+    info "Addon detected: ${entry_name}"
+
+    if [[ "$entry_name" == .* ]]; then
+      warn "Skipping hidden addon entry: ${entry_name}"
+      ADDON_SKIPPED_COUNT=$((ADDON_SKIPPED_COUNT + 1))
+      continue
+    fi
+
+    if [[ -d "$entry_path" ]]; then
+      warn "Skipping addon directory: ${entry_name}"
+      ADDON_SKIPPED_COUNT=$((ADDON_SKIPPED_COUNT + 1))
+      continue
+    fi
+
+    if [[ ! -f "$entry_path" ]]; then
+      warn "Skipping non-file addon entry: ${entry_name}"
+      ADDON_SKIPPED_COUNT=$((ADDON_SKIPPED_COUNT + 1))
+      continue
+    fi
+
+    case "$entry_name" in
+      *.sh)
+        addon_kind="bash"
+        ;;
+      *.py)
+        addon_kind="python3"
+        if ! command -v python3 >/dev/null 2>&1; then
+          warn "Addon failed: python3 is not available for ${entry_name}"
+          ADDON_FAILED_COUNT=$((ADDON_FAILED_COUNT + 1))
+          [[ "$ADDONS_STRICT" == "true" ]] && fail "Addon ${entry_name} requires python3, but python3 is not available in the runtime image"
+          continue
+        fi
+        ;;
+      *)
+        warn "Skipping unsupported addon file: ${entry_name}"
+        ADDON_SKIPPED_COUNT=$((ADDON_SKIPPED_COUNT + 1))
+        continue
+        ;;
+    esac
+
+    info "Executing ${addon_kind} addon: ${entry_name}"
+    set +e
+    if [[ "$ADDONS_LOG_OUTPUT" == "true" ]]; then
+      timeout --foreground "${ADDONS_TIMEOUT_SECONDS}" "$addon_kind" "$entry_path"
+    else
+      timeout --foreground "${ADDONS_TIMEOUT_SECONDS}" "$addon_kind" "$entry_path" >/dev/null 2>&1
+    fi
+    addon_exit=$?
+    set -e
+
+    case "$addon_exit" in
+      0)
+        ok "Addon completed successfully: ${entry_name}"
+        ADDON_EXECUTED_COUNT=$((ADDON_EXECUTED_COUNT + 1))
+        ;;
+      124|137)
+        warn "Addon timed out after ${ADDONS_TIMEOUT_SECONDS}s: ${entry_name}"
+        ADDON_TIMED_OUT_COUNT=$((ADDON_TIMED_OUT_COUNT + 1))
+        [[ "$ADDONS_STRICT" == "true" ]] && fail "Addon ${entry_name} timed out after ${ADDONS_TIMEOUT_SECONDS}s"
+        ;;
+      *)
+        warn "Addon failed with exit code ${addon_exit}: ${entry_name}"
+        ADDON_FAILED_COUNT=$((ADDON_FAILED_COUNT + 1))
+        [[ "$ADDONS_STRICT" == "true" ]] && fail "Addon ${entry_name} failed with exit code ${addon_exit}"
+        ;;
+    esac
+  done
+
+  info "Addon execution summary: executed=${ADDON_EXECUTED_COUNT}, skipped=${ADDON_SKIPPED_COUNT}, failed=${ADDON_FAILED_COUNT}, timed_out=${ADDON_TIMED_OUT_COUNT}"
+}
+
 print_runtime_summary() {
   section "SERVER"
   kv_highlight "Mode" "Dedicated server"
@@ -517,6 +697,7 @@ print_paths() {
   section "PATHS"
   kv "Binary path" "$server_binary_path"
   kv "Mod path" "/home/container/${active_game_dir}"
+  kv "Addons dir" "$ADDONS_DIR"
   kv "Log path" "$ANTI_VPN_LOG_PATH"
   kv "Audit log" "$ANTI_VPN_AUDIT_LOG_PATH"
   kv "Cache path" "$ANTI_VPN_CACHE_PATH"
@@ -538,6 +719,7 @@ print_debug_inventory() {
   section "DEBUG INVENTORY"
   kv "Base files" "$(list_dir_files /home/container/base 'assets*.pk3')"
   kv "Mod files" "$(list_dir_files "/home/container/${active_game_dir}")"
+  kv "Addon files" "$(list_dir_files "$ADDONS_DIR")"
 }
 
 print_launch_decision() {
@@ -581,6 +763,7 @@ require_safe_component "$SERVER_CONFIG" "SERVER_CONFIG"
 server_binary_name="$(normalize_server_binary_name)"
 active_game_dir="$(resolve_active_game_dir "$FS_GAME_MOD")"
 server_binary_path="/home/container/${server_binary_name}"
+configure_addons
 configure_anti_vpn
 
 mkdir -p /home/container/base /home/container/logs "/home/container/${active_game_dir}"
@@ -607,6 +790,9 @@ export HOME=/home/container
 if [[ "$#" -gt 0 && "$1" != "--panel-startup" ]]; then
   section "LAUNCH"
   info "Custom startup command detected"
+  if [[ "$ADDONS_ENABLED" == "true" ]]; then
+    warn "Addon loading is bypassed for custom startup commands"
+  fi
   if [[ "$ANTI_VPN_EFFECTIVE_MODE" != "off" ]]; then
     warn "Anti-VPN supervision is bypassed for custom startup commands"
   fi
@@ -626,6 +812,8 @@ parse_extra_startup_args
 build_startup_command
 
 print_runtime_summary
+print_addon_summary
+run_addons
 print_preflight_checks
 print_asset_detection
 print_mod_detection
