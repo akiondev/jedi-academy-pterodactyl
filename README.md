@@ -99,7 +99,6 @@ Warning: this is not an official Pterodactyl installation method. On some system
 - Syncs `ADDON_README.md` and `ADDON_README_ADVANCED.md` automatically into `/home/container/addons/docs`
 - Ships a managed `checkserverstatus` helper that is always refreshed from the image and can be run from the Pterodactyl console
 - Ships addon examples in `/home/container/addons/examples`, including a Python RCON announcer template that server owners can copy into `/home/container/addons` when they want to enable it
-- Ships a stronger addon baseline in the runtime image with `python3`, `pip`, `venv`, `sqlite3`, `curl`, `wget`, `jq`, `git`, `rsync`, `procps`, `tar`, and `unzip`
 - Optional anti-VPN supervision using online API checks with cache, allowlist, structured logging and weighted decisions
 
 ## Managed vs manual paths
@@ -150,6 +149,7 @@ This repository also includes a lightweight addon loader for self-hosted Pteroda
 - Managed `chatlogger`: refreshed from `/home/container/addons/defaults`, controlled by `ADDON_CHATLOGGER_ENABLED`, and writes clean daily player chat logs into `/home/container/chatlogs`
 - Managed server settings: the runtime publishes effective values into `/home/container/.runtime/taystjk-effective.env` and selected non-sensitive values into `.json` for addons and admin utilities
 - Optional server.cfg overrides: when enabled, non-empty egg override fields can write selected values such as `rconpassword` into the active `server.cfg`; otherwise addons fall back to the current config and runtime defaults
+- Runtime image addon baseline: the official image ships `python3`, `pip`, `venv`, `sqlite3`, `curl`, `wget`, `jq`, `git`, `rsync`, `procps`, `tar`, and `unzip`
 - Support files: top-level `.md`, `.json`, and `.txt` files are treated as support files and not executed; image-managed docs, examples, and defaults belong in their dedicated subdirectories
 - Scope: addons affect only the current server container and are fully owned by the server operator
 
