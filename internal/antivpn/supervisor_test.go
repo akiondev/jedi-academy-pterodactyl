@@ -66,6 +66,18 @@ func TestParseClientConnectSupportsBracketedPortSuffix(t *testing.T) {
 	}
 }
 
+func TestParseClientConnectNormalizesTrailingColorReset(t *testing.T) {
+	line := `2026-01-17 22:16:29 ClientConnect: 0 [83.249.104.192:29070] (3ADCC69C97BCC62079B59FF5161ED65D) "SamplePlayer^7"`
+
+	_, _, player, ok := parseClientConnect(line)
+	if !ok {
+		t.Fatalf("expected parser to match ClientConnect line with trailing color reset")
+	}
+	if player != "SamplePlayer" {
+		t.Fatalf("expected parsed player name SamplePlayer, got %q", player)
+	}
+}
+
 func TestParseServerIPFieldSupportsPortSuffix(t *testing.T) {
 	addr, err := parseServerIPField("203.0.113.44:29070")
 	if err != nil {

@@ -667,7 +667,7 @@ func parseClientConnect(line string) (string, netip.Addr, string, bool) {
 		return "", netip.Addr{}, "", false
 	}
 
-	return matches[1], addr, strings.TrimSpace(matches[3]), true
+	return matches[1], addr, normalizeLoggedPlayerName(matches[3]), true
 }
 
 func parseClientDisconnect(line string) (string, bool) {
@@ -777,6 +777,52 @@ func extractUserinfoValue(line, key string) string {
 	}
 
 	return ""
+}
+
+func normalizeLoggedPlayerName(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return value
+	}
+
+	for {
+		trimmed, changed := trimTrailingColorCode(value)
+		if !changed {
+			return value
+		}
+		value = strings.TrimSpace(trimmed)
+	}
+}
+
+func trimTrailingColorCode(value string) (string, bool) {
+	if len(value) >= 8 && value[len(value)-8] == '^' && (value[len(value)-7] == 'x' || value[len(value)-7] == 'X') {
+		hex := value[len(value)-6:]
+		if isHexString(hex) {
+			return value[:len(value)-8], true
+		}
+	}
+
+	if len(value) >= 2 && value[len(value)-2] == '^' && isColorCodeSuffix(value[len(value)-1]) {
+		return value[:len(value)-2], true
+	}
+
+	return value, false
+}
+
+func isHexString(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, char := range value {
+		if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+func isColorCodeSuffix(char byte) bool {
+	return (char >= '0' && char <= '9') || (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z')
 }
 
 func sanitizePlayerName(value string) string {
