@@ -6,7 +6,7 @@ This helper is refreshed from the image into:
   /home/container/addons/defaults/40-chatlogger.py
 
 During managed startup it launches a detached background worker that:
-  - tails the active server.log
+  - tails the resolved active server log path
   - extracts common public/team/whisper chat lines
   - writes clean daily chat logs into /home/container/chatlogs
 """
@@ -69,6 +69,10 @@ def load_runtime_env() -> dict[str, str]:
     if runtime_mod_dir:
         state["TAYSTJK_ACTIVE_MOD_DIR"] = runtime_mod_dir.strip()
 
+    runtime_log_path = os.getenv("TAYSTJK_ACTIVE_SERVER_LOG_PATH")
+    if runtime_log_path:
+        state["TAYSTJK_ACTIVE_SERVER_LOG_PATH"] = runtime_log_path.strip()
+
     if not RUNTIME_ENV_PATH.is_file():
         return state
 
@@ -79,7 +83,7 @@ def load_runtime_env() -> dict[str, str]:
                 continue
             key, raw_value = line.split("=", 1)
             key = key.strip()
-            if key != "TAYSTJK_ACTIVE_MOD_DIR":
+            if key not in {"TAYSTJK_ACTIVE_MOD_DIR", "TAYSTJK_ACTIVE_SERVER_LOG_PATH"}:
                 continue
             state.setdefault(key, raw_value.strip().strip("\"'"))
     except OSError as exc:
@@ -94,6 +98,10 @@ def active_mod_dir() -> str:
 
 
 def active_server_log_path() -> Path:
+    runtime_env = load_runtime_env()
+    runtime_log_path = runtime_env.get("TAYSTJK_ACTIVE_SERVER_LOG_PATH", "").strip()
+    if runtime_log_path:
+        return Path(runtime_log_path)
     return HOME_DIR / active_mod_dir() / "server.log"
 
 

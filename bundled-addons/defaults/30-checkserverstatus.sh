@@ -104,6 +104,14 @@ active_server_config_path() {
   printf '/home/container/%s/%s\n' "$(active_mod_dir)" "$(active_server_config)"
 }
 
+active_server_log_path() {
+  if [[ -n "${TAYSTJK_ACTIVE_SERVER_LOG_PATH:-}" ]]; then
+    printf '%s\n' "$TAYSTJK_ACTIVE_SERVER_LOG_PATH"
+    return 0
+  fi
+  printf '/home/container/%s/server.log\n' "$(active_mod_dir)"
+}
+
 extract_rcon_password() {
   local config_path="$1"
 
@@ -165,11 +173,12 @@ effective_rcon_password() {
 print_basic_server_info() {
   local process_line=""
   local config_path="$1"
-  local log_path="/home/container/$(active_mod_dir)/server.log"
+  local log_path
   local runtime_env="$RUNTIME_ENV_FILE"
   local process_state="NOT RUNNING"
   local rcon_state="NOT SET"
 
+  log_path="$(active_server_log_path)"
   process_line="$(pgrep -af 'taystjkded' | head -n 1 || true)"
   [[ -n "$process_line" ]] && process_state="RUNNING"
   [[ -n "$(effective_rcon_password)" ]] && rcon_state="CONFIGURED"

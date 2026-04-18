@@ -134,7 +134,7 @@ The anti-VPN feature is designed specifically for VPN / hosting / non-residentia
 
 - Runtime component: compiled Go binary inside the Docker image
 - Detection inputs: `proxycheck.io`, `ipapi.is`, `IPQualityScore`, `IPLocate`, `IPHub`, and optionally `vpnapi.io`
-- Runtime behavior: captures join events from live server stdout while also watching `server.log`, caches decisions locally, writes a dedicated audit trail, and can log, broadcast, or block based on score
+- Runtime behavior: captures join events from live server stdout while also watching the resolved active server log path, caches decisions locally, writes a dedicated audit trail, and can log, broadcast, or block based on score
 - Safety defaults: external API failures do not stop server startup and do not hard-block players by themselves
 
 Read [docs/anti-vpn.md](docs/anti-vpn.md) for the full operating guide.
@@ -153,7 +153,7 @@ This repository also includes a lightweight addon loader for self-hosted Pteroda
 - Bundled examples: synced into `/home/container/addons/examples`, kept up to date by the image, and not executed until copied into the top-level addon directory
 - Managed defaults: synced into `/home/container/addons/defaults` and handled by dedicated runtime logic rather than the top-level user addon loader
 - Managed `checkserverstatus`: refreshed from `/home/container/addons/defaults`, installed into `/home/container/bin`, available from the Pterodactyl console through the runtime bridge, and controlled by `ADDON_CHECKSERVERSTATUS_ENABLED`
-- Managed `chatlogger`: refreshed from `/home/container/addons/defaults`, controlled by `ADDON_CHATLOGGER_ENABLED`, and writes clean daily player chat logs into `/home/container/chatlogs`
+- Managed `chatlogger`: refreshed from `/home/container/addons/defaults`, controlled by `ADDON_CHATLOGGER_ENABLED`, follows the resolved active server log path, and writes clean daily player chat logs into `/home/container/chatlogs`
 - Managed server settings: the runtime publishes effective values into `/home/container/.runtime/taystjk-effective.env` and selected non-sensitive values into `.json` for addons and admin utilities
 - Optional server.cfg overrides: when enabled, non-empty egg override fields can write selected values such as `rconpassword` into the active `server.cfg`; otherwise addons fall back to the current config and runtime defaults
 - Runtime image addon baseline: the official image ships `python3`, `pip`, `venv`, `sqlite3`, `curl`, `wget`, `jq`, `git`, `rsync`, `procps`, `tar`, and `unzip`

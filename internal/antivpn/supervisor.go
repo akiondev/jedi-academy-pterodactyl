@@ -146,7 +146,7 @@ func (s *Supervisor) Run(ctx context.Context, serverCommand []string) error {
 	s.logger.Info(
 		"anti-vpn supervisor active",
 		"mode", s.cfg.EffectiveMode(),
-		"capture_mode", "stdout-first with server.log fallback",
+		"capture_mode", "stdout-first with active log fallback",
 		"log_path", s.cfg.LogPath,
 		"audit_log_path", s.cfg.AuditLogPath,
 		"score_threshold", s.cfg.ScoreThreshold,
@@ -342,7 +342,7 @@ func (s *Supervisor) monitorLogFile(ctx context.Context, stdin io.Writer) {
 			line := scanner.Text()
 			offset += int64(len(scanner.Bytes()) + 1)
 			readLine = true
-			s.handleLogLine(ctx, stdin, line, "server.log")
+			s.handleLogLine(ctx, stdin, line, filepath.Base(path))
 		}
 		file.Close()
 

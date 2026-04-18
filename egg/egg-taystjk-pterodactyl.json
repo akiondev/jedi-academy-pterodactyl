@@ -59,6 +59,16 @@
       "field_type": "text"
     },
     {
+      "name": "Server Log Filename",
+      "description": "Runtime variable. Log filename inside the active mod folder. Default is server.log. Change this if your mod or server.cfg writes to a different log name, and managed helpers will follow the resolved active log path automatically.",
+      "env_variable": "SERVER_LOG_FILENAME",
+      "default_value": "server.log",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|max:64|regex:/^[A-Za-z0-9][A-Za-z0-9._-]*$/",
+      "field_type": "text"
+    },
+    {
       "name": "Server Config Overrides Enabled",
       "description": "Runtime variable. If true, non-empty override fields such as SERVER_RCON_PASSWORD, SERVER_HOSTNAME, SERVER_MOTD, SERVER_MAXCLIENTS and SERVER_GAMETYPE are written into the active server.cfg. If false, those config values stay user-owned and runtime helpers read directly from the active config/defaults.",
       "env_variable": "SERVER_CFG_OVERRIDES_ENABLED",
@@ -160,7 +170,7 @@
     },
     {
       "name": "Addon Chatlogger Enabled",
-      "description": "Runtime variable. Default is true on new installs. Enable or disable the built-in chat logger addon helper that tails the active server.log and writes clean daily player chat logs into /home/container/chatlogs during managed startup. Existing servers must save an explicit value in the panel if they were created before this variable existed.",
+      "description": "Runtime variable. Default is true on new installs. Enable or disable the built-in chat logger addon helper that tails the resolved active server log path and writes clean daily player chat logs into /home/container/chatlogs during managed startup. Existing servers must save an explicit value in the panel if they were created before this variable existed.",
       "env_variable": "ADDON_CHATLOGGER_ENABLED",
       "default_value": "true",
       "user_viewable": true,

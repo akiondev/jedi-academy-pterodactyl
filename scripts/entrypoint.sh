@@ -315,6 +315,7 @@ write_runtime_state() {
     printf 'TAYSTJK_ACTIVE_MOD_DIR=%q\n' "$TAYSTJK_ACTIVE_MOD_DIR"
     printf 'TAYSTJK_ACTIVE_SERVER_CONFIG=%q\n' "$TAYSTJK_ACTIVE_SERVER_CONFIG"
     printf 'TAYSTJK_ACTIVE_SERVER_CONFIG_PATH=%q\n' "$TAYSTJK_ACTIVE_SERVER_CONFIG_PATH"
+    printf 'TAYSTJK_ACTIVE_SERVER_LOG_PATH=%q\n' "$TAYSTJK_ACTIVE_SERVER_LOG_PATH"
     printf 'TAYSTJK_SERVER_CFG_OVERRIDES_ENABLED=%q\n' "$TAYSTJK_SERVER_CFG_OVERRIDES_ENABLED"
     printf 'TAYSTJK_EFFECTIVE_SERVER_BINARY=%q\n' "$TAYSTJK_EFFECTIVE_SERVER_BINARY"
     printf 'TAYSTJK_EFFECTIVE_SERVER_PORT=%q\n' "$TAYSTJK_EFFECTIVE_SERVER_PORT"
@@ -330,6 +331,7 @@ write_runtime_state() {
     --arg active_mod_dir "$TAYSTJK_ACTIVE_MOD_DIR" \
     --arg active_server_config "$TAYSTJK_ACTIVE_SERVER_CONFIG" \
     --arg active_server_config_path "$TAYSTJK_ACTIVE_SERVER_CONFIG_PATH" \
+    --arg active_server_log_path "$TAYSTJK_ACTIVE_SERVER_LOG_PATH" \
     --arg effective_server_binary "$TAYSTJK_EFFECTIVE_SERVER_BINARY" \
     --arg effective_server_port "$TAYSTJK_EFFECTIVE_SERVER_PORT" \
     --arg effective_server_hostname "$TAYSTJK_EFFECTIVE_SERVER_HOSTNAME" \
@@ -341,6 +343,7 @@ write_runtime_state() {
       active_mod_dir: $active_mod_dir,
       active_server_config: $active_server_config,
       active_server_config_path: $active_server_config_path,
+      active_server_log_path: $active_server_log_path,
       server_cfg_overrides_enabled: $server_cfg_overrides_enabled,
       effective_server_binary: $effective_server_binary,
       effective_server_port: $effective_server_port,
@@ -382,6 +385,15 @@ configure_server_settings() {
   fi
 }
 
+configure_server_logging() {
+  : "${SERVER_LOG_FILENAME:=server.log}"
+  require_safe_component "$SERVER_LOG_FILENAME" "SERVER_LOG_FILENAME"
+}
+
+active_server_log_path() {
+  printf '/home/container/%s/%s\n' "$active_game_dir" "$SERVER_LOG_FILENAME"
+}
+
 resolve_effective_server_settings() {
   local active_config_path="$1"
   local config_port=""
@@ -413,6 +425,7 @@ resolve_effective_server_settings() {
   TAYSTJK_ACTIVE_MOD_DIR="$active_game_dir"
   TAYSTJK_ACTIVE_SERVER_CONFIG="$SERVER_CONFIG"
   TAYSTJK_ACTIVE_SERVER_CONFIG_PATH="$active_config_path"
+  TAYSTJK_ACTIVE_SERVER_LOG_PATH="$(active_server_log_path)"
   TAYSTJK_SERVER_CFG_OVERRIDES_ENABLED="$SERVER_CFG_OVERRIDES_ENABLED"
   TAYSTJK_EFFECTIVE_SERVER_BINARY="$server_binary_name"
 
@@ -436,6 +449,7 @@ resolve_effective_server_settings() {
     TAYSTJK_ACTIVE_MOD_DIR \
     TAYSTJK_ACTIVE_SERVER_CONFIG \
     TAYSTJK_ACTIVE_SERVER_CONFIG_PATH \
+    TAYSTJK_ACTIVE_SERVER_LOG_PATH \
     TAYSTJK_SERVER_CFG_OVERRIDES_ENABLED \
     TAYSTJK_EFFECTIVE_SERVER_BINARY \
     TAYSTJK_EFFECTIVE_SERVER_PORT \
@@ -842,7 +856,7 @@ configure_anti_vpn() {
   : "${ANTI_VPN_BROADCAST_BLOCK_TEMPLATE:=say [Anti-VPN] VPN BLOCKED: %PLAYER% triggered anti-VPN (%SCORE%/%THRESHOLD%). %SUMMARY%}"
   : "${ANTI_VPN_BAN_COMMAND:=}"
   : "${ANTI_VPN_KICK_COMMAND:=clientkick %SLOT%}"
-  : "${ANTI_VPN_LOG_PATH:=/home/container/${active_game_dir}/server.log}"
+  : "${ANTI_VPN_LOG_PATH:=$(active_server_log_path)}"
 
   ANTI_VPN_MODE_NORMALIZED="$(printf '%s' "$ANTI_VPN_MODE" | tr '[:upper:]' '[:lower:]')"
   case "$ANTI_VPN_MODE_NORMALIZED" in
@@ -1127,7 +1141,8 @@ print_anti_vpn_summary() {
   kv_highlight "Threshold" "$ANTI_VPN_SCORE_THRESHOLD"
   kv "Allowlist" "$(anti_vpn_allowlist_status)"
   print_anti_vpn_providers
-  debug "Capture mode: stdout-first with server.log fallback"
+  debug "Capture mode: stdout-first with active log fallback"
+  debug "Server log path: ${ANTI_VPN_LOG_PATH}"
   debug "Decision logs: $(printf '%s' "$(bool_state "$ANTI_VPN_LOG_DECISIONS")" | tr '[:lower:]' '[:upper:]')"
   debug "Cache TTL: ${ANTI_VPN_CACHE_TTL}"
   debug "Cache flush: ${ANTI_VPN_CACHE_FLUSH_INTERVAL}"
@@ -1221,7 +1236,8 @@ print_paths() {
   kv "Addon defaults" "$ADDON_DEFAULTS_DIR"
   kv "Runtime env" "/home/container/.runtime/taystjk-effective.env"
   kv "Runtime json" "/home/container/.runtime/taystjk-effective.json"
-  kv "Log path" "$ANTI_VPN_LOG_PATH"
+  kv "Server log" "$TAYSTJK_ACTIVE_SERVER_LOG_PATH"
+  kv "Anti-VPN log" "$ANTI_VPN_LOG_PATH"
   kv "Chatlogs dir" "/home/container/chatlogs"
   kv "Audit log" "$ANTI_VPN_AUDIT_LOG_PATH"
   kv "Cache path" "$ANTI_VPN_CACHE_PATH"
@@ -1279,6 +1295,7 @@ print_header
 : "${SERVER_BINARY:=taystjkded.x86_64}"
 : "${SERVER_PORT:=29070}"
 : "${SERVER_CONFIG:=server.cfg}"
+: "${SERVER_LOG_FILENAME:=server.log}"
 : "${EXTRA_STARTUP_ARGS:=}"
 : "${FS_GAME_MOD:=taystjk}"
 : "${COPYRIGHT_ACKNOWLEDGED:=false}"
@@ -1292,6 +1309,7 @@ active_game_dir="$(resolve_active_game_dir "$FS_GAME_MOD")"
 server_binary_path="/home/container/${server_binary_name}"
 configure_addons
 configure_server_settings
+configure_server_logging
 configure_anti_vpn
 
 mkdir -p /home/container/base /home/container/logs
@@ -1303,7 +1321,6 @@ sync_addon_docs
 sync_managed_addon_examples
 sync_managed_addon_defaults
 install_managed_status_helper
-install_managed_chatlogger_helper
 determine_runtime_ownership
 
 validate_server_binary_selection
@@ -1329,6 +1346,7 @@ ensure_managed_taystjk_server_config
 validate_selected_runtime_paths
 
 resolve_effective_server_settings "/home/container/${active_game_dir}/${SERVER_CONFIG}"
+install_managed_chatlogger_helper
 
 if [[ "$#" -gt 0 ]]; then
   startup_source="Pterodactyl panel sentinel"
