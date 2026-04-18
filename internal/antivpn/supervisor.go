@@ -5,30 +5,52 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 )
 
+var (
+	logTimestampPrefixPattern = `(?:\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}|\d+:\d{2})`
+	clientConnectPattern = regexp.MustCompile(
+		`^(?:\s*` + logTimestampPrefixPattern + `\s+)?ClientConnect:\s+(\d+)\s+\[([^\]]+)\](?:\s+\([^)]+\))?(?:\s+"([^"]*)")?\s*$`,
+	)
+	clientDisconnectPattern = regexp.MustCompile(
+		`^(?:\s*` + logTimestampPrefixPattern + `\s+)?ClientDisconnect:\s+(\d+)(?:\s+\[[^\]]+\])?(?:\s+\([^)]+\))?(?:\s+"[^"]*")?\s*$`,
+	)
+	clientUserinfoChangedPattern = regexp.MustCompile(
+		`^(?:\s*` + logTimestampPrefixPattern + `\s+)?ClientUserinfoChanged:\s+(\d+)\s+(.*)$`,
+	)
+)
+
+type slotConnectionState struct {
+	Addr       netip.Addr
+	PlayerName string
+	SeenAt     time.Time
+}
+
 type Supervisor struct {
-	cfg           Config
-	logger        *slog.Logger
-	auditLogger   *slog.Logger
-	auditCloser   io.Closer
-	engine        *Engine
-	commandMu     sync.Mutex
-	seenMu        sync.Mutex
-	seenEvents    map[string]time.Time
-	broadcastMu   sync.Mutex
-	broadcastSeen map[string]time.Time
-	checkSlots    chan struct{}
+	cfg             Config
+	logger          *slog.Logger
+	auditLogger     *slog.Logger
+	auditCloser     io.Closer
+	engine          *Engine
+	commandMu       sync.Mutex
+	seenMu          sync.Mutex
+	seenEvents      map[string]time.Time
+	broadcastMu     sync.Mutex
+	broadcastSeen   map[string]time.Time
+	connectionMu    sync.Mutex
+	connectionState map[string]slotConnectionState
+	checkSlots      chan struct{}
 }
 
 type synchronizedWriter struct {
@@ -54,14 +76,15 @@ func NewSupervisor(cfg Config, logger *slog.Logger) (*Supervisor, error) {
 	}
 
 	return &Supervisor{
-		cfg:         cfg,
-		logger:      logger,
-		auditLogger: auditLogger,
-		auditCloser: auditCloser,
-		engine:      engine,
-		seenEvents:  make(map[string]time.Time),
-		broadcastSeen: make(map[string]time.Time),
-		checkSlots:  make(chan struct{}, 8),
+		cfg:             cfg,
+		logger:          logger,
+		auditLogger:     auditLogger,
+		auditCloser:     auditCloser,
+		engine:          engine,
+		seenEvents:      make(map[string]time.Time),
+		broadcastSeen:   make(map[string]time.Time),
+		connectionState: make(map[string]slotConnectionState),
+		checkSlots:      make(chan struct{}, 8),
 	}, nil
 }
 
@@ -330,11 +353,40 @@ func (s *Supervisor) monitorLogFile(ctx context.Context, stdin io.Writer) {
 }
 
 func (s *Supervisor) handleLogLine(ctx context.Context, stdin io.Writer, line string, source string) {
-	slot, addr, playerName, ok := parseClientUserinfoChanged(line)
+	if slot, ok := parseClientDisconnect(line); ok {
+		s.clearConnectionState(slot)
+		return
+	}
+
+	slot, addr, playerName, ok := parseClientConnect(line)
+	if ok {
+		s.storeConnectionState(slot, addr, playerName)
+		s.processConnectionEvent(ctx, stdin, source, slot, addr, playerName)
+		return
+	}
+
+	slot, addr, playerName, hasAddr, ok := parseClientUserinfoChangedFields(line)
 	if !ok {
 		return
 	}
 
+	if hasAddr {
+		s.storeConnectionState(slot, addr, playerName)
+	} else {
+		state, found := s.lookupConnectionState(slot)
+		if !found || !state.Addr.IsValid() {
+			return
+		}
+		addr = state.Addr
+		if strings.TrimSpace(playerName) == "" {
+			playerName = state.PlayerName
+		}
+	}
+
+	s.processConnectionEvent(ctx, stdin, source, slot, addr, playerName)
+}
+
+func (s *Supervisor) processConnectionEvent(ctx context.Context, stdin io.Writer, source, slot string, addr netip.Addr, playerName string) {
 	eventKey := slot + "|" + addr.String()
 	if !s.markEvent(eventKey) {
 		return
@@ -372,6 +424,41 @@ func (s *Supervisor) handleLogLine(ctx context.Context, stdin io.Writer, line st
 			s.enforceDecision(stdin, slot, addr, decision)
 		}
 	}()
+}
+
+func (s *Supervisor) storeConnectionState(slot string, addr netip.Addr, playerName string) {
+	if strings.TrimSpace(slot) == "" || !addr.IsValid() {
+		return
+	}
+
+	s.connectionMu.Lock()
+	defer s.connectionMu.Unlock()
+
+	state := s.connectionState[slot]
+	state.Addr = addr
+	if strings.TrimSpace(playerName) != "" {
+		state.PlayerName = playerName
+	}
+	state.SeenAt = time.Now().UTC()
+	s.connectionState[slot] = state
+}
+
+func (s *Supervisor) lookupConnectionState(slot string) (slotConnectionState, bool) {
+	s.connectionMu.Lock()
+	defer s.connectionMu.Unlock()
+
+	state, ok := s.connectionState[slot]
+	return state, ok
+}
+
+func (s *Supervisor) clearConnectionState(slot string) {
+	if strings.TrimSpace(slot) == "" {
+		return
+	}
+
+	s.connectionMu.Lock()
+	defer s.connectionMu.Unlock()
+	delete(s.connectionState, slot)
 }
 
 func (s *Supervisor) enforceDecision(stdin io.Writer, slot string, addr netip.Addr, decision Decision) {
@@ -569,40 +656,60 @@ func (s *Supervisor) markEvent(key string) bool {
 	return true
 }
 
-func parseClientUserinfoChanged(line string) (string, netip.Addr, string, bool) {
-	const prefix = "ClientUserinfoChanged:"
-
-	index := strings.Index(line, prefix)
-	if index == -1 {
+func parseClientConnect(line string) (string, netip.Addr, string, bool) {
+	matches := clientConnectPattern.FindStringSubmatch(line)
+	if len(matches) != 4 {
 		return "", netip.Addr{}, "", false
 	}
 
-	rest := strings.TrimSpace(line[index+len(prefix):])
-	fields := strings.Fields(rest)
-	if len(fields) == 0 {
-		return "", netip.Addr{}, "", false
-	}
-	slot := fields[0]
-	userinfo := strings.TrimSpace(strings.TrimPrefix(rest, slot))
-	playerName := extractUserinfoValue(userinfo, "n")
-
-	ipIndex := strings.Index(line, `\ip\`)
-	if ipIndex == -1 {
-		return "", netip.Addr{}, "", false
-	}
-
-	raw := line[ipIndex+len(`\ip\`):]
-	end := strings.Index(raw, `\`)
-	if end == -1 {
-		return "", netip.Addr{}, "", false
-	}
-
-	addr, err := parseServerIPField(raw[:end])
+	addr, err := parseServerIPField(matches[2])
 	if err != nil {
 		return "", netip.Addr{}, "", false
 	}
 
+	return matches[1], addr, strings.TrimSpace(matches[3]), true
+}
+
+func parseClientDisconnect(line string) (string, bool) {
+	matches := clientDisconnectPattern.FindStringSubmatch(line)
+	if len(matches) != 2 {
+		return "", false
+	}
+	return matches[1], true
+}
+
+func parseClientUserinfoChanged(line string) (string, netip.Addr, string, bool) {
+	slot, addr, playerName, hasAddr, ok := parseClientUserinfoChangedFields(line)
+	if !ok || !hasAddr {
+		return "", netip.Addr{}, "", false
+	}
 	return slot, addr, playerName, true
+}
+
+func parseClientUserinfoChangedFields(line string) (string, netip.Addr, string, bool, bool) {
+	matches := clientUserinfoChangedPattern.FindStringSubmatch(line)
+	if len(matches) != 3 {
+		return "", netip.Addr{}, "", false, false
+	}
+
+	slot := matches[1]
+	userinfo := strings.TrimSpace(matches[2])
+	if userinfo == "" || strings.EqualFold(userinfo, "<no change>") {
+		return "", netip.Addr{}, "", false, false
+	}
+
+	playerName := extractUserinfoValue(userinfo, "n")
+	rawIP := strings.TrimSpace(extractUserinfoValue(userinfo, "ip"))
+	if rawIP == "" {
+		return slot, netip.Addr{}, playerName, false, true
+	}
+
+	addr, err := parseServerIPField(rawIP)
+	if err != nil {
+		return "", netip.Addr{}, "", false, false
+	}
+
+	return slot, addr, playerName, true, true
 }
 
 func parseServerIPField(value string) (netip.Addr, error) {

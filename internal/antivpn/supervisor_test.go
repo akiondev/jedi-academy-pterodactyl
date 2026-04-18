@@ -2,6 +2,7 @@ package antivpn
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"log/slog"
 	"net/netip"
@@ -29,6 +30,42 @@ func TestParseClientUserinfoChangedFromTimestampedLine(t *testing.T) {
 	}
 }
 
+func TestParseClientConnectFromTimestampedLine(t *testing.T) {
+	line := `2026-01-17 22:16:15 ClientConnect: 0 [83.249.104.192] (3ADCC69C97BCC62079B59FF5161ED65D) "Akion"`
+
+	slot, addr, player, ok := parseClientConnect(line)
+	if !ok {
+		t.Fatalf("expected parser to match ClientConnect line")
+	}
+	if slot != "0" {
+		t.Fatalf("expected slot 0, got %q", slot)
+	}
+	if addr != netip.MustParseAddr("83.249.104.192") {
+		t.Fatalf("expected parsed IP 83.249.104.192, got %s", addr)
+	}
+	if player != "Akion" {
+		t.Fatalf("expected parsed player name Akion, got %q", player)
+	}
+}
+
+func TestParseClientConnectSupportsBracketedPortSuffix(t *testing.T) {
+	line := `2026-01-17 22:16:29 ClientConnect: 0 [83.249.104.192:29070] (3ADCC69C97BCC62079B59FF5161ED65D) "Akion"`
+
+	slot, addr, player, ok := parseClientConnect(line)
+	if !ok {
+		t.Fatalf("expected parser to match ClientConnect line with port")
+	}
+	if slot != "0" {
+		t.Fatalf("expected slot 0, got %q", slot)
+	}
+	if addr != netip.MustParseAddr("83.249.104.192") {
+		t.Fatalf("expected parsed IP 83.249.104.192, got %s", addr)
+	}
+	if player != "Akion" {
+		t.Fatalf("expected parsed player name Akion, got %q", player)
+	}
+}
+
 func TestParseServerIPFieldSupportsPortSuffix(t *testing.T) {
 	addr, err := parseServerIPField("203.0.113.44:29070")
 	if err != nil {
@@ -36,6 +73,40 @@ func TestParseServerIPFieldSupportsPortSuffix(t *testing.T) {
 	}
 	if addr != netip.MustParseAddr("203.0.113.44") {
 		t.Fatalf("unexpected parsed address: %s", addr)
+	}
+}
+
+func TestParseClientUserinfoChangedFieldsWithoutIPStillReturnsName(t *testing.T) {
+	line := `2026-01-17 22:16:15 ClientUserinfoChanged: 0 n\Akion\t\3\model\jeditrainer/blue`
+
+	slot, addr, player, hasAddr, ok := parseClientUserinfoChangedFields(line)
+	if !ok {
+		t.Fatalf("expected parser to match ClientUserinfoChanged line without ip")
+	}
+	if slot != "0" {
+		t.Fatalf("expected slot 0, got %q", slot)
+	}
+	if hasAddr {
+		t.Fatalf("expected no parsed IP, got %s", addr)
+	}
+	if player != "Akion" {
+		t.Fatalf("expected parsed player name Akion, got %q", player)
+	}
+}
+
+func TestParseClientUserinfoChangedFieldsRejectsNoChangeLines(t *testing.T) {
+	line := `2026-01-17 22:16:21 ClientUserinfoChanged: 0 <no change>`
+
+	if _, _, _, _, ok := parseClientUserinfoChangedFields(line); ok {
+		t.Fatal("expected parser to ignore <no change> userinfo line")
+	}
+}
+
+func TestParseClientUserinfoChangedFieldsDoesNotMatchChatPayload(t *testing.T) {
+	line := `say: Player: ClientUserinfoChanged: 0 n\Fake\ip\198.51.100.25:29070`
+
+	if _, _, _, _, ok := parseClientUserinfoChangedFields(line); ok {
+		t.Fatal("expected parser to reject chat line that only contains event text")
 	}
 }
 
@@ -161,5 +232,23 @@ func TestBroadcastDecisionSanitizesPlayerNameBeforeWritingCommand(t *testing.T) 
 	}
 	if !strings.Contains(command, "Bobclientkick 0 oops") {
 		t.Fatalf("expected sanitized player name to remain in broadcast command, got %q", command)
+	}
+}
+
+func TestHandleLogLineClearsTrackedConnectionStateOnDisconnect(t *testing.T) {
+	supervisor := &Supervisor{
+		connectionState: map[string]slotConnectionState{
+			"0": {
+				Addr:       netip.MustParseAddr("83.249.104.192"),
+				PlayerName: "Akion",
+				SeenAt:     time.Now().UTC(),
+			},
+		},
+	}
+
+	supervisor.handleLogLine(context.Background(), io.Discard, `2026-01-17 22:16:29 ClientDisconnect: 0 [83.249.104.192:29070] (GUID) "Akion"`, "stdout")
+
+	if _, ok := supervisor.lookupConnectionState("0"); ok {
+		t.Fatal("expected tracked slot state to be cleared on disconnect")
 	}
 }
