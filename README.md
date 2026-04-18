@@ -10,8 +10,6 @@
   <br>
   <a href="https://hub.docker.com/r/akiondev/jedi-academy-taystjk"><img src="https://img.shields.io/badge/docker%20pulls-not%20published-2496ed?style=for-the-badge&logo=docker&logoColor=white" alt="Docker pulls not published" /></a>
   <a href="https://github.com/akiondev/jedi-academy-pterodactyl/pkgs/container/jedi-academy-taystjk"><img src="https://img.shields.io/static/v1?label=ghcr%20pulls&message=unlimited&color=0969da&style=for-the-badge&logo=github" alt="GHCR pulls unlimited" /></a>
-  <a href="https://github.com/akiondev/jedi-academy-pterodactyl/blob/main/docs/anti-vpn.md"><img src="https://img.shields.io/badge/anti--vpn-documented-6f42c1?style=for-the-badge" alt="Anti-VPN documented" /></a>
-  <a href="https://github.com/akiondev/jedi-academy-pterodactyl/blob/main/egg/egg-taystjk-pterodactyl.json"><img src="https://img.shields.io/static/v1?label=pterodactyl&message=egg%20ready&color=1f6feb&style=for-the-badge" alt="Pterodactyl egg ready" /></a>
   <a href="https://github.com/akiondev/jedi-academy-pterodactyl#key-behavior"><img src="https://img.shields.io/badge/game_assets-not_included-b22222?style=for-the-badge" alt="Game assets not included" /></a>
 </p>
 
