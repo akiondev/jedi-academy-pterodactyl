@@ -36,7 +36,7 @@ If your change belongs to the game runtime itself, it should usually go upstream
 
 Use this repository for changes to the Pterodactyl image, egg, startup flow, addon system, documentation, and admin tooling.
 
-`main` is intended to stay protected and PR-only. Maintainers should keep the GitHub branch ruleset aligned with [docs/maintainer-branch-protection.md](docs/maintainer-branch-protection.md).
+`main` is protected, so changes should go through pull requests rather than direct pushes.
 
 ## Contribution flow for TaystJK upstream
 

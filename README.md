@@ -180,8 +180,8 @@ Read [docs/addon_readme.md](docs/addon_readme.md) for the compact addon guide an
 
 ### Contribution and security
 
+- `main` is protected; use pull requests for repository changes.
 - Contribution guide: [CONTRIBUTING.md](CONTRIBUTING.md)
-- Maintainer branch protection guide: [docs/maintainer-branch-protection.md](docs/maintainer-branch-protection.md)
 - Security policy: [SECURITY.md](SECURITY.md)
 
 ### Contributing upstream to TaystJK
