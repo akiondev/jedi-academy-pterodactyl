@@ -1,10 +1,12 @@
 package antivpn
 
 import (
+	"bytes"
 	"io"
 	"log/slog"
 	"net/netip"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -80,6 +82,16 @@ func TestSanitizePlayerNameStripsFormatting(t *testing.T) {
 	}
 }
 
+func TestSanitizePlayerNameForConsoleCommandStripsCommandSeparators(t *testing.T) {
+	name := sanitizePlayerNameForConsoleCommand(`^1Bob^7;clientkick 0 "$whoami"` + "\n")
+	if strings.ContainsAny(name, `;"'\$`+"\r\n") {
+		t.Fatalf("console-safe player name still contains command-breaking characters: %q", name)
+	}
+	if name != "Bobclientkick 0 whoami" {
+		t.Fatalf("unexpected console-safe player name: %q", name)
+	}
+}
+
 func TestPublicDecisionSummaryUsesPublicSafeText(t *testing.T) {
 	blocked := publicDecisionSummary(Decision{
 		Blocked:            true,
@@ -116,5 +128,38 @@ func TestFillCommandTemplateSupportsBroadcastPlaceholders(t *testing.T) {
 	expected := "say [Anti-VPN] VPN PASS: Player cleared checks (10/90). No provider reported a VPN or hosting signal."
 	if command != expected {
 		t.Fatalf("unexpected rendered broadcast command: %q", command)
+	}
+}
+
+func TestBroadcastDecisionSanitizesPlayerNameBeforeWritingCommand(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	supervisor := &Supervisor{
+		cfg: Config{
+			BroadcastMode:        BroadcastPassAndBlock,
+			BroadcastPassCommand: `say [Anti-VPN] VPN PASS: %PLAYER% cleared checks (%SCORE%/%THRESHOLD%). %SUMMARY%`,
+		},
+		logger: logger,
+	}
+
+	var stdin bytes.Buffer
+	supervisor.broadcastDecision(&stdin, "3", `^1Bob^7;clientkick 0 "oops"`, Decision{
+		Allowed:           true,
+		Score:             10,
+		Threshold:         90,
+		ProviderSuccesses: 1,
+	})
+
+	command := strings.TrimSpace(stdin.String())
+	if command == "" {
+		t.Fatal("expected broadcast command to be written")
+	}
+	if strings.Contains(command, "clientkick") && strings.Contains(command, ";") {
+		t.Fatalf("broadcast command still contains injectable separator: %q", command)
+	}
+	if strings.ContainsAny(command, "\"'`$") {
+		t.Fatalf("broadcast command still contains unsafe quote-like characters: %q", command)
+	}
+	if !strings.Contains(command, "Bobclientkick 0 oops") {
+		t.Fatalf("expected sanitized player name to remain in broadcast command, got %q", command)
 	}
 }

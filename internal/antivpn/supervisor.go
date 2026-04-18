@@ -453,7 +453,7 @@ func (s *Supervisor) broadcastDecision(stdin io.Writer, slot, playerName string,
 	command := fillCommandTemplate(
 		template,
 		commandTemplateData{
-			Player:    sanitizePlayerName(playerName),
+			Player:    sanitizePlayerNameForConsoleCommand(playerName),
 			Score:     decision.Score,
 			Threshold: decision.Threshold,
 			Summary:   publicSummary,
@@ -708,6 +708,29 @@ func sanitizePlayerName(value string) string {
 		sanitized = string(runes[:32]) + "..."
 	}
 	return sanitized
+}
+
+func sanitizePlayerNameForConsoleCommand(value string) string {
+	sanitized := sanitizePlayerName(value)
+
+	var builder strings.Builder
+	builder.Grow(len(sanitized))
+
+	for _, char := range sanitized {
+		switch char {
+		case '"', '\'', ';', '\\', '`', '$':
+			continue
+		case '\r', '\n':
+			continue
+		}
+		builder.WriteRune(char)
+	}
+
+	safe := strings.TrimSpace(builder.String())
+	if safe == "" {
+		return "Unknown Player"
+	}
+	return safe
 }
 
 func publicDecisionSummary(decision Decision) string {
