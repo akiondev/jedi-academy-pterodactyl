@@ -35,8 +35,8 @@ Built around [TaystJK by taysta](https://github.com/taysta/TaystJK). This reposi
 
 License: **GPL-3.0**
 
-<p align="center">
-  <a href="SUPPORT.md"><img src="https://img.shields.io/badge/support-view%20guide-1f6feb?style=for-the-badge" alt="Support guide" /></a>
+<p>
+  <a href="SUPPORT.md"><img src="https://img.shields.io/badge/support-view%20guide-f2cc60?style=for-the-badge" alt="Support guide" /></a>
 </p>
 
 ## What is Pterodactyl?
