@@ -170,6 +170,11 @@ Read [docs/addon_readme.md](docs/addon_readme.md) for the compact addon guide an
 - Addon authoring is documented in [docs/addon_readme.md](docs/addon_readme.md) and [docs/addon_readme_advanced.md](docs/addon_readme_advanced.md).
 - CI behavior lives in [.github/workflows/ci.yml](.github/workflows/ci.yml).
 
+### Contribution and security
+
+- Contribution guide: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Security policy: [SECURITY.md](SECURITY.md)
+
 ### Contributing here
 
 - [Fork this repository](https://github.com/akiondev/jedi-academy-pterodactyl/fork) if you want to contribute to the Pterodactyl image, egg, startup flow, addon system, documentation, or admin tooling.
