@@ -58,9 +58,16 @@ RUN mkdir -p build \
 
 FROM debian:12-slim
 
+ARG TAYSTJK_REPO=https://github.com/taysta/TaystJK.git
+ARG TAYSTJK_REF=master
+ARG TAYSTJK_COMMIT=unknown
+
 LABEL org.opencontainers.image.title="TaystJK Pterodactyl Runtime"
 LABEL org.opencontainers.image.description="Runtime image for TaystJK dedicated server on Pterodactyl built from source"
 LABEL org.opencontainers.image.licenses="GPL-2.0-only"
+LABEL io.akiondev.taystjk.upstream.repo="${TAYSTJK_REPO}"
+LABEL io.akiondev.taystjk.upstream.ref="${TAYSTJK_REF}"
+LABEL io.akiondev.taystjk.upstream.commit="${TAYSTJK_COMMIT}"
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -90,6 +97,8 @@ RUN mkdir -p /opt/taystjk-dist
 COPY --from=builder /opt/taystjk/JediAcademy/taystjkded.* /opt/taystjk-dist/
 COPY --from=builder /opt/taystjk/JediAcademy/taystjk /opt/taystjk-dist/taystjk
 COPY --from=antivpn-builder /out/taystjk-antivpn /usr/local/bin/taystjk-antivpn
+RUN printf '%s\n' "${TAYSTJK_COMMIT}" > /opt/taystjk-dist/.taystjk-upstream-commit \
+    && printf '%s\n' "${TAYSTJK_REF}" > /opt/taystjk-dist/.taystjk-upstream-ref
 RUN mkdir -p /opt/taystjk-docs/addons
 RUN mkdir -p /opt/taystjk-bundled-addons
 COPY --chown=container:container docs/addon_readme.md /opt/taystjk-docs/addons/ADDON_README.md

@@ -92,6 +92,7 @@ Warning: this is not an official Pterodactyl installation method. On some system
 ## Key behavior
 
 - Builds the dedicated server from TaystJK source
+- Tracks TaystJK `master` through image builds, and can automatically rebuild and publish the default image-managed runtime when upstream changes are detected
 - Does **not** bundle `assets*.pk3` or other copyrighted base game files
 - Requires server owners to provide their own legally owned Jedi Academy base assets manually in `/home/container/base`
 - Uses `FS_GAME_MOD=taystjk` by default
@@ -110,12 +111,14 @@ This repository is intentionally **TaystJK-first**:
 - the Docker image automatically builds and syncs the TaystJK dedicated server runtime
 - the default managed dedicated server binary is `taystjkded.*`
 - the default managed mod directory is `taystjk`
+- when a newer image-managed TaystJK runtime is published, servers using the default `taystjkded.*` path receive the newer binary on the next start that uses the refreshed image
 
 Manual alternatives are still allowed, but they are **not** automatically managed:
 
 - `SERVER_BINARY` may point at a manually uploaded alternative binary under `/home/container`
 - `FS_GAME_MOD` may point at a manually uploaded mod directory under `/home/container`
 - manual alternatives must already exist and contain their own required files before startup
+- manually selected binaries such as `openjkded.x86_64` are left untouched by image-managed TaystJK sync
 - only the default `taystjk` path gets automatic mod-directory preparation and default `server.cfg` generation
 
 Practical rule:
@@ -171,6 +174,7 @@ Read [docs/addon_readme.md](docs/addon_readme.md) for the compact addon guide an
 - Anti-VPN behavior lives in [cmd/taystjk-antivpn](cmd/taystjk-antivpn) and is documented in [docs/anti-vpn.md](docs/anti-vpn.md).
 - Addon authoring is documented in [docs/addon_readme.md](docs/addon_readme.md) and [docs/addon_readme_advanced.md](docs/addon_readme_advanced.md).
 - CI behavior lives in [.github/workflows/ci.yml](.github/workflows/ci.yml).
+- Scheduled upstream TaystJK master tracking lives in [.github/workflows/upstream-taystjk-master-sync.yml](.github/workflows/upstream-taystjk-master-sync.yml).
 
 ### Contribution and security
 
