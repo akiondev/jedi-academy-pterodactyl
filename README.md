@@ -35,6 +35,16 @@ Built around [TaystJK by taysta](https://github.com/taysta/TaystJK). This reposi
 
 License: **GPL-3.0**
 
+## What is Pterodactyl?
+
+This repository is meant to be used with Pterodactyl.
+
+[Pterodactyl](https://pterodactyl.io/) is an open-source game server management panel. It runs servers inside Docker containers and gives you a web interface for installing, starting, stopping, and managing them.
+
+In Pterodactyl, an **egg** is a server template. It defines how a server should be installed, configured, and started inside the panel.
+
+This repository provides the Docker image and Pterodactyl egg for running a TaystJK-based Jedi Academy server in that environment.
+
 ## Quick install
 
 1. Import [egg/egg-taystjk-pterodactyl.json](egg/egg-taystjk-pterodactyl.json) into Pterodactyl.
