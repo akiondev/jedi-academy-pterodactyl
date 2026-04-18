@@ -416,23 +416,56 @@ The managed chat logger:
 
 - is refreshed from the image every managed startup
 - is controlled by the egg variable `ADDON_CHATLOGGER_ENABLED`
-- tails the resolved active server log path from runtime state
+- tails the resolved active server log path with `tail -n 0 -F`, so it
+  transparently reattaches when the engine rotates, truncates, unlinks
+  or recreates `server.log` between maps or game restarts
 - writes clean daily chat logs into `/home/container/chatlogs`
 - maintains `/home/container/chatlogs/latest.log` as a symlink to the current day
 - keeps recent logs as plain `.log` files
 - compresses older logs to `.gz`
 - deletes very old logs automatically
-- keeps worker state in `/home/container/logs/chatlogger.pid`
-- writes worker output to `/home/container/logs/chatlogger-helper.log`
+- keeps worker state in `/home/container/logs/chatlogger.pid` (JSON)
+- writes worker output, restart traces, and a periodic heartbeat to
+  `/home/container/logs/chatlogger-helper.log`
+- records progress and the most recent captured chat in
+  `/home/container/logs/chatlogger-state.json` for `--status`
+
+Recognized chat verbs include `say`, `chat`, `sayteam`, `teamsay`,
+`team`, `tell`, `whisper`, `pm`, `amsay`, `amtell`, `smsay`, `smtell`,
+`tsay`, `csay`, `vsay`, `vchat`, plus a generic fallback for any other
+`<verb>: <name>: <message>` shaped mod prefix.
 
 Current chat log format:
 
 ```text
 [2026-04-17 15:42:08 CEST] [PUBLIC] Akion: hello everyone
-[2026-04-17 15:42:15 CEST] [WHISPER] Akion -> Robin: meet me at duel room
+[2026-04-17 15:42:15 CEST] [TEAM] Akion: rally at duel room
+[2026-04-17 15:42:21 CEST] [WHISPER] Akion -> Robin: meet me at duel room
+[2026-04-17 15:42:30 CEST] [ADMIN] Admin: server restart in 5
+[2026-04-17 15:42:35 CEST] [ADMIN_WHISPER] Admin -> Robin: stop telekilling
 ```
 
 The helper strips Quake color codes such as `^1` from names and messages before writing them.
+
+Optional environment overrides (managed defaults are safe for most
+installs):
+
+- `CHATLOGGER_KEEP_PLAIN_DAYS` — days to keep logs as plain `.log`
+  before compressing to `.log.gz` (default `7`)
+- `CHATLOGGER_KEEP_TOTAL_DAYS` — days to keep logs in any form before
+  deletion (default `60`)
+- `CHATLOGGER_HEARTBEAT_SECONDS` — heartbeat cadence written to the
+  helper log and state file (default `300`, minimum `10`)
+- `CHATLOGGER_TAIL_RESTART_BACKOFF_MAX` — maximum seconds the worker
+  waits before re-spawning `tail` after it exits (default `30`)
+
+Helper command-line modes (run as `python3
+/home/container/addons/defaults/40-chatlogger.py <flag>`):
+
+- no flag — refresh the managed worker (start it if not running)
+- `--stop` — stop the managed worker
+- `--status` — print PID, last heartbeat and last captured chat
+- `--selftest` — exercise the parser against synthetic lines
 
 Operational pattern it demonstrates:
 
@@ -703,9 +736,31 @@ Check:
 - `ADDON_CHATLOGGER_ENABLED=true`
 - the server used the normal managed startup path
 - `/home/container/addons/defaults/40-chatlogger.py` exists
-- `/home/container/logs/chatlogger-helper.log` exists
-- `/home/container/logs/chatlogger.pid` is not stale
+- `/home/container/logs/chatlogger-helper.log` exists and shows
+  recent `alive lines=… chats=… last_chat=…` heartbeat lines (the
+  worker emits one every `CHATLOGGER_HEARTBEAT_SECONDS`, default 5
+  minutes)
+- `/home/container/logs/chatlogger.pid` is not stale — the worker
+  validates the recorded PID against `/proc/<pid>/cmdline` on every
+  managed startup, so a recycled PID will trigger a clean restart
+  automatically
 - the active server log exists at the path published in `TAYSTJK_ACTIVE_SERVER_LOG_PATH`
+
+Useful commands:
+
+- `python3 /home/container/addons/defaults/40-chatlogger.py --status`
+  prints PID, last heartbeat, lines seen, chats logged and the most
+  recent captured chat line
+- `python3 /home/container/addons/defaults/40-chatlogger.py --selftest`
+  exercises the parser against synthetic lines without touching the
+  live server log
+
+The worker re-attaches automatically when the engine rotates,
+truncates, unlinks or recreates `server.log` between maps or
+restarts, so a chat going silent after `ShutdownGame` / `InitGame`
+should no longer happen. If it does, inspect
+`/home/container/logs/chatlogger-helper.log` for `tail exited` or
+exception traces.
 
 ### Legacy bundled-addons directory exists
 
