@@ -37,6 +37,7 @@ KEEP_TOTAL_DAYS = 60
 POLL_SECONDS = 1.0
 
 TIMESTAMP_RE = re.compile(r"^(?P<stamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+(?P<body>.*)$")
+MATCH_TIME_RE = re.compile(r"^(?:\d{1,3}:\d{2}(?::\d{2})?)\s+(?P<body>.*)$")
 QUAKE_COLOR_RE = re.compile(r"\^(?:[0-9A-Za-z])")
 CHAT_PATTERNS = (
     (
@@ -117,14 +118,26 @@ def normalize_text(value: str) -> str:
     return strip_quake_colors(value).strip()
 
 
-def parse_chat_line(raw_line: str) -> tuple[str, str, str, str | None, str] | None:
-    timestamp_match = TIMESTAMP_RE.match(raw_line.rstrip())
+def current_local_timestamp() -> str:
+    return datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def split_log_prefix(raw_line: str) -> tuple[str, str]:
+    line = raw_line.rstrip()
+
+    timestamp_match = TIMESTAMP_RE.match(line)
     if timestamp_match:
-        stamp = timestamp_match.group("stamp")
-        body = timestamp_match.group("body").strip()
-    else:
-        stamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
-        body = raw_line.strip()
+        return timestamp_match.group("stamp"), timestamp_match.group("body").strip()
+
+    match_time = MATCH_TIME_RE.match(line)
+    if match_time:
+        return current_local_timestamp(), match_time.group("body").strip()
+
+    return current_local_timestamp(), raw_line.strip()
+
+
+def parse_chat_line(raw_line: str) -> tuple[str, str, str, str | None, str] | None:
+    stamp, body = split_log_prefix(raw_line)
 
     for channel, pattern in CHAT_PATTERNS:
         match = pattern.match(body)
