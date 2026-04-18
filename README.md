@@ -137,31 +137,31 @@ Read [docs/anti-vpn.md](docs/anti-vpn.md) for the full operating guide.
 
 This repository also includes a lightweight addon loader for self-hosted Pterodactyl users.
 
-- Addon directory: `/home/container/addons`
-- User addons: only top-level `.sh` and `.py` files in `/home/container/addons` are executed by the addon loader
+- Addon root: `/home/container/addons`
+- Live user addons: only top-level `.sh` and `.py` files in `/home/container/addons` are executed by the addon loader
 - Disable suffix: rename a top-level addon script to end with `.disable` if you want to keep it without running it
-- Built-in addon docs: synced into `/home/container/addons/docs`
-- Bundled examples: synced into `/home/container/addons/examples` and kept up to date by the image, but not executed until copied into the top-level addon directory
-- Managed defaults: synced into `/home/container/addons/defaults`; the built-in `checkserverstatus` helper is installed from there automatically on managed startup and can be toggled with `ADDON_CHECKSERVERSTATUS_ENABLED`
-- Managed chat logs: the built-in `chatlogger` helper is refreshed from `/home/container/addons/defaults`, can be toggled with `ADDON_CHATLOGGER_ENABLED`, and writes clean daily player chat logs into `/home/container/chatlogs`
-- Managed server settings: the runtime can publish effective server values into `/home/container/.runtime/taystjk-effective.env` and selected non-sensitive values into `.json` for addons and admin utilities
-- Optional server.cfg overrides: when enabled, non-empty egg override fields can write selected values such as `rconpassword` into the active `server.cfg`; otherwise addons fall back to the current config and runtime defaults
-- Supported file types: `.sh` for Bash and `.py` for Python 3
-- Support files: `.md`, `.json`, and `.txt` are ignored if they are placed beside top-level addon scripts, but the recommended place for image-managed docs and examples is the dedicated `docs/`, `examples/`, and `defaults/` subdirectories
 - Execution order: alphabetical by filename across top-level user-owned addon scripts only
-- Runtime behavior: each addon is executed before normal managed server startup
+- Runtime behavior: each top-level user addon runs before normal managed server startup and is wrapped in the configured addon timeout
 - Safety model: best-effort by default, with optional strict mode and per-addon timeouts
+- Built-in addon docs: synced into `/home/container/addons/docs`
+- Bundled examples: synced into `/home/container/addons/examples`, kept up to date by the image, and not executed until copied into the top-level addon directory
+- Managed defaults: synced into `/home/container/addons/defaults` and handled by dedicated runtime logic rather than the top-level user addon loader
+- Managed `checkserverstatus`: refreshed from `/home/container/addons/defaults`, installed into `/home/container/bin`, available from the Pterodactyl console through the runtime bridge, and controlled by `ADDON_CHECKSERVERSTATUS_ENABLED`
+- Managed `chatlogger`: refreshed from `/home/container/addons/defaults`, controlled by `ADDON_CHATLOGGER_ENABLED`, and writes clean daily player chat logs into `/home/container/chatlogs`
+- Managed server settings: the runtime publishes effective values into `/home/container/.runtime/taystjk-effective.env` and selected non-sensitive values into `.json` for addons and admin utilities
+- Optional server.cfg overrides: when enabled, non-empty egg override fields can write selected values such as `rconpassword` into the active `server.cfg`; otherwise addons fall back to the current config and runtime defaults
+- Support files: top-level `.md`, `.json`, and `.txt` files are treated as support files and not executed; image-managed docs, examples, and defaults belong in their dedicated subdirectories
 - Scope: addons affect only the current server container and are fully owned by the server operator
 
 Read [docs/addon_readme.md](docs/addon_readme.md) for the compact addon guide and [docs/addon_readme_advanced.md](docs/addon_readme_advanced.md) for the full advanced reference.
 
-## Developer
+## Developer notes
 
-- Core runtime entrypoint: [scripts/entrypoint.sh](scripts/entrypoint.sh)
-- Standalone install helper: [scripts/install_taystjk.sh](scripts/install_taystjk.sh)
-- Pterodactyl egg: [egg/egg-taystjk-pterodactyl.json](egg/egg-taystjk-pterodactyl.json)
-- Docker image build: [docker/Dockerfile](docker/Dockerfile)
-- GitHub Actions CI: [.github/workflows/ci.yml](.github/workflows/ci.yml)
-- Anti-VPN runtime: [cmd/taystjk-antivpn](cmd/taystjk-antivpn) and [docs/anti-vpn.md](docs/anti-vpn.md)
-- Addon docs: [docs/addon_readme.md](docs/addon_readme.md) and [docs/addon_readme_advanced.md](docs/addon_readme_advanced.md)
-- Upstream runtime credit: [taysta/TaystJK](https://github.com/taysta/TaystJK)
+- Start with [scripts/entrypoint.sh](scripts/entrypoint.sh) if you want to understand the managed runtime flow, startup preparation, addon execution, helper refresh, and server launch path.
+- Use [scripts/install_taystjk.sh](scripts/install_taystjk.sh) to understand the standalone install flow and what the egg installer prepares automatically.
+- Read [egg/egg-taystjk-pterodactyl.json](egg/egg-taystjk-pterodactyl.json) for the panel-facing variable contract and install/startup behavior exposed in Pterodactyl.
+- Check [docker/Dockerfile](docker/Dockerfile) for the official runtime image build, source-built TaystJK packaging, and the current addon tool baseline shipped in the image.
+- Anti-VPN behavior lives in [cmd/taystjk-antivpn](cmd/taystjk-antivpn) and is documented in [docs/anti-vpn.md](docs/anti-vpn.md).
+- Addon authoring is documented in [docs/addon_readme.md](docs/addon_readme.md) and [docs/addon_readme_advanced.md](docs/addon_readme_advanced.md).
+- CI behavior lives in [.github/workflows/ci.yml](.github/workflows/ci.yml).
+- Upstream runtime credit goes to [taysta/TaystJK](https://github.com/taysta/TaystJK).
