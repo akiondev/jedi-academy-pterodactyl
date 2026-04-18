@@ -31,7 +31,7 @@ Pterodactyl Docker image and egg for running a **TaystJK** dedicated server with
 
 Built around [TaystJK by taysta](https://github.com/taysta/TaystJK). This repository packages that runtime for Pterodactyl and adds the surrounding image, egg, startup, addon, and admin tooling.
 
-This repository is designed to automatically deliver the latest image-managed `taystjkded.*` server binaries and bundled TaystJK runtime files to your server on restart when you use the default image. Manually selected alternative server binaries are left untouched.
+This image is designed to keep the default **`taystjkded.x86_64`** server binary up to date automatically, so you do not need to upload new TaystJK server files manually. If you choose to run a different server binary yourself, that manual binary is left untouched.
 
 License: **GPL-3.0**
 
