@@ -122,6 +122,24 @@ func TestParseClientUserinfoChangedFieldsDoesNotMatchChatPayload(t *testing.T) {
 	}
 }
 
+func TestExtractUserinfoValueMatchesWholeKeysOnly(t *testing.T) {
+	line := `name\Wrong\n\RightPlayer\ip\198.51.100.25:29070`
+
+	player := extractUserinfoValue(line, "n")
+	if player != "RightPlayer" {
+		t.Fatalf("expected exact n key to resolve to RightPlayer, got %q", player)
+	}
+}
+
+func TestExtractUserinfoValueSupportsLeadingSlash(t *testing.T) {
+	line := `\n\RightPlayer\ip\198.51.100.25:29070`
+
+	player := extractUserinfoValue(line, "n")
+	if player != "RightPlayer" {
+		t.Fatalf("expected leading-slash userinfo to resolve to RightPlayer, got %q", player)
+	}
+}
+
 func TestCachePersistsOnClose(t *testing.T) {
 	cachePath := filepath.Join(t.TempDir(), "cache.json")
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))

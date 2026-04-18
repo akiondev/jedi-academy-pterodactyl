@@ -757,23 +757,39 @@ func fillCommandTemplate(template string, data commandTemplateData) string {
 }
 
 func extractUserinfoValue(line, key string) string {
-	markers := []string{
-		`\` + key + `\`,
-		key + `\`,
+	line = strings.TrimSpace(line)
+	if line == "" || key == "" {
+		return ""
 	}
 
-	for _, marker := range markers {
-		index := strings.Index(line, marker)
-		if index == -1 {
-			continue
+	remaining := line
+	if strings.HasPrefix(remaining, `\`) {
+		remaining = remaining[1:]
+	}
+
+	for remaining != "" {
+		keyEnd := strings.Index(remaining, `\`)
+		if keyEnd == -1 {
+			return ""
 		}
 
-		raw := line[index+len(marker):]
-		end := strings.Index(raw, `\`)
-		if end == -1 {
-			return raw
+		currentKey := remaining[:keyEnd]
+		remaining = remaining[keyEnd+1:]
+
+		valueEnd := strings.Index(remaining, `\`)
+		if valueEnd == -1 {
+			if currentKey == key {
+				return remaining
+			}
+			return ""
 		}
-		return raw[:end]
+
+		currentValue := remaining[:valueEnd]
+		if currentKey == key {
+			return currentValue
+		}
+
+		remaining = remaining[valueEnd+1:]
 	}
 
 	return ""
