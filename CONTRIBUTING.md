@@ -25,14 +25,27 @@ If your change belongs to the game runtime itself, it should usually go upstream
 - gameplay or runtime behavior inside TaystJK itself
 - fixes that should live in TaystJK outside this Pterodactyl integration
 
-## Contribution flow
+## Contribution flow for this repository
 
 1. [Fork this repository](https://github.com/akiondev/jedi-academy-pterodactyl/fork).
-2. Create a new branch in your fork.
-3. Make focused changes.
-4. Open a pull request back to this repository.
+2. Clone your fork locally.
+3. Create a branch for your change.
+4. Make focused changes that fit this repository.
+5. Push your branch to your fork.
+6. Open a pull request back to this repository.
 
-If your change belongs upstream, use [taysta/TaystJK](https://github.com/taysta/TaystJK) instead.
+Use this repository for changes to the Pterodactyl image, egg, startup flow, addon system, documentation, and admin tooling.
+
+## Contribution flow for TaystJK upstream
+
+If your change belongs to TaystJK itself:
+
+1. [Fork TaystJK](https://github.com/taysta/TaystJK/fork).
+2. Clone your TaystJK fork locally.
+3. Create a branch there for the runtime change.
+4. Make the game/runtime change in that fork.
+5. Push your branch to your TaystJK fork.
+6. Open a pull request upstream to [taysta/TaystJK](https://github.com/taysta/TaystJK).
 
 ## Guidelines
 

@@ -175,12 +175,7 @@ Read [docs/addon_readme.md](docs/addon_readme.md) for the compact addon guide an
 - Contribution guide: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Security policy: [SECURITY.md](SECURITY.md)
 
-### Contributing here
-
-- [Fork this repository](https://github.com/akiondev/jedi-academy-pterodactyl/fork) if you want to contribute to the Pterodactyl image, egg, startup flow, addon system, documentation, or admin tooling.
-- Create a branch in your fork, make your changes, and then [open a pull request here](https://github.com/akiondev/jedi-academy-pterodactyl/compare).
-
 ### Contributing upstream to TaystJK
 
 - Upstream runtime credit goes to [taysta/TaystJK](https://github.com/taysta/TaystJK).
-- If your change belongs to the game runtime itself, [fork TaystJK](https://github.com/taysta/TaystJK/fork), create a branch there, and [open a pull request upstream](https://github.com/taysta/TaystJK/compare).
+- If your change belongs to the game runtime itself, it should usually go upstream to TaystJK rather than this repository.
