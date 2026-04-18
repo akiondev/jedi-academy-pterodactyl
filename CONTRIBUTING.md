@@ -36,6 +36,8 @@ If your change belongs to the game runtime itself, it should usually go upstream
 
 Use this repository for changes to the Pterodactyl image, egg, startup flow, addon system, documentation, and admin tooling.
 
+`main` is intended to stay protected and PR-only. Maintainers should keep the GitHub branch ruleset aligned with [docs/maintainer-branch-protection.md](docs/maintainer-branch-protection.md).
+
 ## Contribution flow for TaystJK upstream
 
 If your change belongs to TaystJK itself:
@@ -54,6 +56,7 @@ If your change belongs to TaystJK itself:
 - Do not add copyrighted Jedi Academy game assets to the repository, image, or egg flow.
 - If you change addon behavior, update the addon docs too.
 - If you change startup, install, or egg behavior, update the README or relevant docs so the operator-facing behavior stays accurate.
+- Do not rely on direct pushes to `main`; use pull requests so CI and repository protections stay effective.
 
 ## Local checks
 

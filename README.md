@@ -181,6 +181,7 @@ Read [docs/addon_readme.md](docs/addon_readme.md) for the compact addon guide an
 ### Contribution and security
 
 - Contribution guide: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Maintainer branch protection guide: [docs/maintainer-branch-protection.md](docs/maintainer-branch-protection.md)
 - Security policy: [SECURITY.md](SECURITY.md)
 
 ### Contributing upstream to TaystJK
