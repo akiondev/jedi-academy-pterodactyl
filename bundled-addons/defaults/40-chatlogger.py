@@ -6,20 +6,31 @@ This helper is refreshed from the image into:
   /home/container/addons/defaults/40-chatlogger.py
 
 During managed startup it launches a detached background worker that:
-  - tails the resolved active server log path
-  - extracts common public/team/whisper chat lines
+  - tails the resolved active server log path with ``tail -n 0 -F``
+    (so log rotation, truncation, unlink+recreate and engine restarts
+    of ``server.log`` are handled transparently)
+  - extracts public/team/whisper/admin chat lines, including common
+    JKA / TaystJK / JAPro mod-specific verbs
   - writes clean daily chat logs into /home/container/chatlogs
+
+The worker is hardened against single-line parse failures, writes a
+periodic heartbeat to ``chatlogger-helper.log``, and validates the
+recorded PID against ``/proc/<pid>/cmdline`` so a recycled PID can never
+prevent a fresh start.
 """
 
 from __future__ import annotations
 
+import errno
 import gzip
+import json
 import os
 import re
 import signal
 import subprocess
 import sys
 import time
+import traceback
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -30,36 +41,130 @@ CHATLOGS_DIR = HOME_DIR / "chatlogs"
 SCRIPT_PATH = Path(__file__).resolve()
 PID_PATH = LOGS_DIR / "chatlogger.pid"
 WORKER_LOG_PATH = LOGS_DIR / "chatlogger-helper.log"
+STATE_PATH = LOGS_DIR / "chatlogger-state.json"
 RUNTIME_ENV_PATH = HOME_DIR / ".runtime" / "taystjk-effective.env"
 
-KEEP_PLAIN_DAYS = 7
-KEEP_TOTAL_DAYS = 60
-POLL_SECONDS = 1.0
+WORKER_MARKER = "40-chatlogger.py"
+WORKER_FLAG = "--worker"
+
+
+def _env_int(name: str, default: int, minimum: int = 1) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    if value < minimum:
+        return minimum
+    return value
+
+
+KEEP_PLAIN_DAYS = _env_int("CHATLOGGER_KEEP_PLAIN_DAYS", 7)
+KEEP_TOTAL_DAYS = _env_int("CHATLOGGER_KEEP_TOTAL_DAYS", 60)
+HEARTBEAT_SECONDS = _env_int("CHATLOGGER_HEARTBEAT_SECONDS", 300, minimum=10)
+TAIL_RESTART_BACKOFF_MAX = _env_int("CHATLOGGER_TAIL_RESTART_BACKOFF_MAX", 30, minimum=1)
+TAIL_RESTART_BACKOFF_INITIAL = 1
+CLEANUP_INTERVAL_SECONDS = 3600
 
 TIMESTAMP_RE = re.compile(r"^(?P<stamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+(?P<body>.*)$")
 MATCH_TIME_RE = re.compile(r"^(?:\d{1,3}:\d{2}(?::\d{2})?)\s+(?P<body>.*)$")
 QUAKE_COLOR_RE = re.compile(r"\^(?:[0-9A-Za-z])")
-CHAT_PATTERNS = (
-    (
-        "PUBLIC",
-        re.compile(r"^(?:say|chat):\s+(?P<sender>.+?):\s+(?P<message>.+)$", re.IGNORECASE),
-    ),
-    (
-        "TEAM",
-        re.compile(r"^(?:sayteam|teamsay|team):\s+(?P<sender>.+?):\s+(?P<message>.+)$", re.IGNORECASE),
-    ),
+
+# Chat verb groups. Order matters: more specific verbs first so a generic
+# fallback does not steal a known channel classification.
+PUBLIC_VERBS = ("say", "chat", "globalchat")
+TEAM_VERBS = ("sayteam", "teamsay", "team", "teamchat")
+WHISPER_VERBS = ("tell", "whisper", "privmsg", "pm")
+ADMIN_VERBS = ("amsay", "smsay", "amchat", "smchat", "tsay", "csay", "vsay", "vchat")
+ADMIN_TELL_VERBS = ("amtell", "smtell", "ampm")
+
+CHAT_PATTERNS: tuple[tuple[str, "re.Pattern[str]"], ...] = (
     (
         "WHISPER",
         re.compile(
-            r"^(?:tell|whisper|privmsg|pm):\s+(?P<sender>.+?)\s+(?:->|to)\s+(?P<target>.+?):\s+(?P<message>.+)$",
+            r"^(?:" + "|".join(WHISPER_VERBS) + r")\s*:\s*(?P<sender>.+?)\s*(?:->|to)\s*(?P<target>.+?)\s*:\s*(?P<message>.+)$",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "ADMIN_WHISPER",
+        re.compile(
+            r"^(?:" + "|".join(ADMIN_TELL_VERBS) + r")\s*:\s*(?P<sender>.+?)\s*(?:->|to)\s*(?P<target>.+?)\s*:\s*(?P<message>.+)$",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "TEAM",
+        re.compile(
+            r"^(?:" + "|".join(TEAM_VERBS) + r")\s*:\s*(?P<sender>.+?)\s*:\s*(?P<message>.+)$",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "ADMIN",
+        re.compile(
+            r"^(?:" + "|".join(ADMIN_VERBS) + r")\s*:\s*(?P<sender>.+?)\s*:\s*(?P<message>.+)$",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "PUBLIC",
+        re.compile(
+            r"^(?:" + "|".join(PUBLIC_VERBS) + r")\s*:\s*(?P<sender>.+?)\s*:\s*(?P<message>.+)$",
             re.IGNORECASE,
         ),
     ),
 )
 
+# Generic fallback: ``<verb>: <name>: <message>`` for unknown but
+# chat-shaped mod prefixes. We classify these as PUBLIC since we cannot
+# tell the channel reliably without an explicit verb match.
+GENERIC_CHAT_RE = re.compile(
+    r"^(?P<verb>[A-Za-z][A-Za-z0-9_]{1,15})\s*:\s*(?P<sender>[^:]{1,64}?)\s*:\s*(?P<message>.+)$"
+)
+# Verbs that look chat-shaped but are definitively NOT chat.
+GENERIC_VERB_BLOCKLIST = frozenset(
+    {
+        "initgame",
+        "shutdowngame",
+        "clientconnect",
+        "clientdisconnect",
+        "clientbegin",
+        "changeteam",
+        "kill",
+        "item",
+        "exit",
+        "score",
+        "challenge",
+        "weapon",
+        "duel",
+        "info",
+        "warning",
+        "error",
+        "broadcast",
+        "rcon",
+        "status",
+    }
+)
+
 
 def log(message: str) -> None:
     print(f"{ADDON_LABEL} {message}", flush=True)
+
+
+def worker_log(message: str) -> None:
+    """Append a timestamped line to the worker log file."""
+    try:
+        WORKER_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+        with WORKER_LOG_PATH.open("a", encoding="utf-8") as handle:
+            handle.write(f"[{stamp}] {message}\n")
+    except OSError:
+        # Last resort: fall back to stdout, which is captured by the
+        # detached worker via Popen(stdout=worker_log).
+        print(f"{ADDON_LABEL} {message}", flush=True)
 
 
 def load_runtime_env() -> dict[str, str]:
@@ -145,7 +250,12 @@ def split_log_prefix(raw_line: str) -> tuple[str, str]:
 
 
 def parse_chat_line(raw_line: str) -> tuple[str, str, str, str | None, str] | None:
+    if not raw_line or not raw_line.strip():
+        return None
+
     stamp, body = split_log_prefix(raw_line)
+    if not body:
+        return None
 
     for channel, pattern in CHAT_PATTERNS:
         match = pattern.match(body)
@@ -162,12 +272,24 @@ def parse_chat_line(raw_line: str) -> tuple[str, str, str, str | None, str] | No
         tz_name = datetime.now().astimezone().tzname() or "LOCAL"
         return (f"{stamp} {tz_name}", channel, sender, target, message)
 
+    # Generic fallback for unknown but chat-shaped mod verbs.
+    generic = GENERIC_CHAT_RE.match(body)
+    if generic:
+        verb = generic.group("verb").lower()
+        if verb not in GENERIC_VERB_BLOCKLIST:
+            sender = normalize_text(generic.group("sender"))
+            message = normalize_text(generic.group("message"))
+            # Reject obviously non-chat senders that snuck through.
+            if sender and message and "@@@" not in sender and "@@@" not in message:
+                tz_name = datetime.now().astimezone().tzname() or "LOCAL"
+                return (f"{stamp} {tz_name}", "PUBLIC", sender, None, message)
+
     return None
 
 
 def format_chat_entry(entry: tuple[str, str, str, str | None, str]) -> str:
     timestamp, channel, sender, target, message = entry
-    if channel == "WHISPER" and target:
+    if channel in {"WHISPER", "ADMIN_WHISPER"} and target:
         return f"[{timestamp}] [{channel}] {sender} -> {target}: {message}"
     return f"[{timestamp}] [{channel}] {sender}: {message}"
 
@@ -232,29 +354,86 @@ def update_latest_symlink(target: Path) -> None:
         pass
 
 
-def read_existing_pid() -> int | None:
+# ---------------------------------------------------------------------------
+# PID / lifecycle handling
+# ---------------------------------------------------------------------------
+
+
+def read_pid_record() -> dict | None:
+    """Read the PID file as JSON. Falls back to legacy ``int``-only files."""
     if not PID_PATH.is_file():
         return None
-
     try:
-        return int(PID_PATH.read_text(encoding="utf-8").strip())
-    except (OSError, ValueError):
+        raw = PID_PATH.read_text(encoding="utf-8").strip()
+    except OSError:
         return None
+    if not raw:
+        return None
+    try:
+        record = json.loads(raw)
+        if isinstance(record, dict) and "pid" in record:
+            return record
+    except ValueError:
+        pass
+    # Legacy format: a bare integer.
+    try:
+        return {"pid": int(raw), "legacy": True}
+    except ValueError:
+        return None
+
+
+def write_pid_record(pid: int) -> None:
+    record = {
+        "pid": pid,
+        "start_time": time.time(),
+        "script": str(SCRIPT_PATH),
+    }
+    PID_PATH.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+
+def proc_cmdline(pid: int) -> str:
+    """Return the cmdline of ``pid`` as a single space-joined string."""
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as handle:
+            raw = handle.read()
+    except OSError:
+        return ""
+    parts = [piece.decode("utf-8", "replace") for piece in raw.split(b"\x00") if piece]
+    return " ".join(parts)
 
 
 def process_is_running(pid: int) -> bool:
+    if pid <= 0:
+        return False
     try:
         os.kill(pid, 0)
-    except OSError:
+    except OSError as exc:
+        if exc.errno == errno.ESRCH:
+            return False
+        if exc.errno == errno.EPERM:
+            return True
         return False
     return True
 
 
+def process_is_our_worker(pid: int) -> bool:
+    """Verify ``pid`` belongs to a chatlogger worker, not a recycled PID."""
+    if not process_is_running(pid):
+        return False
+    cmdline = proc_cmdline(pid)
+    if not cmdline:
+        # /proc may be unavailable in some sandboxes; trust the live check.
+        return True
+    return WORKER_MARKER in cmdline and WORKER_FLAG in cmdline
+
+
 def stop_worker() -> None:
-    pid = read_existing_pid()
-    if pid is None:
+    record = read_pid_record()
+    if record is None:
         log("Managed chat logger is already stopped")
         return
+
+    pid = int(record.get("pid", 0))
 
     if not process_is_running(pid):
         try:
@@ -262,6 +441,14 @@ def stop_worker() -> None:
         except OSError:
             pass
         log("Removed stale managed chat logger PID file")
+        return
+
+    if not process_is_our_worker(pid):
+        try:
+            PID_PATH.unlink()
+        except OSError:
+            pass
+        log(f"PID {pid} no longer belongs to chat logger worker; PID file cleared")
         return
 
     try:
@@ -293,105 +480,433 @@ def stop_worker() -> None:
 def ensure_worker_running() -> None:
     ensure_directories()
 
-    pid = read_existing_pid()
-    if pid is not None and process_is_running(pid):
-        log(f"Managed chat logger already running with PID {pid}")
-        log(f"Chat logs directory: {CHATLOGS_DIR}")
-        return
-
-    if pid is not None:
+    record = read_pid_record()
+    if record is not None:
+        pid = int(record.get("pid", 0))
+        if process_is_our_worker(pid):
+            log(f"Managed chat logger already running with PID {pid}")
+            log(f"Chat logs directory: {CHATLOGS_DIR}")
+            return
+        # Stale or recycled PID: clean up so we can start fresh.
         try:
             PID_PATH.unlink()
         except OSError:
             pass
+        if pid > 0 and process_is_running(pid):
+            log(f"PID {pid} from PID file is no longer a chat logger worker; restarting")
+        else:
+            log("Removed stale managed chat logger PID file")
 
-    with WORKER_LOG_PATH.open("a", encoding="utf-8") as worker_log:
+    with WORKER_LOG_PATH.open("a", encoding="utf-8") as handle:
         process = subprocess.Popen(
-            [sys.executable, str(SCRIPT_PATH), "--worker"],
+            [sys.executable, str(SCRIPT_PATH), WORKER_FLAG],
             cwd=str(HOME_DIR),
             env=os.environ.copy(),
             start_new_session=True,
-            stdout=worker_log,
+            stdout=handle,
             stderr=subprocess.STDOUT,
             close_fds=True,
         )
 
-    PID_PATH.write_text(f"{process.pid}\n", encoding="utf-8")
+    write_pid_record(process.pid)
     log(f"Managed chat logger started in the background with PID {process.pid}")
     log(f"Chat logs directory: {CHATLOGS_DIR}")
     log(f"Worker log file: {WORKER_LOG_PATH}")
 
 
+# ---------------------------------------------------------------------------
+# Worker state (heartbeat, last chat) for --status
+# ---------------------------------------------------------------------------
+
+
+def write_state(state: dict) -> None:
+    try:
+        STATE_PATH.write_text(json.dumps(state, sort_keys=True) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def read_state() -> dict:
+    if not STATE_PATH.is_file():
+        return {}
+    try:
+        return json.loads(STATE_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+# ---------------------------------------------------------------------------
+# Worker
+# ---------------------------------------------------------------------------
+
+
+class WorkerRuntime:
+    """Mutable, output-side state held by the worker loop."""
+
+    def __init__(self) -> None:
+        self.lines_seen = 0
+        self.chats_logged = 0
+        self.last_chat_at: str | None = None
+        self.last_chat_summary: str | None = None
+        self.last_heartbeat = 0.0
+        self.last_cleanup = time.monotonic()
+        self.current_date = datetime.now().astimezone().date()
+        self.output_handle = None  # type: ignore[assignment]
+        self.output_path: Path | None = None
+
+    # -- output file rotation ------------------------------------------------
+
+    def open_today(self, now: datetime) -> None:
+        path = current_plain_log_path(now)
+        if self.output_handle is not None and self.output_path == path:
+            return
+        self.close_output()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.output_handle = path.open("a", encoding="utf-8")
+        self.output_path = path
+        update_latest_symlink(path)
+
+    def close_output(self) -> None:
+        if self.output_handle is not None:
+            try:
+                self.output_handle.flush()
+                self.output_handle.close()
+            except OSError:
+                pass
+        self.output_handle = None
+        self.output_path = None
+
+    def maybe_roll_date(self, now: datetime) -> None:
+        if now.date() != self.current_date:
+            self.current_date = now.date()
+            self.close_output()
+            cleanup_old_logs(now)
+            self.last_cleanup = time.monotonic()
+
+    # -- chat write ----------------------------------------------------------
+
+    def write_chat(self, entry: tuple[str, str, str, str | None, str]) -> None:
+        now = datetime.now().astimezone()
+        self.maybe_roll_date(now)
+        self.open_today(now)
+        line = format_chat_entry(entry)
+        assert self.output_handle is not None
+        self.output_handle.write(line + "\n")
+        self.output_handle.flush()
+        self.chats_logged += 1
+        self.last_chat_at = now.strftime("%Y-%m-%d %H:%M:%S %Z")
+        self.last_chat_summary = line
+
+    # -- bookkeeping ---------------------------------------------------------
+
+    def heartbeat(self, *, force: bool = False) -> None:
+        now = time.monotonic()
+        if not force and (now - self.last_heartbeat) < HEARTBEAT_SECONDS:
+            return
+        self.last_heartbeat = now
+        message = (
+            f"alive lines={self.lines_seen} chats={self.chats_logged} "
+            f"last_chat={self.last_chat_at or 'never'}"
+        )
+        worker_log(message)
+        write_state(
+            {
+                "pid": os.getpid(),
+                "updated_at": datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z"),
+                "lines_seen": self.lines_seen,
+                "chats_logged": self.chats_logged,
+                "last_chat_at": self.last_chat_at,
+                "last_chat": self.last_chat_summary,
+                "server_log_path": str(active_server_log_path()),
+            }
+        )
+
+    def maybe_periodic_cleanup(self) -> None:
+        if (time.monotonic() - self.last_cleanup) < CLEANUP_INTERVAL_SECONDS:
+            return
+        cleanup_old_logs(datetime.now().astimezone())
+        self.last_cleanup = time.monotonic()
+
+
+_shutdown_requested = False
+
+
+def _request_shutdown(signum, _frame) -> None:  # noqa: ANN001
+    global _shutdown_requested
+    _shutdown_requested = True
+    worker_log(f"received signal {signum}, shutting down")
+
+
+def _start_tail(server_log_path: Path) -> subprocess.Popen[str]:
+    return subprocess.Popen(
+        ["tail", "-n", "0", "-F", "--", str(server_log_path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
+        close_fds=True,
+    )
+
+
+def _stop_tail(proc: subprocess.Popen[str]) -> None:
+    if proc.poll() is not None:
+        return
+    try:
+        proc.terminate()
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
+    except OSError:
+        pass
+    for stream in (proc.stdout, proc.stderr):
+        if stream is not None:
+            try:
+                stream.close()
+            except OSError:
+                pass
+
+
 def worker_loop() -> int:
     ensure_directories()
-    current_date = datetime.now().astimezone().date()
+    signal.signal(signal.SIGTERM, _request_shutdown)
+    signal.signal(signal.SIGINT, _request_shutdown)
+
+    runtime = WorkerRuntime()
     cleanup_old_logs(datetime.now().astimezone())
+    runtime.heartbeat(force=True)
+    worker_log(
+        f"worker starting (pid={os.getpid()}, "
+        f"keep_plain_days={KEEP_PLAIN_DAYS}, keep_total_days={KEEP_TOTAL_DAYS}, "
+        f"heartbeat_seconds={HEARTBEAT_SECONDS})"
+    )
 
-    server_log_path = active_server_log_path()
-    attached = False
-    offset = 0
+    backoff = TAIL_RESTART_BACKOFF_INITIAL
 
-    while True:
-        now = datetime.now().astimezone()
-        if now.date() != current_date:
-            current_date = now.date()
-            cleanup_old_logs(now)
+    while not _shutdown_requested:
+        server_log_path = active_server_log_path()
 
-        if not server_log_path.is_file():
-            time.sleep(POLL_SECONDS)
+        # Wait for the log file to exist before spawning tail; tail -F can
+        # also wait on its own, but blocking here keeps the worker log
+        # easier to interpret.
+        if not server_log_path.exists():
+            worker_log(f"server log {server_log_path} not present yet, waiting")
+            wait_until = time.monotonic() + 5
+            while not _shutdown_requested and time.monotonic() < wait_until:
+                if server_log_path.exists():
+                    break
+                time.sleep(0.5)
+                runtime.heartbeat()
+            if _shutdown_requested:
+                break
             continue
 
+        worker_log(f"tailing {server_log_path}")
         try:
-            with server_log_path.open("r", encoding="utf-8", errors="replace") as handle:
-                handle.seek(0, os.SEEK_END)
-                if attached:
-                    handle.seek(offset, os.SEEK_SET)
-                else:
-                    offset = handle.tell()
-                    attached = True
+            proc = _start_tail(server_log_path)
+        except (OSError, ValueError) as exc:
+            worker_log(f"failed to start tail: {exc}; retrying in {backoff}s")
+            _sleep_with_heartbeat(runtime, backoff)
+            backoff = min(backoff * 2, TAIL_RESTART_BACKOFF_MAX)
+            continue
 
-                while True:
-                    line = handle.readline()
-                    if line:
-                        offset = handle.tell()
-                        parsed = parse_chat_line(line)
-                        if parsed is None:
-                            continue
+        # Successful spawn resets backoff once we actually see output or
+        # the process stays alive for a moment.
+        spawn_time = time.monotonic()
 
-                        output_path = current_plain_log_path(datetime.now().astimezone())
-                        with output_path.open("a", encoding="utf-8") as output:
-                            output.write(format_chat_entry(parsed) + "\n")
-                        update_latest_symlink(output_path)
-                        continue
+        try:
+            assert proc.stdout is not None
+            for raw_line in proc.stdout:
+                if _shutdown_requested:
+                    break
+                runtime.lines_seen += 1
+                try:
+                    parsed = parse_chat_line(raw_line)
+                    if parsed is not None:
+                        runtime.write_chat(parsed)
+                except Exception:
+                    worker_log(
+                        "exception while processing line:\n"
+                        + traceback.format_exc()
+                        + f"offending line: {raw_line.rstrip()!r}"
+                    )
+                runtime.heartbeat()
+                runtime.maybe_periodic_cleanup()
 
-                    if not server_log_path.exists():
-                        attached = False
-                        offset = 0
-                        break
+                # Reset backoff once tail has clearly been healthy for a while.
+                if (time.monotonic() - spawn_time) > 5:
+                    backoff = TAIL_RESTART_BACKOFF_INITIAL
+        except Exception:
+            worker_log("unexpected exception in tail loop:\n" + traceback.format_exc())
+        finally:
+            _stop_tail(proc)
 
-                    try:
-                        current_size = server_log_path.stat().st_size
-                    except OSError:
-                        time.sleep(POLL_SECONDS)
-                        continue
+        if _shutdown_requested:
+            break
 
-                    if current_size < offset:
-                        attached = False
-                        offset = 0
-                        break
-
-                    time.sleep(POLL_SECONDS)
+        # tail exited (engine restart, log replaced before -F could
+        # reattach, etc.). Drain any stderr to the helper log for
+        # diagnostics, then restart with backoff.
+        try:
+            stderr_output = proc.stderr.read() if proc.stderr is not None else ""
         except OSError:
-            time.sleep(POLL_SECONDS)
+            stderr_output = ""
+        rc = proc.returncode
+        msg = f"tail exited with rc={rc}, restarting in {backoff}s"
+        if stderr_output.strip():
+            msg += f"; stderr: {stderr_output.strip()[:500]}"
+        worker_log(msg)
+        _sleep_with_heartbeat(runtime, backoff)
+        backoff = min(backoff * 2, TAIL_RESTART_BACKOFF_MAX)
+
+    runtime.close_output()
+    runtime.heartbeat(force=True)
+    worker_log("worker exiting")
+    return 0
 
 
-def main() -> int:
-    if len(sys.argv) > 1 and sys.argv[1] == "--worker":
+def _sleep_with_heartbeat(runtime: WorkerRuntime, seconds: int) -> None:
+    deadline = time.monotonic() + max(0, seconds)
+    while not _shutdown_requested and time.monotonic() < deadline:
+        remaining = deadline - time.monotonic()
+        time.sleep(max(0.0, min(0.5, remaining)))
+        runtime.heartbeat()
+
+
+# ---------------------------------------------------------------------------
+# Status / self-test
+# ---------------------------------------------------------------------------
+
+
+def show_status() -> int:
+    record = read_pid_record()
+    state = read_state()
+
+    print(f"{ADDON_LABEL} status")
+    print(f"  pid file:        {PID_PATH}")
+    print(f"  worker log:      {WORKER_LOG_PATH}")
+    print(f"  chatlogs dir:    {CHATLOGS_DIR}")
+    print(f"  server log path: {active_server_log_path()}")
+
+    if record is None:
+        print("  state:           not running (no PID file)")
+        return 0
+
+    pid = int(record.get("pid", 0))
+    running = process_is_our_worker(pid)
+    print(f"  pid:             {pid}")
+    print(f"  pid is worker:   {'yes' if running else 'no'}")
+
+    if state:
+        print(f"  last heartbeat:  {state.get('updated_at', 'unknown')}")
+        print(f"  lines seen:      {state.get('lines_seen', 0)}")
+        print(f"  chats logged:    {state.get('chats_logged', 0)}")
+        print(f"  last chat at:    {state.get('last_chat_at') or 'never'}")
+        if state.get("last_chat"):
+            print(f"  last chat:       {state['last_chat']}")
+    else:
+        print("  state:           no heartbeat recorded yet")
+
+    return 0 if running else 1
+
+
+SELFTEST_LINES: tuple[str, ...] = (
+    "0:19 say: js hart: works like a charm now",
+    "0:57 say: js hart: i type",
+    '1:28 say: js hart^7: where u can see if fps is 20 or 30?',
+    "2:00 sayteam: Akion: rally at duel room",
+    "2:30 tell: Akion -> Robin: meet me at duel room",
+    "3:00 amsay: Admin: server restart in 5",
+    "3:30 amtell: Admin -> Robin: stop telekilling",
+    "4:00 vsay: Akion: hi",
+    "2026-04-18 19:32:39 say: js hart: hello with absolute timestamp",
+    # Generic fallback: an unknown but chat-shaped verb should match.
+    "5:00 modsay: Akion: future mod chat verb",
+    "0:00 InitGame: \\version\\TaystJK",  # must NOT match
+    "0:00 ClientConnect: 0 [1.2.3.4] (X) \"hart\"",  # must NOT match
+    "0:00 @@@VOTEPASSED (g_gametype 6)",  # must NOT match
+    "0:00 say: : empty sender",  # must NOT match
+    "0:00 rcon: admin: status",  # must NOT match (rcon is blocklisted)
+    "0:00 status: server: up",  # must NOT match (status is blocklisted)
+    "0:00 ClientDisconnect: 0 [1.2.3.4] (X) \"hart\"",  # must NOT match
+    "",  # must NOT match
+)
+
+
+def run_selftest() -> int:
+    print(f"{ADDON_LABEL} self-test")
+    failures = 0
+    for raw in SELFTEST_LINES:
+        parsed = parse_chat_line(raw)
+        rendered = format_chat_entry(parsed) if parsed is not None else "<no match>"
+        print(f"  in : {raw!r}")
+        print(f"  out: {rendered}")
+
+    # Sanity assertions so this is also useful as a regression test.
+    must_match = [
+        "0:19 say: js hart: works like a charm now",
+        "0:57 say: js hart: i type",
+        '1:28 say: js hart^7: where u can see if fps is 20 or 30?',
+        "2:00 sayteam: Akion: rally at duel room",
+        "2:30 tell: Akion -> Robin: meet me at duel room",
+        "3:00 amsay: Admin: server restart in 5",
+        "3:30 amtell: Admin -> Robin: stop telekilling",
+        "4:00 vsay: Akion: hi",
+        "2026-04-18 19:32:39 say: js hart: hello with absolute timestamp",
+        "5:00 modsay: Akion: future mod chat verb",
+    ]
+    must_not_match = [
+        "0:00 InitGame: \\version\\TaystJK",
+        "0:00 ClientConnect: 0 [1.2.3.4] (X) \"hart\"",
+        "0:00 ClientDisconnect: 0 [1.2.3.4] (X) \"hart\"",
+        "0:00 @@@VOTEPASSED (g_gametype 6)",
+        "0:00 say: : empty sender",
+        "0:00 rcon: admin: status",
+        "0:00 status: server: up",
+        "",
+    ]
+    for raw in must_match:
+        if parse_chat_line(raw) is None:
+            print(f"  FAIL: expected match for {raw!r}")
+            failures += 1
+    for raw in must_not_match:
+        if parse_chat_line(raw) is not None:
+            print(f"  FAIL: expected no match for {raw!r}")
+            failures += 1
+
+    if failures:
+        print(f"{ADDON_LABEL} self-test failed with {failures} error(s)")
+        return 1
+    print(f"{ADDON_LABEL} self-test ok")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = list(sys.argv[1:] if argv is None else argv)
+
+    if args and args[0] == WORKER_FLAG:
         return worker_loop()
 
-    if len(sys.argv) > 1 and sys.argv[1] == "--stop":
+    if args and args[0] == "--stop":
         stop_worker()
         return 0
+
+    if args and args[0] == "--status":
+        return show_status()
+
+    if args and args[0] == "--selftest":
+        return run_selftest()
 
     ensure_worker_running()
     return 0
