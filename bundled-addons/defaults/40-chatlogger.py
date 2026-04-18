@@ -120,6 +120,7 @@ def normalize_text(value: str) -> str:
 
 def split_log_prefix(raw_line: str) -> tuple[str, str]:
     line = raw_line.rstrip()
+    current_stamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
 
     timestamp_match = TIMESTAMP_RE.match(line)
     if timestamp_match:
@@ -127,11 +128,9 @@ def split_log_prefix(raw_line: str) -> tuple[str, str]:
 
     match_time = MATCH_TIME_RE.match(line)
     if match_time:
-        stamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
-        return stamp, match_time.group("body").strip()
+        return current_stamp, match_time.group("body").strip()
 
-    stamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
-    return stamp, raw_line.strip()
+    return current_stamp, raw_line.strip()
 
 
 def parse_chat_line(raw_line: str) -> tuple[str, str, str, str | None, str] | None:
