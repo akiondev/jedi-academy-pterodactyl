@@ -45,6 +45,8 @@ In Pterodactyl, an **egg** is a server template. It defines how a server should 
 
 This repository provides the Docker image and Pterodactyl egg for running a TaystJK-based Jedi Academy server in that environment.
 
+![Pterodactyl TaystJK example console](docs/assets/pterodactyl-console-example.png)
+
 ## Quick install
 
 1. Import [egg/egg-taystjk-pterodactyl.json](egg/egg-taystjk-pterodactyl.json) into Pterodactyl.
