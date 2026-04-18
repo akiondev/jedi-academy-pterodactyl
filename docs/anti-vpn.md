@@ -19,7 +19,7 @@ The anti-VPN feature is implemented as a compiled Go binary inside the runtime i
 - binary: `taystjk-antivpn`
 - launch path: `scripts/entrypoint.sh`
 - runtime model: supervisor around the dedicated server process
-- signal source: stdout-first event capture with `server.log` fallback
+- signal source: stdout-first event capture with the resolved active server log path as fallback
 - enforcement path: server stdin console commands
 - optional public player-chat broadcast path: server `say` command templates
 - audit path: dedicated anti-VPN audit log file
@@ -202,7 +202,7 @@ Recommended enforcement mode defaults:
 
 ## Operational notes
 
-- Primary event capture happens from the live server stdout stream, with `server.log` used as a fallback path.
+- Primary event capture happens from the live server stdout stream, with the resolved active server log path used as a fallback path.
 - Custom startup commands bypass the normal anti-VPN supervisor path and are logged as such by the entrypoint.
 - Anonymous provider access is allowed for `proxycheck.io` and `ipapi.is`, but production deployments should still configure API keys there as well to avoid low shared limits.
 - `IPQualityScore`, `IPLocate`, `IPHub`, and `vpnapi.io` are only active when their API keys are configured.

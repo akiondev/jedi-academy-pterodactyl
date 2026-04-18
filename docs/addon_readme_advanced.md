@@ -320,6 +320,7 @@ Important values include:
 - `TAYSTJK_ACTIVE_MOD_DIR`
 - `TAYSTJK_ACTIVE_SERVER_CONFIG`
 - `TAYSTJK_ACTIVE_SERVER_CONFIG_PATH`
+- `TAYSTJK_ACTIVE_SERVER_LOG_PATH`
 - `TAYSTJK_SERVER_CFG_OVERRIDES_ENABLED`
 - `TAYSTJK_EFFECTIVE_SERVER_BINARY`
 - `TAYSTJK_EFFECTIVE_SERVER_PORT`
@@ -361,10 +362,12 @@ That means:
 - do not assume the active mod is always `taystjk`
 - do not assume the active binary is always `taystjkded.*`
 - do not assume the active config path is always `/home/container/taystjk/server.cfg`
+- do not assume the active log path is always `/home/container/taystjk/server.log`
 
 Instead:
 
 - prefer `TAYSTJK_ACTIVE_SERVER_CONFIG_PATH`
+- prefer `TAYSTJK_ACTIVE_SERVER_LOG_PATH`
 - prefer `TAYSTJK_ACTIVE_MOD_DIR`
 - treat manual alternative binaries/mod folders as user-owned paths that must already exist
 
@@ -413,7 +416,7 @@ The managed chat logger:
 
 - is refreshed from the image every managed startup
 - is controlled by the egg variable `ADDON_CHATLOGGER_ENABLED`
-- tails the active `server.log`
+- tails the resolved active server log path from runtime state
 - writes clean daily chat logs into `/home/container/chatlogs`
 - maintains `/home/container/chatlogs/latest.log` as a symlink to the current day
 - keeps recent logs as plain `.log` files
@@ -437,7 +440,7 @@ Operational pattern it demonstrates:
 - the launcher checks for an existing PID
 - stale PID files are removed if the process no longer exists
 - a detached worker is started in a new session
-- the worker tails `server.log` and keeps running after startup
+- the worker tails the resolved active server log path and keeps running after startup
 
 ## Bundled example template
 
@@ -702,7 +705,7 @@ Check:
 - `/home/container/addons/defaults/40-chatlogger.py` exists
 - `/home/container/logs/chatlogger-helper.log` exists
 - `/home/container/logs/chatlogger.pid` is not stale
-- the active server log exists at `/home/container/<active_mod>/server.log`
+- the active server log exists at the path published in `TAYSTJK_ACTIVE_SERVER_LOG_PATH`
 
 ### Legacy bundled-addons directory exists
 

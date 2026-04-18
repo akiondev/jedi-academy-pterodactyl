@@ -157,6 +157,9 @@ func (c Config) IsAllowlisted(addr netip.Addr) bool {
 }
 
 func defaultLogPath() string {
+	if runtimeLogPath := strings.TrimSpace(os.Getenv("TAYSTJK_ACTIVE_SERVER_LOG_PATH")); runtimeLogPath != "" {
+		return filepath.Clean(runtimeLogPath)
+	}
 	mod := strings.TrimSpace(os.Getenv("FS_GAME_MOD"))
 	if mod == "" || strings.EqualFold(mod, "base") {
 		mod = "base"
