@@ -67,6 +67,14 @@ If a top-level addon filename ends with `.disable`, it is treated as intentional
 
 Files inside `docs/`, `examples/`, and `defaults/` are not executed by the loader.
 
+The current default addon root is:
+
+```text
+/home/container/addons
+```
+
+The addon root can be changed with `ADDONS_DIR`, but it must remain under `/home/container`.
+
 ## Ownership model
 
 ### User-owned
@@ -104,6 +112,16 @@ The loader executes:
 - top-level `.sh` files with `bash`
 - top-level `.py` files with `python3`
 
+The loader invokes the interpreter directly:
+
+- Bash addons are run as `bash /path/to/addon.sh`
+- Python addons are run as `python3 /path/to/addon.py`
+
+That means:
+
+- a correct shebang is still strongly recommended
+- the normal managed loader does not depend on the script having the executable bit set
+
 ### What does not execute
 
 The loader does not execute:
@@ -114,6 +132,16 @@ The loader does not execute:
 - top-level files ending with `.disable`
 - top-level support files such as `.md`, `.json`, and `.txt`
 - image-managed docs/examples/defaults
+
+Important practical detail:
+
+- top-level `.md`, `.json`, and `.txt` files are quietly treated as support files
+- other unexpected top-level filenames are logged as unsupported addon files
+
+So if an addon needs extra support material beyond `.md`, `.json`, or `.txt`, the cleanest choices are:
+
+- place those support files in a subdirectory beside the addon
+- or keep the support filename inside one of the silently ignored extensions when that makes sense
 
 ### Order
 
@@ -145,6 +173,13 @@ Normal managed startup flow is:
 If `ADDONS_ENABLED=false`, step 6 is skipped, but the image-managed material still refreshes.
 
 If the server is started with a fully custom startup command instead of the managed startup path, addon execution is bypassed.
+
+The managed helpers in `defaults/` are separate from user addon execution:
+
+- `checkserverstatus` and `chatlogger` are refreshed and handled by dedicated runtime logic
+- they are controlled by `ADDON_CHECKSERVERSTATUS_ENABLED` and `ADDON_CHATLOGGER_ENABLED`
+- they are not normal top-level user addons
+- they are not wrapped by the user addon timeout
 
 ## Failure model
 
@@ -180,6 +215,23 @@ If an addon exceeds `ADDONS_TIMEOUT_SECONDS`:
 - it is counted as failed
 - startup either continues or stops depending on strict mode
 
+Verified current runtime behavior:
+
+- the current default timeout is `30` seconds
+- accepted values are validated to the range `1` to `3600`
+- the loader uses `timeout --foreground`
+
+This matters for watcher-style addons:
+
+- a long-running addon that stays in the foreground will eventually time out
+- a watcher should not block the managed startup path unless that is explicitly intended
+
+The practical pattern for long-running behavior is:
+
+1. a short startup launcher runs as the addon
+2. the launcher validates inputs, starts a detached worker, writes any needed PID/state files, and exits quickly
+3. the detached worker continues in the background after startup
+
 ## Logging model
 
 The loader logs:
@@ -203,6 +255,48 @@ Good logging should state:
 - what it changed
 - why it skipped something
 - why it failed
+
+For detached workers, use a dedicated worker log file under `/home/container/logs` instead of assuming the original startup console output will remain available.
+
+Verified local examples use:
+
+- `/home/container/logs/bundled-python-announcer.log`
+- `/home/container/logs/chatlogger-helper.log`
+- `/home/container/logs/chatlogger.pid`
+- `/home/container/logs/bundled-python-announcer.pid`
+
+These are conventions, not mandatory fixed paths, but they are good patterns to follow.
+
+## Runtime image tool baseline
+
+In the current official Docker image for this project, the runtime intentionally installs a stronger addon baseline.
+
+Verified from the local `docker/Dockerfile`, the runtime image includes:
+
+- `bash`
+- `python3`
+- `pip`
+- `venv`
+- `sqlite3`
+- `curl`
+- `wget`
+- `jq`
+- `git`
+- `rsync`
+- `procps`
+- `tar`
+- `unzip`
+
+It also includes standard runtime pieces that matter operationally here:
+
+- `coreutils`, which provides the `timeout` command used by the addon loader
+
+Conservative contract:
+
+- addon authors in this project can reasonably rely on the above tools in the official shipped image
+- addon authors should still prefer the Python standard library unless extra tooling is genuinely needed
+- third-party Python packages are not preinstalled just because `pip` and `venv` exist
+- if someone replaces the entire runtime image with a custom image, this baseline is no longer guaranteed by this project
 
 ## Runtime state model
 
@@ -245,6 +339,18 @@ When an addon needs runtime values, prefer this order:
 4. fallback to direct config parsing only when truly needed
 
 This keeps scripts aligned with the actual managed runtime state instead of hardcoding assumptions.
+
+Practical storage guidance:
+
+- use `/home/container/.runtime` for runtime values produced by the managed startup path
+- use `/home/container/logs` for addon logs and PID files
+- use a dedicated user-owned directory under `/home/container` if the addon needs its own durable state or cache
+
+Do not write custom addon state into image-managed addon trees such as:
+
+- `/home/container/addons/docs`
+- `/home/container/addons/examples`
+- `/home/container/addons/defaults`
 
 ## TaystJK-first implications for addons
 
@@ -289,6 +395,12 @@ Behavior:
 - it can also be run from a shell inside the container
 - it is controlled by the egg variable `ADDON_CHECKSERVERSTATUS_ENABLED`
 
+Practical note:
+
+- this is a managed helper command bridged by the runtime supervisor
+- it is not a TaystJK engine command implemented inside the game itself
+- typing `checkserverstatus` or `rcon checkserverstatus` in the Pterodactyl console is handled by the runtime bridge, not by in-game remote admin clients
+
 What it does:
 
 - prints current server information
@@ -307,6 +419,8 @@ The managed chat logger:
 - keeps recent logs as plain `.log` files
 - compresses older logs to `.gz`
 - deletes very old logs automatically
+- keeps worker state in `/home/container/logs/chatlogger.pid`
+- writes worker output to `/home/container/logs/chatlogger-helper.log`
 
 Current chat log format:
 
@@ -316,6 +430,14 @@ Current chat log format:
 ```
 
 The helper strips Quake color codes such as `^1` from names and messages before writing them.
+
+Operational pattern it demonstrates:
+
+- a short launcher runs during startup
+- the launcher checks for an existing PID
+- stale PID files are removed if the process no longer exists
+- a detached worker is started in a new session
+- the worker tails `server.log` and keeps running after startup
 
 ## Bundled example template
 
@@ -367,6 +489,8 @@ Recommended practices:
 - check file existence before editing
 - prefer `jq` for JSON parsing
 - prefer clear `echo` logs with `[addon:bash]`
+- use absolute paths under `/home/container`
+- use `curl`, `wget`, `jq`, `sqlite3`, `git`, `rsync`, `tar`, and `unzip` only when they materially help the addon
 
 ### Python rules
 
@@ -382,6 +506,8 @@ Recommended practices:
 - avoid assuming extra packages are installed
 - use explicit `sys.exit(...)`
 - prefer clear `print(...)` logs with `[addon:python]`
+- use `venv` and `pip` only when an addon truly needs packaged dependencies and you intentionally manage that lifecycle
+- if launching a background worker, use explicit PID/log handling and exit the launcher quickly
 
 ## Support files
 
@@ -395,6 +521,14 @@ Examples:
 
 The loader still only executes the `.sh` or `.py` file.
 
+Support files beside addons are fine when they are clearly tied to a single addon.
+
+Practical guidance:
+
+- keep support files beside the executable addon when the relationship is one-to-one
+- use a subdirectory if the addon needs many auxiliary files or non-standard extensions
+- prefer predictable sibling filenames so humans and AI can infer the relationship quickly
+
 ## Recommended addon patterns
 
 Good addon patterns:
@@ -405,6 +539,7 @@ Good addon patterns:
 - webhook sender
 - environment preparation script
 - small Python worker launcher when truly necessary
+- launcher + background worker with PID/log handling when a watcher is truly needed
 
 Patterns to avoid:
 
@@ -412,6 +547,36 @@ Patterns to avoid:
 - overcomplicated orchestration
 - large long-running systems that deserve their own service model
 - pretending to be a plugin framework
+
+## Long-running watcher addons
+
+Long-running addons are possible, but the current loader model is still a startup hook system, not a service manager.
+
+Because each top-level user addon is wrapped in `timeout`, the safe pattern is:
+
+- the top-level addon acts as a launcher
+- it starts a detached worker
+- it exits quickly so startup can continue
+
+Verified local examples:
+
+- `20-python-announcer.py` uses a launcher + detached worker pattern with a PID file and a dedicated log file
+- `40-chatlogger.py` uses a managed helper launcher + detached worker pattern with stale-PID cleanup
+
+Recommended lifecycle rules for watcher addons:
+
+- maintain a PID file if duplicate workers would be harmful
+- check whether an existing PID is still alive before starting another worker
+- remove stale PID files after crashes or hard restarts
+- write worker logs to a durable file under `/home/container/logs`
+- design the worker so a normal managed server restart can safely relaunch it
+
+What to avoid:
+
+- keeping the watcher in the foreground of the top-level addon entrypoint
+- starting duplicate workers on every restart
+- storing worker state only in process memory
+- assuming the startup console is a durable log sink
 
 ## AI / generator guidance
 
@@ -426,8 +591,12 @@ If an AI or code generator is producing an addon for this project, it should fol
 7. Keep scripts non-interactive.
 8. Use clear log prefixes.
 9. Fail clearly when required files or values are missing.
-10. Prefer simple startup hooks over detached workers unless the use case truly requires background behavior.
-11. Treat TaystJK as the default managed runtime, but do not hardcode it unless the addon is intentionally TaystJK-specific.
+10. Treat `.md`, `.json`, and `.txt` as safe support-file extensions beside live addons; other top-level extensions can create unsupported-file warnings.
+11. Prefer simple startup hooks over detached workers unless the use case truly requires background behavior.
+12. If a detached worker is needed, use a launcher + background worker pattern with PID/log handling.
+13. Treat TaystJK as the default managed runtime, but do not hardcode it unless the addon is intentionally TaystJK-specific.
+14. Prefer `TAYSTJK_*` runtime state over direct config parsing.
+15. Do not store addon-owned state in image-managed addon trees.
 
 ## Minimal examples
 
@@ -502,6 +671,16 @@ Check:
 - the header is `#!/usr/bin/env python3`
 - the script only uses available modules
 - paths and environment variables are spelled correctly
+- if you rely on external packages, make sure you intentionally installed and managed them yourself
+
+### My watcher addon keeps timing out
+
+Check:
+
+- the top-level addon is not staying in the foreground
+- the launcher exits before `ADDONS_TIMEOUT_SECONDS`
+- the background worker is started detached from the startup path
+- PID files are not forcing duplicate launches or blocking relaunch after a stale crash
 
 ### checkserverstatus is missing
 
@@ -511,6 +690,19 @@ Check:
 - the server used the normal managed startup path
 - `/home/container/addons/defaults/30-checkserverstatus.sh` exists
 - `/home/container/bin/checkserverstatus` exists
+
+On older existing servers, also confirm that the panel saved an explicit value for `ADDON_CHECKSERVERSTATUS_ENABLED`, because the egg default only applies automatically to new installs.
+
+### chatlogger is missing or not writing logs
+
+Check:
+
+- `ADDON_CHATLOGGER_ENABLED=true`
+- the server used the normal managed startup path
+- `/home/container/addons/defaults/40-chatlogger.py` exists
+- `/home/container/logs/chatlogger-helper.log` exists
+- `/home/container/logs/chatlogger.pid` is not stale
+- the active server log exists at `/home/container/<active_mod>/server.log`
 
 ### Legacy bundled-addons directory exists
 
