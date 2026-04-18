@@ -37,7 +37,7 @@ KEEP_TOTAL_DAYS = 60
 POLL_SECONDS = 1.0
 
 TIMESTAMP_RE = re.compile(r"^(?P<stamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+(?P<body>.*)$")
-MATCH_TIME_RE = re.compile(r"^(?P<game_time>\d{1,3}:\d{2}(?::\d{2})?)\s+(?P<body>.*)$")
+MATCH_TIME_RE = re.compile(r"^(?:\d{1,3}:\d{2}(?::\d{2})?)\s+(?P<body>.*)$")
 QUAKE_COLOR_RE = re.compile(r"\^(?:[0-9A-Za-z])")
 CHAT_PATTERNS = (
     (
