@@ -34,7 +34,13 @@ RUN dpkg --add-architecture i386 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
-RUN git clone --depth 1 --branch "${TAYSTJK_REF}" "${TAYSTJK_REPO}" TaystJK
+RUN if printf '%s' "${TAYSTJK_REF}" | grep -Eq '^[0-9a-f]{40}$'; then \
+      git clone "${TAYSTJK_REPO}" TaystJK \
+      && cd TaystJK \
+      && git checkout --detach "${TAYSTJK_REF}"; \
+    else \
+      git clone --depth 1 --branch "${TAYSTJK_REF}" "${TAYSTJK_REPO}" TaystJK; \
+    fi
 WORKDIR /src/TaystJK
 
 RUN mkdir -p build \
