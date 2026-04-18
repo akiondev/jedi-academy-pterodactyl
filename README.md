@@ -155,13 +155,27 @@ This repository also includes a lightweight addon loader for self-hosted Pteroda
 
 Read [docs/addon_readme.md](docs/addon_readme.md) for the compact addon guide and [docs/addon_readme_advanced.md](docs/addon_readme_advanced.md) for the full advanced reference.
 
-## Developer notes
+## Development
+
+### Start here
 
 - Start with [scripts/entrypoint.sh](scripts/entrypoint.sh) if you want to understand the managed runtime flow, startup preparation, addon execution, helper refresh, and server launch path.
 - Use [scripts/install_taystjk.sh](scripts/install_taystjk.sh) to understand the standalone install flow and what the egg installer prepares automatically.
 - Read [egg/egg-taystjk-pterodactyl.json](egg/egg-taystjk-pterodactyl.json) for the panel-facing variable contract and install/startup behavior exposed in Pterodactyl.
 - Check [docker/Dockerfile](docker/Dockerfile) for the official runtime image build, source-built TaystJK packaging, and the current addon tool baseline shipped in the image.
+
+### Project areas
+
 - Anti-VPN behavior lives in [cmd/taystjk-antivpn](cmd/taystjk-antivpn) and is documented in [docs/anti-vpn.md](docs/anti-vpn.md).
 - Addon authoring is documented in [docs/addon_readme.md](docs/addon_readme.md) and [docs/addon_readme_advanced.md](docs/addon_readme_advanced.md).
 - CI behavior lives in [.github/workflows/ci.yml](.github/workflows/ci.yml).
+
+### Contributing here
+
+- [Fork this repository](https://github.com/akiondev/jedi-academy-pterodactyl/fork) if you want to contribute to the Pterodactyl image, egg, startup flow, addon system, documentation, or admin tooling.
+- Create a branch in your fork, make your changes, and then [open a pull request here](https://github.com/akiondev/jedi-academy-pterodactyl/compare).
+
+### Contributing upstream to TaystJK
+
 - Upstream runtime credit goes to [taysta/TaystJK](https://github.com/taysta/TaystJK).
+- If your change belongs to the game runtime itself, [fork TaystJK](https://github.com/taysta/TaystJK/fork), create a branch there, and [open a pull request upstream](https://github.com/taysta/TaystJK/compare).
