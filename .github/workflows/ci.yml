@@ -173,8 +173,12 @@ jobs:
 
       - name: Decide whether to publish to Docker Hub
         id: dockerhub_gate
+        env:
+          PUBLISH_DOCKERHUB_VAR: ${{ vars.PUBLISH_DOCKERHUB }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
-          if [[ "${{ vars.PUBLISH_DOCKERHUB }}" == "true" && -n "${{ secrets.DOCKERHUB_USERNAME }}" && -n "${{ secrets.DOCKERHUB_TOKEN }}" ]]; then
+          if [[ "${PUBLISH_DOCKERHUB_VAR}" == "true" && -n "${DOCKERHUB_USERNAME}" && -n "${DOCKERHUB_TOKEN}" ]]; then
             echo "publish=true" >> "$GITHUB_OUTPUT"
           else
             echo "publish=false" >> "$GITHUB_OUTPUT"
