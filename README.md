@@ -55,7 +55,7 @@ Official Pterodactyl documentation:
 If you want the fastest way to get started with Pterodactyl itself, there is also an unofficial installer project:
 [pterodactyl-installer/pterodactyl-installer](https://github.com/pterodactyl-installer/pterodactyl-installer)
 
-Warning: this is not an official Pterodactyl installation method. On some systems, you may also need to already be logged in as `root` before running the installer.
+Warning: this is not an official Pterodactyl installation method. Follow the linked project's instructions carefully; on some systems, you may need to already be logged in as `root`.
 
 ![Pterodactyl TaystJK example console](docs/assets/pterodactyl-console-example.png)
 
