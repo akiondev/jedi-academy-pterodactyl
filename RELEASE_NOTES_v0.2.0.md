@@ -1,4 +1,4 @@
-# v2.0.0
+# v0.2.0 (beta)
 
 ## ⚠️ Breaking — Image renamed
 
