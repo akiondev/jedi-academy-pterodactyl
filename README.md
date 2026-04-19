@@ -8,7 +8,7 @@
   <a href="https://github.com/akiondev/jedi-academy-pterodactyl/issues"><img src="https://img.shields.io/github/issues/akiondev/jedi-academy-pterodactyl?style=for-the-badge&label=issues" alt="GitHub issues" /></a>
   <a href="https://github.com/akiondev/jedi-academy-pterodactyl/blob/main/LICENSE"><img src="https://img.shields.io/github/license/akiondev/jedi-academy-pterodactyl?style=for-the-badge&label=license" alt="GPL-3.0 license" /></a>
   <br>
-  <a href="https://hub.docker.com/r/akiondev/jedi-academy-pterodactyl"><img src="https://img.shields.io/badge/docker%20hub-akiondev%2Fjedi--academy--pterodactyl-2496ed?style=for-the-badge&logo=docker&logoColor=white" alt="Docker Hub repository" /></a>
+  <a href="https://hub.docker.com/r/akiondev/jedi-academy-pterodactyl"><img src="https://img.shields.io/docker/pulls/akiondev/jedi-academy-pterodactyl?style=for-the-badge&logo=docker&logoColor=white&label=docker%20pulls" alt="Docker pulls" /></a>
   <a href="https://github.com/akiondev/jedi-academy-pterodactyl/pkgs/container/jedi-academy-pterodactyl"><img src="https://img.shields.io/static/v1?label=ghcr&message=jedi--academy--pterodactyl&color=0969da&style=for-the-badge&logo=github" alt="GHCR package" /></a>
   <a href="https://github.com/akiondev/jedi-academy-pterodactyl#key-behavior"><img src="https://img.shields.io/badge/game_assets-not_included-b22222?style=for-the-badge" alt="Game assets not included" /></a>
 </p>
