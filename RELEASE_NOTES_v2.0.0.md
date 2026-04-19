@@ -69,4 +69,3 @@ The old `ghcr.io/akiondev/jedi-academy-taystjk` image stays available for a limi
 ## Important
 
 This project does **not** redistribute copyrighted Jedi Academy game assets. You must provide your own legally owned base game files.
-
