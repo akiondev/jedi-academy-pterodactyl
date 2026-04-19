@@ -10,7 +10,10 @@
   "description": "Runs TaystJK dedicated server on Pterodactyl from a source-built runtime image without bundling copyrighted Jedi Academy game assets. TaystJK remains the default and only automatically managed runtime path. Users may still point startup at manually uploaded alternative binaries or mod folders when they explicitly provide them. Includes a lightweight runtime addon loader for user-owned top-level Bash and Python scripts under /home/container/addons, plus image-managed addon docs, examples, and helper defaults inside that addon area, and an optional anti-VPN runtime supervisor with stdout-first event capture, online API checks, local cache, public decision broadcasts, audit logging, allowlist support and weighted log-only/block decisions.",
   "features": [],
   "docker_images": {
-    "ghcr.io/akiondev/jedi-academy-taystjk:latest": "ghcr.io/akiondev/jedi-academy-taystjk:latest"
+    "Jedi Academy Pterodactyl (latest, GHCR)": "ghcr.io/akiondev/jedi-academy-pterodactyl:latest",
+    "Jedi Academy Pterodactyl (TaystJK runtime, GHCR)": "ghcr.io/akiondev/jedi-academy-pterodactyl:taystjk",
+    "Jedi Academy Pterodactyl (latest, Docker Hub mirror)": "docker.io/akiondev/jedi-academy-pterodactyl:latest",
+    "Jedi Academy Pterodactyl (TaystJK runtime, Docker Hub mirror)": "docker.io/akiondev/jedi-academy-pterodactyl:taystjk"
   },
   "file_denylist": [],
   "startup": "--panel-startup",

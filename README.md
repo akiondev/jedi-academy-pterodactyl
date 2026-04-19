@@ -8,8 +8,8 @@
   <a href="https://github.com/akiondev/jedi-academy-pterodactyl/issues"><img src="https://img.shields.io/github/issues/akiondev/jedi-academy-pterodactyl?style=for-the-badge&label=issues" alt="GitHub issues" /></a>
   <a href="https://github.com/akiondev/jedi-academy-pterodactyl/blob/main/LICENSE"><img src="https://img.shields.io/github/license/akiondev/jedi-academy-pterodactyl?style=for-the-badge&label=license" alt="GPL-3.0 license" /></a>
   <br>
-  <a href="https://hub.docker.com/r/akiondev/jedi-academy-taystjk"><img src="https://img.shields.io/badge/docker%20pulls-not%20published-2496ed?style=for-the-badge&logo=docker&logoColor=white" alt="Docker pulls not published" /></a>
-  <a href="https://github.com/akiondev/jedi-academy-pterodactyl/pkgs/container/jedi-academy-taystjk"><img src="https://img.shields.io/static/v1?label=ghcr%20pulls&message=unlimited&color=0969da&style=for-the-badge&logo=github" alt="GHCR pulls unlimited" /></a>
+  <a href="https://hub.docker.com/r/akiondev/jedi-academy-pterodactyl"><img src="https://img.shields.io/badge/docker%20hub-akiondev%2Fjedi--academy--pterodactyl-2496ed?style=for-the-badge&logo=docker&logoColor=white" alt="Docker Hub repository" /></a>
+  <a href="https://github.com/akiondev/jedi-academy-pterodactyl/pkgs/container/jedi-academy-pterodactyl"><img src="https://img.shields.io/static/v1?label=ghcr&message=jedi--academy--pterodactyl&color=0969da&style=for-the-badge&logo=github" alt="GHCR package" /></a>
   <a href="https://github.com/akiondev/jedi-academy-pterodactyl#key-behavior"><img src="https://img.shields.io/badge/game_assets-not_included-b22222?style=for-the-badge" alt="Game assets not included" /></a>
 </p>
 
@@ -62,10 +62,13 @@ Warning: this is not an official Pterodactyl installation method. Follow the lin
 ## Quick install
 
 1. Import [egg/egg-taystjk-pterodactyl.json](egg/egg-taystjk-pterodactyl.json) into Pterodactyl.
-2. Create a server with the default image `ghcr.io/akiondev/jedi-academy-taystjk:latest`.
+2. Create a server with the default image `ghcr.io/akiondev/jedi-academy-pterodactyl:latest` (or pin the runtime explicitly with `:taystjk`). A Docker Hub mirror is published in parallel at `docker.io/akiondev/jedi-academy-pterodactyl` when configured.
 3. Set `COPYRIGHT_ACKNOWLEDGED=true`.
 4. Add your legally owned Jedi Academy base assets manually into `/home/container/base`.
 5. Start the server and verify that `/home/container/base/assets0.pk3` exists.
+
+> **Migration note (image rename)**
+> Earlier builds were published as `ghcr.io/akiondev/jedi-academy-taystjk`. The platform image is now published under the Pterodactyl-centered name `ghcr.io/akiondev/jedi-academy-pterodactyl` (and mirrored to Docker Hub as `akiondev/jedi-academy-pterodactyl`). Existing servers can switch by editing the server's docker image to the new path; the underlying TaystJK runtime is identical. The legacy GHCR package will remain reachable for an interim period to avoid breaking existing deployments. See [docs/image-strategy.md](docs/image-strategy.md) for the full image and tag policy.
 
 ## Manual alternatives
 
