@@ -27,6 +27,7 @@ jobs:
       runtime_validate: ${{ steps.filter.outputs.runtime_validate }}
       docker_taystjk: ${{ steps.filter.outputs.docker_taystjk }}
       docker_openjk_modern64: ${{ steps.filter.outputs.docker_openjk_modern64 }}
+      docker_openjk_legacy32: ${{ steps.filter.outputs.docker_openjk_legacy32 }}
       docker: ${{ steps.aggregate.outputs.docker }}
 
     steps:
@@ -73,14 +74,26 @@ jobs:
               - "docs/addon_readme.md"
               - "docs/addon_readme_advanced.md"
               - "go.mod"
+            docker_openjk_legacy32:
+              - ".github/workflows/ci.yml"
+              - "docker/openjk-legacy32/**"
+              - "image/openjk-legacy32/runtime.json"
+              - "cmd/**"
+              - "internal/**"
+              - "scripts/**"
+              - "bundled-addons/**"
+              - "docs/addon_readme.md"
+              - "docs/addon_readme_advanced.md"
+              - "go.mod"
 
       - name: Aggregate docker flag
         id: aggregate
         env:
           DOCKER_TAYSTJK: ${{ steps.filter.outputs.docker_taystjk }}
           DOCKER_OPENJK_MODERN64: ${{ steps.filter.outputs.docker_openjk_modern64 }}
+          DOCKER_OPENJK_LEGACY32: ${{ steps.filter.outputs.docker_openjk_legacy32 }}
         run: |
-          if [[ "${DOCKER_TAYSTJK}" == "true" || "${DOCKER_OPENJK_MODERN64}" == "true" ]]; then
+          if [[ "${DOCKER_TAYSTJK}" == "true" || "${DOCKER_OPENJK_MODERN64}" == "true" || "${DOCKER_OPENJK_LEGACY32}" == "true" ]]; then
             echo "docker=true" >> "$GITHUB_OUTPUT"
           else
             echo "docker=false" >> "$GITHUB_OUTPUT"
@@ -237,7 +250,7 @@ jobs:
           TARGET: ${{ matrix.target }}
           DOCKER_TAYSTJK: ${{ needs.changes.outputs.docker_taystjk }}
           DOCKER_OPENJK_MODERN64: ${{ needs.changes.outputs.docker_openjk_modern64 }}
-          DOCKER: ${{ needs.changes.outputs.docker }}
+          DOCKER_OPENJK_LEGACY32: ${{ needs.changes.outputs.docker_openjk_legacy32 }}
         run: |
           set -euo pipefail
           if [[ "$EVENT" == "workflow_dispatch" || "$REF" == refs/tags/v* ]]; then
@@ -247,7 +260,7 @@ jobs:
           case "$TARGET" in
             taystjk)         flag="$DOCKER_TAYSTJK" ;;
             openjk-modern64) flag="$DOCKER_OPENJK_MODERN64" ;;
-            openjk-legacy32) flag="$DOCKER" ;;
+            openjk-legacy32) flag="$DOCKER_OPENJK_LEGACY32" ;;
             *) echo "Unknown target: $TARGET" >&2; exit 1 ;;
           esac
           if [[ "$flag" == "true" ]]; then
@@ -332,7 +345,7 @@ jobs:
           TARGET: ${{ matrix.target }}
           DOCKER_TAYSTJK: ${{ needs.changes.outputs.docker_taystjk }}
           DOCKER_OPENJK_MODERN64: ${{ needs.changes.outputs.docker_openjk_modern64 }}
-          DOCKER: ${{ needs.changes.outputs.docker }}
+          DOCKER_OPENJK_LEGACY32: ${{ needs.changes.outputs.docker_openjk_legacy32 }}
         run: |
           set -euo pipefail
           if [[ "$EVENT" == "workflow_dispatch" || "$REF" == refs/tags/v* ]]; then
@@ -342,7 +355,7 @@ jobs:
           case "$TARGET" in
             taystjk)         flag="$DOCKER_TAYSTJK" ;;
             openjk-modern64) flag="$DOCKER_OPENJK_MODERN64" ;;
-            openjk-legacy32) flag="$DOCKER" ;;
+            openjk-legacy32) flag="$DOCKER_OPENJK_LEGACY32" ;;
             *) echo "Unknown target: $TARGET" >&2; exit 1 ;;
           esac
           if [[ "$flag" == "true" ]]; then
