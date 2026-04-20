@@ -20,10 +20,13 @@ the GHCR-only path keeps working unchanged when those are not configured.
 
 ## Runtime today
 
-TaystJK is the **current default and only automatically managed runtime**.
-Future runtimes (for example OpenJK) may be added later. When that happens
-they will be exposed through additional tags and, if needed, additional
-parallel eggs — not by replacing the platform identity.
+TaystJK is the **current default runtime** and is what `latest` points
+at. A second runtime family, **`openjk-modern64`**, is now also built
+and published from this repository as the first additional runtime
+family (built from `JACoders/OpenJK` master, MP dedicated server only).
+It is exposed through its own set of tags under the same platform image
+name and does not replace TaystJK. See
+[`openjk-modern64.md`](openjk-modern64.md) for details.
 
 ## Tag policy
 
@@ -34,8 +37,9 @@ parallel eggs — not by replacing the platform identity.
 | `taystjk-master-<short_sha>`  | TaystJK master, pinned to an upstream commit.                                   | Immutable per upstream commit.                 |
 | `master-<short_sha>`          | Legacy alias of `taystjk-master-<short_sha>`. Kept for backward compatibility.  | Immutable per upstream commit.                 |
 | `v<semver>`                   | Repository release tags.                                                        | Immutable.                                     |
-| `openjk` *(future)*           | Reserved for a future OpenJK runtime build.                                     | Not yet published.                             |
-| `openjk-<ref>` *(future)*     | Reserved for OpenJK upstream-pinned builds.                                     | Not yet published.                             |
+| `openjk-modern64`                         | Latest OpenJK modern64 (`JACoders/OpenJK` master) build.        | Mutable. Always an OpenJK modern64 build.      |
+| `latest-openjk-modern64`                  | Alias of `openjk-modern64`.                                     | Mutable. Always an OpenJK modern64 build.      |
+| `openjk-modern64-master-<short_sha>`      | OpenJK modern64, pinned to an upstream commit.                  | Immutable per upstream commit.                 |
 
 ### Defaults that operators see
 
