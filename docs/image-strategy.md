@@ -26,7 +26,11 @@ and published from this repository as the first additional runtime
 family (built from `JACoders/OpenJK` master, MP dedicated server only).
 It is exposed through its own set of tags under the same platform image
 name and does not replace TaystJK. See
-[`openjk-modern64.md`](openjk-modern64.md) for details.
+[`openjk-modern64.md`](openjk-modern64.md) for details. A third runtime
+family, **`openjk-legacy32`**, is also published from this repository
+(built from `JACoders/OpenJK` master as a 32-bit i386 target, MP
+dedicated server only) and is exposed through its own set of tags. See
+[`openjk-legacy32.md`](openjk-legacy32.md) for details.
 
 ## Tag policy
 
@@ -40,6 +44,9 @@ name and does not replace TaystJK. See
 | `openjk-modern64`                         | Latest OpenJK modern64 (`JACoders/OpenJK` master) build.        | Mutable. Always an OpenJK modern64 build.      |
 | `latest-openjk-modern64`                  | Alias of `openjk-modern64`.                                     | Mutable. Always an OpenJK modern64 build.      |
 | `openjk-modern64-master-<short_sha>`      | OpenJK modern64, pinned to an upstream commit.                  | Immutable per upstream commit.                 |
+| `openjk-legacy32`                         | Latest OpenJK legacy32 (`JACoders/OpenJK` master, i386) build.  | Mutable. Always an OpenJK legacy32 build.      |
+| `latest-openjk-legacy32`                  | Alias of `openjk-legacy32`.                                     | Mutable. Always an OpenJK legacy32 build.      |
+| `openjk-legacy32-master-<short_sha>`      | OpenJK legacy32, pinned to an upstream commit.                  | Immutable per upstream commit.                 |
 
 ### Defaults that operators see
 
