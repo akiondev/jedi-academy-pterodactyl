@@ -25,7 +25,9 @@ jobs:
     outputs:
       go_validate: ${{ steps.filter.outputs.go_validate }}
       runtime_validate: ${{ steps.filter.outputs.runtime_validate }}
-      docker: ${{ steps.filter.outputs.docker }}
+      docker_taystjk: ${{ steps.filter.outputs.docker_taystjk }}
+      docker_openjk_modern64: ${{ steps.filter.outputs.docker_openjk_modern64 }}
+      docker: ${{ steps.aggregate.outputs.docker }}
 
     steps:
       - name: Check out repository
@@ -48,10 +50,11 @@ jobs:
               - "scripts/**"
               - "egg/**"
               - "bundled-addons/**"
-            docker:
+            docker_taystjk:
               - ".github/workflows/ci.yml"
               - ".github/workflows/upstream-taystjk-master-sync.yml"
-              - "docker/**"
+              - "docker/Dockerfile"
+              - "image/runtime.json"
               - "cmd/**"
               - "internal/**"
               - "scripts/**"
@@ -59,6 +62,29 @@ jobs:
               - "docs/addon_readme.md"
               - "docs/addon_readme_advanced.md"
               - "go.mod"
+            docker_openjk_modern64:
+              - ".github/workflows/ci.yml"
+              - "docker/openjk-modern64/**"
+              - "image/openjk-modern64/runtime.json"
+              - "cmd/**"
+              - "internal/**"
+              - "scripts/**"
+              - "bundled-addons/**"
+              - "docs/addon_readme.md"
+              - "docs/addon_readme_advanced.md"
+              - "go.mod"
+
+      - name: Aggregate docker flag
+        id: aggregate
+        env:
+          DOCKER_TAYSTJK: ${{ steps.filter.outputs.docker_taystjk }}
+          DOCKER_OPENJK_MODERN64: ${{ steps.filter.outputs.docker_openjk_modern64 }}
+        run: |
+          if [[ "${DOCKER_TAYSTJK}" == "true" || "${DOCKER_OPENJK_MODERN64}" == "true" ]]; then
+            echo "docker=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "docker=false" >> "$GITHUB_OUTPUT"
+          fi
 
   validate:
     name: Validate scripts and egg
@@ -193,22 +219,54 @@ jobs:
           - target: taystjk
             dockerfile: docker/Dockerfile
             cache_scope: taystjk-image
+            changed_flag: docker_taystjk
           - target: openjk-modern64
             dockerfile: docker/openjk-modern64/Dockerfile
             cache_scope: openjk-modern64-image
+            changed_flag: docker_openjk_modern64
 
     steps:
+      - name: Decide if this matrix cell should run
+        id: gate
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          TARGET: ${{ matrix.target }}
+          DOCKER_TAYSTJK: ${{ needs.changes.outputs.docker_taystjk }}
+          DOCKER_OPENJK_MODERN64: ${{ needs.changes.outputs.docker_openjk_modern64 }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT" == "workflow_dispatch" || "$REF" == refs/tags/v* ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          case "$TARGET" in
+            taystjk)         flag="$DOCKER_TAYSTJK" ;;
+            openjk-modern64) flag="$DOCKER_OPENJK_MODERN64" ;;
+            *) echo "Unknown target: $TARGET" >&2; exit 1 ;;
+          esac
+          if [[ "$flag" == "true" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping ${TARGET}: no changes affecting this target."
+          fi
+
       - name: Check out repository
+        if: steps.gate.outputs.run == 'true'
         uses: actions/checkout@v4
 
       - name: Prepare image name
+        if: steps.gate.outputs.run == 'true'
         id: image
         run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/jedi-academy-pterodactyl" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
+        if: steps.gate.outputs.run == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Build image
+        if: steps.gate.outputs.run == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -253,10 +311,38 @@ jobs:
             label_prefix: io.akiondev.openjk
 
     steps:
+      - name: Decide if this matrix cell should run
+        id: gate
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          TARGET: ${{ matrix.target }}
+          DOCKER_TAYSTJK: ${{ needs.changes.outputs.docker_taystjk }}
+          DOCKER_OPENJK_MODERN64: ${{ needs.changes.outputs.docker_openjk_modern64 }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT" == "workflow_dispatch" || "$REF" == refs/tags/v* ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          case "$TARGET" in
+            taystjk)         flag="$DOCKER_TAYSTJK" ;;
+            openjk-modern64) flag="$DOCKER_OPENJK_MODERN64" ;;
+            *) echo "Unknown target: $TARGET" >&2; exit 1 ;;
+          esac
+          if [[ "$flag" == "true" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping ${TARGET}: no changes affecting this target."
+          fi
+
       - name: Check out repository
+        if: steps.gate.outputs.run == 'true'
         uses: actions/checkout@v4
 
       - name: Prepare image names
+        if: steps.gate.outputs.run == 'true'
         id: image
         run: |
           owner_lc="${GITHUB_REPOSITORY_OWNER,,}"
@@ -264,6 +350,7 @@ jobs:
           echo "dockerhub=docker.io/${owner_lc}/jedi-academy-pterodactyl" >> "$GITHUB_OUTPUT"
 
       - name: Decide whether to publish to Docker Hub
+        if: steps.gate.outputs.run == 'true'
         id: dockerhub_gate
         env:
           PUBLISH_DOCKERHUB_VAR: ${{ vars.PUBLISH_DOCKERHUB }}
@@ -277,6 +364,7 @@ jobs:
           fi
 
       - name: Resolve upstream master commit
+        if: steps.gate.outputs.run == 'true'
         id: upstream
         env:
           UPSTREAM_REPO: ${{ matrix.upstream_repo }}
@@ -296,9 +384,11 @@ jobs:
           echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
+        if: steps.gate.outputs.run == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
+        if: steps.gate.outputs.run == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -306,7 +396,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Log in to Docker Hub
-        if: steps.dockerhub_gate.outputs.publish == 'true'
+        if: steps.gate.outputs.run == 'true' && steps.dockerhub_gate.outputs.publish == 'true'
         uses: docker/login-action@v3
         with:
           registry: docker.io
@@ -314,6 +404,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Compose target image list
+        if: steps.gate.outputs.run == 'true'
         id: targets
         run: |
           {
@@ -326,6 +417,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Compose tag patterns
+        if: steps.gate.outputs.run == 'true'
         id: tagspec
         env:
           TARGET: ${{ matrix.target }}
@@ -360,6 +452,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Extract metadata
+        if: steps.gate.outputs.run == 'true'
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -367,6 +460,7 @@ jobs:
           tags: ${{ steps.tagspec.outputs.patterns }}
 
       - name: Build and push
+        if: steps.gate.outputs.run == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
