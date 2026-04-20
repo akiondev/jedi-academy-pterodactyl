@@ -35,7 +35,13 @@ runtime family, **`vanilla-legacy32`**, is also published as a manual
 runtime family: it provides a 32-bit (i386) Linux runtime environment
 for an operator-supplied vanilla Jedi Academy MP dedicated server
 binary and does not build, ship or auto-update any engine itself. See
-[`vanilla-legacy32.md`](vanilla-legacy32.md) for details.
+[`vanilla-legacy32.md`](vanilla-legacy32.md) for details. A fifth
+runtime family, **`ybeproxy-legacy32`**, is also published: it pairs
+the same 32-bit (i386) Linux runtime environment with the YBEProxy
+game-module proxy (`base/jampgamei386.so`) built from
+`Yberion/JKA_YBEProxy` master, while the engine itself remains
+operator-supplied. See [`ybeproxy-legacy32.md`](ybeproxy-legacy32.md)
+for details.
 
 ## Tag policy
 
@@ -55,6 +61,9 @@ binary and does not build, ship or auto-update any engine itself. See
 | `vanilla-legacy32`                        | Latest vanilla legacy32 runtime image (operator-supplied engine). | Mutable. Always a vanilla legacy32 runtime image. |
 | `latest-vanilla-legacy32`                 | Alias of `vanilla-legacy32`.                                    | Mutable. Always a vanilla legacy32 runtime image. |
 | `vanilla-legacy32-<short_sha>`            | Vanilla legacy32 runtime image, pinned to a repository commit.  | Immutable per repository commit.               |
+| `ybeproxy-legacy32`                       | Latest YBEProxy legacy32 (`Yberion/JKA_YBEProxy` master, i386) build. | Mutable. Always a YBEProxy legacy32 build.    |
+| `latest-ybeproxy-legacy32`                | Alias of `ybeproxy-legacy32`.                                   | Mutable. Always a YBEProxy legacy32 build.    |
+| `ybeproxy-legacy32-master-<short_sha>`    | YBEProxy legacy32, pinned to an upstream commit.                | Immutable per upstream commit.                |
 
 ### Defaults that operators see
 
