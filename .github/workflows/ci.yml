@@ -589,7 +589,7 @@ jobs:
                 cat <<TAGS
           type=raw,value=vanilla-legacy32,enable={{is_default_branch}}
           type=raw,value=latest-vanilla-legacy32,enable={{is_default_branch}}
-          type=raw,value=vanilla-legacy32-${SHORT_SHA}
+          type=raw,value=vanilla-legacy32-master-${SHORT_SHA}
           TAGS
                 ;;
               ybeproxy-legacy32)
