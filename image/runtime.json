@@ -1,7 +1,9 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "paths": {
     "engine_dist_dir": "/opt/jka/engine",
+    "engine_binary_glob": "taystjkded.*",
+    "engine_payload_root": "/opt/jka/engine-payload",
     "runtime_common_dir": "/opt/jka/runtime/common",
     "docs_dir": "/opt/jka/docs",
     "bundled_addons_dir": "/opt/jka/bundled-addons",

@@ -10,6 +10,7 @@ if [[ ! -d "${JKA_COMMON_DIR}" ]]; then
 fi
 source "${JKA_COMMON_DIR}/jka_runtime_common.sh"
 source "${JKA_COMMON_DIR}/jka_runtime_manifest.sh"
+source "${JKA_COMMON_DIR}/jka_runtime_sync.sh"
 source "${JKA_COMMON_DIR}/jka_security.sh"
 source "${JKA_COMMON_DIR}/jka_server_cfg.sh"
 source "${JKA_COMMON_DIR}/jka_addon_loader.sh"
@@ -70,29 +71,6 @@ parse_extra_startup_args() {
   set +f
 
   EXTRA_STARTUP_ARGV=("$@")
-}
-
-sync_runtime_files() {
-  local runtime_binary
-  local found_runtime_binary=0
-
-  if compgen -G "${JKA_PATH_ENGINE_DIST}/taystjkded.*" >/dev/null; then
-    log "Syncing image-managed TaystJK runtime files into container volume"
-    for runtime_binary in "${JKA_PATH_ENGINE_DIST}"/taystjkded.*; do
-      [[ -f "$runtime_binary" ]] || continue
-      install -m 0755 "$runtime_binary" "/home/container/${runtime_binary##*/}"
-      found_runtime_binary=1
-    done
-  fi
-
-  if [[ -d "${JKA_PATH_ENGINE_DIST}/taystjk" ]]; then
-    mkdir -p /home/container/taystjk
-    cp -af "${JKA_PATH_ENGINE_DIST}/taystjk/." /home/container/taystjk/
-  fi
-
-  if [[ "$found_runtime_binary" -eq 0 ]]; then
-    log "No image-provided dedicated binaries were found under ${JKA_PATH_ENGINE_DIST}"
-  fi
 }
 
 determine_runtime_ownership() {

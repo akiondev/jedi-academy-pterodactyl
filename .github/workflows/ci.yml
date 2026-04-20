@@ -134,14 +134,39 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         run: |
           set -euo pipefail
-          jq -e '.schema_version == 1 and (.paths | type == "object")' image/runtime.json >/dev/null
-          for key in engine_dist_dir runtime_common_dir docs_dir bundled_addons_dir antivpn_binary upstream_commit_file upstream_ref_file; do
-            value="$(jq -r --arg k "$key" '.paths[$k] // empty' image/runtime.json)"
-            if [[ -z "$value" ]]; then
-              echo "image/runtime.json is missing required path '${key}'" >&2
+          required_keys=(
+            engine_dist_dir
+            engine_binary_glob
+            engine_payload_root
+            runtime_common_dir
+            docs_dir
+            bundled_addons_dir
+            antivpn_binary
+            upstream_commit_file
+            upstream_ref_file
+          )
+          manifests=(image/runtime.json)
+          for manifest in "${manifests[@]}"; do
+            jq -e '.schema_version == 2 and (.paths | type == "object")' "$manifest" >/dev/null \
+              || { echo "${manifest} must declare schema_version == 2 with a paths object" >&2; exit 1; }
+            for key in "${required_keys[@]}"; do
+              value="$(jq -r --arg k "$key" '.paths[$k] // empty' "$manifest")"
+              if [[ -z "$value" ]]; then
+                echo "${manifest} is missing required path '${key}'" >&2
+                exit 1
+              fi
+            done
+            engine_dist="$(jq -r '.paths.engine_dist_dir' "$manifest")"
+            engine_payload="$(jq -r '.paths.engine_payload_root' "$manifest")"
+            if [[ "$engine_dist" == "$engine_payload" ]]; then
+              echo "${manifest} declares engine_dist_dir == engine_payload_root; engine binaries and syncable payload subdirectories must live in physically separate directories" >&2
               exit 1
             fi
           done
+
+      - name: Run sync_runtime_files regression test
+        if: steps.gate.outputs.run == 'true'
+        run: bash scripts/test/sync_runtime_files_test.sh
 
       - name: Guard against /opt/taystjk-* reintroductions
         if: steps.gate.outputs.run == 'true'

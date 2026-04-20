@@ -29,7 +29,8 @@ runtime shim and `runtime.json` model land.
 | `jka_addon_loader.sh`             | `sync_addon_docs`, `sync_image_managed_addon_tree`, `sync_managed_addon_examples`, `sync_managed_addon_defaults`, `install_managed_status_helper`, `install_managed_chatlogger_helper`, `configure_addons`, `print_addon_summary`, `run_addons`. |
 | `jka_antivpn_bootstrap.sh`        | `configure_anti_vpn`, `anti_vpn_provider_row`, `print_anti_vpn_providers`, `anti_vpn_allowlist_status`, `print_anti_vpn_summary`. |
 | `jka_install_layout.sh`           | Placeholder for PR-B (extracted from `scripts/install_taystjk.sh`). |
-| `jka_runtime_manifest.sh`         | `load_runtime_manifest` — parses `/opt/jka/runtime.json` (schema_version 1) and exports `JKA_PATH_*` variables. |
+| `jka_runtime_manifest.sh`         | `load_runtime_manifest` — parses `/opt/jka/runtime.json` (schema_version 2) and exports `JKA_PATH_*` variables. Enforces `engine_dist_dir != engine_payload_root`. |
+| `jka_runtime_sync.sh`             | `sync_runtime_files` — copies image-managed engine binaries (matched by `JKA_PATH_ENGINE_BINARY_GLOB` under `JKA_PATH_ENGINE_DIST`) and payload subdirectories (under `JKA_PATH_ENGINE_PAYLOAD_ROOT`) into `/home/container/`. Honors `JKA_CONTAINER_ROOT` for tests. |
 
 ## Sourcing order (when wired up in PR-B)
 

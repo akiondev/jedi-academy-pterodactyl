@@ -11,11 +11,13 @@
 # Requires: jka_runtime_common.sh sourced first (for `fail`).
 # Requires: `jq` available on PATH.
 #
-# Manifest schema (v1):
+# Manifest schema (v2):
 #   {
-#     "schema_version": 1,
+#     "schema_version": 2,
 #     "paths": {
 #       "engine_dist_dir":      "/opt/jka/engine",
+#       "engine_binary_glob":   "taystjkded.*",
+#       "engine_payload_root":  "/opt/jka/engine-payload",
 #       "runtime_common_dir":   "/opt/jka/runtime/common",
 #       "docs_dir":             "/opt/jka/docs",
 #       "bundled_addons_dir":   "/opt/jka/bundled-addons",
@@ -27,14 +29,20 @@
 #
 # Exports (on success):
 #   JKA_PATH_ENGINE_DIST
+#   JKA_PATH_ENGINE_BINARY_GLOB
+#   JKA_PATH_ENGINE_PAYLOAD_ROOT
 #   JKA_PATH_RUNTIME_COMMON
 #   JKA_PATH_DOCS
 #   JKA_PATH_BUNDLED_ADDONS
 #   JKA_PATH_ANTIVPN_BINARY
 #   JKA_PATH_UPSTREAM_COMMIT
 #   JKA_PATH_UPSTREAM_REF
+#
+# Invariant: engine_dist_dir must not equal engine_payload_root, so
+# that engine binaries and syncable payload subdirectories stay
+# physically separate inside the image.
 
-JKA_RUNTIME_MANIFEST_SCHEMA_VERSION=1
+JKA_RUNTIME_MANIFEST_SCHEMA_VERSION=2
 
 load_runtime_manifest() {
   local manifest_path="${JKA_RUNTIME_MANIFEST:-/opt/jka/runtime.json}"
@@ -60,6 +68,8 @@ load_runtime_manifest() {
   local key var value
   local pairs=(
     "engine_dist_dir|JKA_PATH_ENGINE_DIST"
+    "engine_binary_glob|JKA_PATH_ENGINE_BINARY_GLOB"
+    "engine_payload_root|JKA_PATH_ENGINE_PAYLOAD_ROOT"
     "runtime_common_dir|JKA_PATH_RUNTIME_COMMON"
     "docs_dir|JKA_PATH_DOCS"
     "bundled_addons_dir|JKA_PATH_BUNDLED_ADDONS"
@@ -78,4 +88,8 @@ load_runtime_manifest() {
     printf -v "$var" '%s' "$value"
     export "${var?}"
   done
+
+  if [[ "${JKA_PATH_ENGINE_DIST}" == "${JKA_PATH_ENGINE_PAYLOAD_ROOT}" ]]; then
+    fail "Runtime manifest at ${manifest_path} declares engine_dist_dir == engine_payload_root; engine binaries and syncable payload subdirectories must live in physically separate directories"
+  fi
 }

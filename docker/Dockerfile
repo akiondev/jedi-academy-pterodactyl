@@ -99,9 +99,9 @@ RUN apt-get update \
     && useradd --create-home --home-dir /home/container --shell /bin/bash container \
     && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /opt/jka/engine
+RUN mkdir -p /opt/jka/engine /opt/jka/engine-payload
 COPY --from=builder /opt/taystjk/JediAcademy/taystjkded.* /opt/jka/engine/
-COPY --from=builder /opt/taystjk/JediAcademy/taystjk /opt/jka/engine/taystjk
+COPY --from=builder /opt/taystjk/JediAcademy/taystjk /opt/jka/engine-payload/taystjk
 COPY --from=antivpn-builder /out/jka-antivpn /usr/local/bin/jka-antivpn
 RUN printf '%s\n' "${TAYSTJK_COMMIT}" > /opt/jka/engine/.upstream-commit \
     && printf '%s\n' "${TAYSTJK_REF}" > /opt/jka/engine/.upstream-ref
