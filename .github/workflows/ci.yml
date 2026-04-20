@@ -224,6 +224,9 @@ jobs:
             dockerfile: docker/openjk-modern64/Dockerfile
             cache_scope: openjk-modern64-image
             changed_flag: docker_openjk_modern64
+          - target: openjk-legacy32
+            dockerfile: docker/openjk-legacy32/Dockerfile
+            cache_scope: openjk-legacy32-image
 
     steps:
       - name: Decide if this matrix cell should run
@@ -234,6 +237,7 @@ jobs:
           TARGET: ${{ matrix.target }}
           DOCKER_TAYSTJK: ${{ needs.changes.outputs.docker_taystjk }}
           DOCKER_OPENJK_MODERN64: ${{ needs.changes.outputs.docker_openjk_modern64 }}
+          DOCKER: ${{ needs.changes.outputs.docker }}
         run: |
           set -euo pipefail
           if [[ "$EVENT" == "workflow_dispatch" || "$REF" == refs/tags/v* ]]; then
@@ -243,6 +247,7 @@ jobs:
           case "$TARGET" in
             taystjk)         flag="$DOCKER_TAYSTJK" ;;
             openjk-modern64) flag="$DOCKER_OPENJK_MODERN64" ;;
+            openjk-legacy32) flag="$DOCKER" ;;
             *) echo "Unknown target: $TARGET" >&2; exit 1 ;;
           esac
           if [[ "$flag" == "true" ]]; then
@@ -309,6 +314,14 @@ jobs:
             build_arg_ref: OPENJK_REF
             build_arg_commit: OPENJK_COMMIT
             label_prefix: io.akiondev.openjk
+          - target: openjk-legacy32
+            dockerfile: docker/openjk-legacy32/Dockerfile
+            cache_scope: openjk-legacy32-image
+            upstream_repo: https://github.com/JACoders/OpenJK.git
+            upstream_branch: master
+            build_arg_ref: OPENJK_REF
+            build_arg_commit: OPENJK_COMMIT
+            label_prefix: io.akiondev.openjk
 
     steps:
       - name: Decide if this matrix cell should run
@@ -319,6 +332,7 @@ jobs:
           TARGET: ${{ matrix.target }}
           DOCKER_TAYSTJK: ${{ needs.changes.outputs.docker_taystjk }}
           DOCKER_OPENJK_MODERN64: ${{ needs.changes.outputs.docker_openjk_modern64 }}
+          DOCKER: ${{ needs.changes.outputs.docker }}
         run: |
           set -euo pipefail
           if [[ "$EVENT" == "workflow_dispatch" || "$REF" == refs/tags/v* ]]; then
@@ -328,6 +342,7 @@ jobs:
           case "$TARGET" in
             taystjk)         flag="$DOCKER_TAYSTJK" ;;
             openjk-modern64) flag="$DOCKER_OPENJK_MODERN64" ;;
+            openjk-legacy32) flag="$DOCKER" ;;
             *) echo "Unknown target: $TARGET" >&2; exit 1 ;;
           esac
           if [[ "$flag" == "true" ]]; then
@@ -441,6 +456,13 @@ jobs:
           type=raw,value=openjk-modern64,enable={{is_default_branch}}
           type=raw,value=latest-openjk-modern64,enable={{is_default_branch}}
           type=raw,value=openjk-modern64-master-${SHORT_SHA}
+          TAGS
+                ;;
+              openjk-legacy32)
+                cat <<TAGS
+          type=raw,value=openjk-legacy32,enable={{is_default_branch}}
+          type=raw,value=latest-openjk-legacy32,enable={{is_default_branch}}
+          type=raw,value=openjk-legacy32-master-${SHORT_SHA}
           TAGS
                 ;;
               *)
