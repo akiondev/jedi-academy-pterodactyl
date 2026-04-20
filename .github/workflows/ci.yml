@@ -28,6 +28,7 @@ jobs:
       docker_taystjk: ${{ steps.filter.outputs.docker_taystjk }}
       docker_openjk_modern64: ${{ steps.filter.outputs.docker_openjk_modern64 }}
       docker_openjk_legacy32: ${{ steps.filter.outputs.docker_openjk_legacy32 }}
+      docker_vanilla_legacy32: ${{ steps.filter.outputs.docker_vanilla_legacy32 }}
       docker: ${{ steps.aggregate.outputs.docker }}
 
     steps:
@@ -85,6 +86,17 @@ jobs:
               - "docs/addon_readme.md"
               - "docs/addon_readme_advanced.md"
               - "go.mod"
+            docker_vanilla_legacy32:
+              - ".github/workflows/ci.yml"
+              - "docker/vanilla-legacy32/**"
+              - "image/vanilla-legacy32/runtime.json"
+              - "cmd/**"
+              - "internal/**"
+              - "scripts/**"
+              - "bundled-addons/**"
+              - "docs/addon_readme.md"
+              - "docs/addon_readme_advanced.md"
+              - "go.mod"
 
       - name: Aggregate docker flag
         id: aggregate
@@ -92,8 +104,9 @@ jobs:
           DOCKER_TAYSTJK: ${{ steps.filter.outputs.docker_taystjk }}
           DOCKER_OPENJK_MODERN64: ${{ steps.filter.outputs.docker_openjk_modern64 }}
           DOCKER_OPENJK_LEGACY32: ${{ steps.filter.outputs.docker_openjk_legacy32 }}
+          DOCKER_VANILLA_LEGACY32: ${{ steps.filter.outputs.docker_vanilla_legacy32 }}
         run: |
-          if [[ "${DOCKER_TAYSTJK}" == "true" || "${DOCKER_OPENJK_MODERN64}" == "true" || "${DOCKER_OPENJK_LEGACY32}" == "true" ]]; then
+          if [[ "${DOCKER_TAYSTJK}" == "true" || "${DOCKER_OPENJK_MODERN64}" == "true" || "${DOCKER_OPENJK_LEGACY32}" == "true" || "${DOCKER_VANILLA_LEGACY32}" == "true" ]]; then
             echo "docker=true" >> "$GITHUB_OUTPUT"
           else
             echo "docker=false" >> "$GITHUB_OUTPUT"
@@ -240,6 +253,9 @@ jobs:
           - target: openjk-legacy32
             dockerfile: docker/openjk-legacy32/Dockerfile
             cache_scope: openjk-legacy32-image
+          - target: vanilla-legacy32
+            dockerfile: docker/vanilla-legacy32/Dockerfile
+            cache_scope: vanilla-legacy32-image
 
     steps:
       - name: Decide if this matrix cell should run
@@ -251,6 +267,7 @@ jobs:
           DOCKER_TAYSTJK: ${{ needs.changes.outputs.docker_taystjk }}
           DOCKER_OPENJK_MODERN64: ${{ needs.changes.outputs.docker_openjk_modern64 }}
           DOCKER_OPENJK_LEGACY32: ${{ needs.changes.outputs.docker_openjk_legacy32 }}
+          DOCKER_VANILLA_LEGACY32: ${{ needs.changes.outputs.docker_vanilla_legacy32 }}
         run: |
           set -euo pipefail
           if [[ "$EVENT" == "workflow_dispatch" || "$REF" == refs/tags/v* ]]; then
@@ -261,6 +278,7 @@ jobs:
             taystjk)         flag="$DOCKER_TAYSTJK" ;;
             openjk-modern64) flag="$DOCKER_OPENJK_MODERN64" ;;
             openjk-legacy32) flag="$DOCKER_OPENJK_LEGACY32" ;;
+            vanilla-legacy32) flag="$DOCKER_VANILLA_LEGACY32" ;;
             *) echo "Unknown target: $TARGET" >&2; exit 1 ;;
           esac
           if [[ "$flag" == "true" ]]; then
@@ -335,6 +353,14 @@ jobs:
             build_arg_ref: OPENJK_REF
             build_arg_commit: OPENJK_COMMIT
             label_prefix: io.akiondev.openjk
+          - target: vanilla-legacy32
+            dockerfile: docker/vanilla-legacy32/Dockerfile
+            cache_scope: vanilla-legacy32-image
+            upstream_repo: ""
+            upstream_branch: ""
+            build_arg_ref: ""
+            build_arg_commit: ""
+            label_prefix: io.akiondev.vanilla
 
     steps:
       - name: Decide if this matrix cell should run
@@ -346,6 +372,7 @@ jobs:
           DOCKER_TAYSTJK: ${{ needs.changes.outputs.docker_taystjk }}
           DOCKER_OPENJK_MODERN64: ${{ needs.changes.outputs.docker_openjk_modern64 }}
           DOCKER_OPENJK_LEGACY32: ${{ needs.changes.outputs.docker_openjk_legacy32 }}
+          DOCKER_VANILLA_LEGACY32: ${{ needs.changes.outputs.docker_vanilla_legacy32 }}
         run: |
           set -euo pipefail
           if [[ "$EVENT" == "workflow_dispatch" || "$REF" == refs/tags/v* ]]; then
@@ -356,6 +383,7 @@ jobs:
             taystjk)         flag="$DOCKER_TAYSTJK" ;;
             openjk-modern64) flag="$DOCKER_OPENJK_MODERN64" ;;
             openjk-legacy32) flag="$DOCKER_OPENJK_LEGACY32" ;;
+            vanilla-legacy32) flag="$DOCKER_VANILLA_LEGACY32" ;;
             *) echo "Unknown target: $TARGET" >&2; exit 1 ;;
           esac
           if [[ "$flag" == "true" ]]; then
@@ -392,7 +420,7 @@ jobs:
           fi
 
       - name: Resolve upstream master commit
-        if: steps.gate.outputs.run == 'true'
+        if: steps.gate.outputs.run == 'true' && matrix.upstream_repo != ''
         id: upstream
         env:
           UPSTREAM_REPO: ${{ matrix.upstream_repo }}
@@ -409,6 +437,16 @@ jobs:
           short_sha="${upstream_sha:0:12}"
 
           echo "sha=${upstream_sha}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve repository commit for manual runtimes
+        if: steps.gate.outputs.run == 'true' && matrix.upstream_repo == ''
+        id: repo_commit
+        run: |
+          set -euo pipefail
+          sha="${GITHUB_SHA}"
+          short_sha="${sha:0:12}"
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
           echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
@@ -449,7 +487,7 @@ jobs:
         id: tagspec
         env:
           TARGET: ${{ matrix.target }}
-          SHORT_SHA: ${{ steps.upstream.outputs.short_sha }}
+          SHORT_SHA: ${{ steps.upstream.outputs.short_sha || steps.repo_commit.outputs.short_sha }}
         run: |
           set -euo pipefail
           {
@@ -478,6 +516,13 @@ jobs:
           type=raw,value=openjk-legacy32-master-${SHORT_SHA}
           TAGS
                 ;;
+              vanilla-legacy32)
+                cat <<TAGS
+          type=raw,value=vanilla-legacy32,enable={{is_default_branch}}
+          type=raw,value=latest-vanilla-legacy32,enable={{is_default_branch}}
+          type=raw,value=vanilla-legacy32-${SHORT_SHA}
+          TAGS
+                ;;
               *)
                 echo "Unknown target: ${TARGET}" >&2
                 exit 1
@@ -494,6 +539,36 @@ jobs:
           images: ${{ steps.targets.outputs.images }}
           tags: ${{ steps.tagspec.outputs.patterns }}
 
+      - name: Compose build args and labels
+        if: steps.gate.outputs.run == 'true'
+        id: buildmeta
+        env:
+          UPSTREAM_REPO: ${{ matrix.upstream_repo }}
+          UPSTREAM_BRANCH: ${{ matrix.upstream_branch }}
+          UPSTREAM_SHA: ${{ steps.upstream.outputs.sha }}
+          BUILD_ARG_REF: ${{ matrix.build_arg_ref }}
+          BUILD_ARG_COMMIT: ${{ matrix.build_arg_commit }}
+          LABEL_PREFIX: ${{ matrix.label_prefix }}
+        run: |
+          set -euo pipefail
+          {
+            echo "build_args<<EOF"
+            if [[ -n "${UPSTREAM_REPO}" && -n "${BUILD_ARG_REF}" ]]; then
+              echo "${BUILD_ARG_REF}=${UPSTREAM_SHA}"
+              echo "${BUILD_ARG_COMMIT}=${UPSTREAM_SHA}"
+            fi
+            echo "EOF"
+            echo "extra_labels<<EOF"
+            if [[ -n "${UPSTREAM_REPO}" ]]; then
+              echo "${LABEL_PREFIX}.upstream.repo=${UPSTREAM_REPO}"
+              echo "${LABEL_PREFIX}.upstream.branch=${UPSTREAM_BRANCH}"
+              echo "${LABEL_PREFIX}.upstream.commit=${UPSTREAM_SHA}"
+            else
+              echo "${LABEL_PREFIX}.runtime.kind=manual"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         if: steps.gate.outputs.run == 'true'
         uses: docker/build-push-action@v6
@@ -504,12 +579,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: |
             ${{ steps.meta.outputs.labels }}
-            ${{ matrix.label_prefix }}.upstream.repo=${{ matrix.upstream_repo }}
-            ${{ matrix.label_prefix }}.upstream.branch=${{ matrix.upstream_branch }}
-            ${{ matrix.label_prefix }}.upstream.commit=${{ steps.upstream.outputs.sha }}
-          build-args: |
-            ${{ matrix.build_arg_ref }}=${{ steps.upstream.outputs.sha }}
-            ${{ matrix.build_arg_commit }}=${{ steps.upstream.outputs.sha }}
+            ${{ steps.buildmeta.outputs.extra_labels }}
+          build-args: ${{ steps.buildmeta.outputs.build_args }}
           cache-from: type=gha,scope=${{ matrix.cache_scope }}
           cache-to: type=gha,mode=max,scope=${{ matrix.cache_scope }}
           provenance: false
