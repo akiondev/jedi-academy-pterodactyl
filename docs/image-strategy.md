@@ -30,7 +30,12 @@ name and does not replace TaystJK. See
 family, **`openjk-legacy32`**, is also published from this repository
 (built from `JACoders/OpenJK` master as a 32-bit i386 target, MP
 dedicated server only) and is exposed through its own set of tags. See
-[`openjk-legacy32.md`](openjk-legacy32.md) for details.
+[`openjk-legacy32.md`](openjk-legacy32.md) for details. A fourth
+runtime family, **`vanilla-legacy32`**, is also published as a manual
+runtime family: it provides a 32-bit (i386) Linux runtime environment
+for an operator-supplied vanilla Jedi Academy MP dedicated server
+binary and does not build, ship or auto-update any engine itself. See
+[`vanilla-legacy32.md`](vanilla-legacy32.md) for details.
 
 ## Tag policy
 
@@ -47,6 +52,9 @@ dedicated server only) and is exposed through its own set of tags. See
 | `openjk-legacy32`                         | Latest OpenJK legacy32 (`JACoders/OpenJK` master, i386) build.  | Mutable. Always an OpenJK legacy32 build.      |
 | `latest-openjk-legacy32`                  | Alias of `openjk-legacy32`.                                     | Mutable. Always an OpenJK legacy32 build.      |
 | `openjk-legacy32-master-<short_sha>`      | OpenJK legacy32, pinned to an upstream commit.                  | Immutable per upstream commit.                 |
+| `vanilla-legacy32`                        | Latest vanilla legacy32 runtime image (operator-supplied engine). | Mutable. Always a vanilla legacy32 runtime image. |
+| `latest-vanilla-legacy32`                 | Alias of `vanilla-legacy32`.                                    | Mutable. Always a vanilla legacy32 runtime image. |
+| `vanilla-legacy32-<short_sha>`            | Vanilla legacy32 runtime image, pinned to a repository commit.  | Immutable per repository commit.               |
 
 ### Defaults that operators see
 
