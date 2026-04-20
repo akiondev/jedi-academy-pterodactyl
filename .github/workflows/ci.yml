@@ -30,6 +30,7 @@ jobs:
       docker_openjk_legacy32: ${{ steps.filter.outputs.docker_openjk_legacy32 }}
       docker_vanilla_legacy32: ${{ steps.filter.outputs.docker_vanilla_legacy32 }}
       docker_ybeproxy_legacy32: ${{ steps.filter.outputs.docker_ybeproxy_legacy32 }}
+      docker_taystjk_legacy32: ${{ steps.filter.outputs.docker_taystjk_legacy32 }}
       docker: ${{ steps.aggregate.outputs.docker }}
 
     steps:
@@ -109,6 +110,17 @@ jobs:
               - "docs/addon_readme.md"
               - "docs/addon_readme_advanced.md"
               - "go.mod"
+            docker_taystjk_legacy32:
+              - ".github/workflows/ci.yml"
+              - "docker/taystjk-legacy32/**"
+              - "image/taystjk-legacy32/runtime.json"
+              - "cmd/**"
+              - "internal/**"
+              - "scripts/**"
+              - "bundled-addons/**"
+              - "docs/addon_readme.md"
+              - "docs/addon_readme_advanced.md"
+              - "go.mod"
 
       - name: Aggregate docker flag
         id: aggregate
@@ -118,8 +130,9 @@ jobs:
           DOCKER_OPENJK_LEGACY32: ${{ steps.filter.outputs.docker_openjk_legacy32 }}
           DOCKER_VANILLA_LEGACY32: ${{ steps.filter.outputs.docker_vanilla_legacy32 }}
           DOCKER_YBEPROXY_LEGACY32: ${{ steps.filter.outputs.docker_ybeproxy_legacy32 }}
+          DOCKER_TAYSTJK_LEGACY32: ${{ steps.filter.outputs.docker_taystjk_legacy32 }}
         run: |
-          if [[ "${DOCKER_TAYSTJK}" == "true" || "${DOCKER_OPENJK_MODERN64}" == "true" || "${DOCKER_OPENJK_LEGACY32}" == "true" || "${DOCKER_VANILLA_LEGACY32}" == "true" || "${DOCKER_YBEPROXY_LEGACY32}" == "true" ]]; then
+          if [[ "${DOCKER_TAYSTJK}" == "true" || "${DOCKER_OPENJK_MODERN64}" == "true" || "${DOCKER_OPENJK_LEGACY32}" == "true" || "${DOCKER_VANILLA_LEGACY32}" == "true" || "${DOCKER_YBEPROXY_LEGACY32}" == "true" || "${DOCKER_TAYSTJK_LEGACY32}" == "true" ]]; then
             echo "docker=true" >> "$GITHUB_OUTPUT"
           else
             echo "docker=false" >> "$GITHUB_OUTPUT"
@@ -272,6 +285,9 @@ jobs:
           - target: ybeproxy-legacy32
             dockerfile: docker/ybeproxy-legacy32/Dockerfile
             cache_scope: ybeproxy-legacy32-image
+          - target: taystjk-legacy32
+            dockerfile: docker/taystjk-legacy32/Dockerfile
+            cache_scope: taystjk-legacy32-image
 
     steps:
       - name: Decide if this matrix cell should run
@@ -285,6 +301,7 @@ jobs:
           DOCKER_OPENJK_LEGACY32: ${{ needs.changes.outputs.docker_openjk_legacy32 }}
           DOCKER_VANILLA_LEGACY32: ${{ needs.changes.outputs.docker_vanilla_legacy32 }}
           DOCKER_YBEPROXY_LEGACY32: ${{ needs.changes.outputs.docker_ybeproxy_legacy32 }}
+          DOCKER_TAYSTJK_LEGACY32: ${{ needs.changes.outputs.docker_taystjk_legacy32 }}
         run: |
           set -euo pipefail
           if [[ "$EVENT" == "workflow_dispatch" || "$REF" == refs/tags/v* ]]; then
@@ -297,6 +314,7 @@ jobs:
             openjk-legacy32) flag="$DOCKER_OPENJK_LEGACY32" ;;
             vanilla-legacy32) flag="$DOCKER_VANILLA_LEGACY32" ;;
             ybeproxy-legacy32) flag="$DOCKER_YBEPROXY_LEGACY32" ;;
+            taystjk-legacy32) flag="$DOCKER_TAYSTJK_LEGACY32" ;;
             *) echo "Unknown target: $TARGET" >&2; exit 1 ;;
           esac
           if [[ "$flag" == "true" ]]; then
@@ -387,6 +405,15 @@ jobs:
             build_arg_ref: YBEPROXY_REF
             build_arg_commit: YBEPROXY_COMMIT
             label_prefix: io.akiondev.ybeproxy
+          - target: taystjk-legacy32
+            dockerfile: docker/taystjk-legacy32/Dockerfile
+            cache_scope: taystjk-legacy32-image
+            upstream_repo: https://github.com/taysta/TaystJK.git
+            upstream_branch: master
+            build_arg_ref: TAYSTJK_REF
+            build_arg_commit: TAYSTJK_COMMIT
+            label_prefix: io.akiondev.taystjk-legacy32
+            experimental: true
 
     steps:
       - name: Decide if this matrix cell should run
@@ -400,8 +427,21 @@ jobs:
           DOCKER_OPENJK_LEGACY32: ${{ needs.changes.outputs.docker_openjk_legacy32 }}
           DOCKER_VANILLA_LEGACY32: ${{ needs.changes.outputs.docker_vanilla_legacy32 }}
           DOCKER_YBEPROXY_LEGACY32: ${{ needs.changes.outputs.docker_ybeproxy_legacy32 }}
+          DOCKER_TAYSTJK_LEGACY32: ${{ needs.changes.outputs.docker_taystjk_legacy32 }}
+          EXPERIMENTAL: ${{ matrix.experimental }}
+          PUBLISH_TAYSTJK_LEGACY32: ${{ vars.PUBLISH_TAYSTJK_LEGACY32 }}
         run: |
           set -euo pipefail
+          # Experimental runtimes (currently: taystjk-legacy32) are
+          # gated behind an explicit opt-in repository variable so they
+          # do not publish from default-branch pushes or release tags
+          # by accident. They still publish on workflow_dispatch so
+          # maintainers can build and push them on demand.
+          if [[ "$EXPERIMENTAL" == "true" && "$EVENT" != "workflow_dispatch" && "$PUBLISH_TAYSTJK_LEGACY32" != "true" ]]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping experimental ${TARGET}: not opted in (set vars.PUBLISH_TAYSTJK_LEGACY32=true or use workflow_dispatch)."
+            exit 0
+          fi
           if [[ "$EVENT" == "workflow_dispatch" || "$REF" == refs/tags/v* ]]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -412,6 +452,7 @@ jobs:
             openjk-legacy32) flag="$DOCKER_OPENJK_LEGACY32" ;;
             vanilla-legacy32) flag="$DOCKER_VANILLA_LEGACY32" ;;
             ybeproxy-legacy32) flag="$DOCKER_YBEPROXY_LEGACY32" ;;
+            taystjk-legacy32) flag="$DOCKER_TAYSTJK_LEGACY32" ;;
             *) echo "Unknown target: $TARGET" >&2; exit 1 ;;
           esac
           if [[ "$flag" == "true" ]]; then
@@ -556,6 +597,13 @@ jobs:
           type=raw,value=ybeproxy-legacy32,enable={{is_default_branch}}
           type=raw,value=latest-ybeproxy-legacy32,enable={{is_default_branch}}
           type=raw,value=ybeproxy-legacy32-master-${SHORT_SHA}
+          TAGS
+                ;;
+              taystjk-legacy32)
+                cat <<TAGS
+          type=raw,value=taystjk-legacy32,enable={{is_default_branch}}
+          type=raw,value=latest-taystjk-legacy32,enable={{is_default_branch}}
+          type=raw,value=taystjk-legacy32-master-${SHORT_SHA}
           TAGS
                 ;;
               *)
