@@ -41,6 +41,12 @@ the same 32-bit (i386) Linux runtime environment with the YBEProxy
 game-module proxy (`base/jampgamei386.so`) built from
 `Yberion/JKA_YBEProxy` master, while the engine itself remains
 operator-supplied. See [`ybeproxy-legacy32.md`](ybeproxy-legacy32.md)
+for details. A sixth runtime family, **`taystjk-legacy32`**, is built
+from the same TaystJK source tree as the default TaystJK image but
+targets a 32-bit (i386) Linux MP dedicated server. It is
+**experimental** and publish-gated behind an explicit opt-in (the
+`PUBLISH_TAYSTJK_LEGACY32` repository variable, or
+`workflow_dispatch`); see [`taystjk-legacy32.md`](taystjk-legacy32.md)
 for details.
 
 ## Tag policy
@@ -64,6 +70,9 @@ for details.
 | `ybeproxy-legacy32`                       | Latest YBEProxy legacy32 (`Yberion/JKA_YBEProxy` master, i386) build. | Mutable. Always a YBEProxy legacy32 build.    |
 | `latest-ybeproxy-legacy32`                | Alias of `ybeproxy-legacy32`.                                   | Mutable. Always a YBEProxy legacy32 build.    |
 | `ybeproxy-legacy32-master-<short_sha>`    | YBEProxy legacy32, pinned to an upstream commit.                | Immutable per upstream commit.                |
+| `taystjk-legacy32`                        | Latest experimental TaystJK legacy32 (`taysta/TaystJK` master, i386, MP dedicated only) build. Publish-gated. | Mutable. Experimental. Always a TaystJK legacy32 build. |
+| `latest-taystjk-legacy32`                 | Alias of `taystjk-legacy32`. Publish-gated.                     | Mutable. Experimental.                        |
+| `taystjk-legacy32-master-<short_sha>`     | TaystJK legacy32, pinned to an upstream commit. Publish-gated.  | Immutable per upstream commit. Experimental.  |
 
 ### Defaults that operators see
 
