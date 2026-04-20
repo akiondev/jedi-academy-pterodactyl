@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "paths": {
+    "engine_dist_dir": "/opt/jka/engine",
+    "runtime_common_dir": "/opt/jka/runtime/common",
+    "docs_dir": "/opt/jka/docs",
+    "bundled_addons_dir": "/opt/jka/bundled-addons",
+    "antivpn_binary": "/usr/local/bin/jka-antivpn",
+    "upstream_commit_file": "/opt/jka/engine/.upstream-commit",
+    "upstream_ref_file": "/opt/jka/engine/.upstream-ref"
+  }
+}
