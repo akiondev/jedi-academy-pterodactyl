@@ -5,7 +5,7 @@
     "update_url": null
   },
   "exported_at": "2026-04-16T14:05:00+02:00",
-  "name": "OpenJK modern64",
+  "name": "OpenJK modern64 (Jedi Academy)",
   "author": "admin@example.com",
   "description": "Runs an OpenJK modern64 dedicated server on Pterodactyl from a source-built runtime image without bundling copyrighted Jedi Academy game assets. This is the OpenJK modern64 runtime (JACoders/OpenJK, MP dedicated server only, x86_64). Base assets are still manual: you must provide your own legally owned Jedi Academy base assets in /home/container/base. There is no image-managed TaystJK-style mod payload in this runtime; only the engine binary and the base MP game module are shipped by the image. fs_game=base is the default, and other mod directories such as japlus, japro or mbii are user-managed: upload the mod folder yourself before startup. Includes the same lightweight runtime addon loader for user-owned top-level Bash and Python scripts under /home/container/addons, plus image-managed addon docs, examples, and helper defaults inside that addon area, and the same optional anti-VPN runtime supervisor with stdout-first event capture, online API checks, local cache, public decision broadcasts, audit logging, allowlist support and weighted log-only/block decisions.",
   "features": [],
