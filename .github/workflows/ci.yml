@@ -107,7 +107,20 @@ jobs:
 
       - name: Validate shell scripts
         if: steps.gate.outputs.run == 'true'
-        run: bash -n scripts/entrypoint.sh scripts/install_taystjk.sh bundled-addons/defaults/30-checkserverstatus.sh
+        run: |
+          set -euo pipefail
+          shell_files=(
+            scripts/entrypoint.sh
+            scripts/install_taystjk.sh
+            bundled-addons/defaults/30-checkserverstatus.sh
+          )
+          while IFS= read -r common_file; do
+            shell_files+=("$common_file")
+          done < <(find scripts/common -maxdepth 1 -type f -name '*.sh' | LC_ALL=C sort)
+          for shell_file in "${shell_files[@]}"; do
+            echo "bash -n ${shell_file}"
+            bash -n "$shell_file"
+          done
 
       - name: Validate Python addon helpers
         if: steps.gate.outputs.run == 'true'
