@@ -29,6 +29,7 @@ jobs:
       docker_openjk_modern64: ${{ steps.filter.outputs.docker_openjk_modern64 }}
       docker_openjk_legacy32: ${{ steps.filter.outputs.docker_openjk_legacy32 }}
       docker_vanilla_legacy32: ${{ steps.filter.outputs.docker_vanilla_legacy32 }}
+      docker_ybeproxy_legacy32: ${{ steps.filter.outputs.docker_ybeproxy_legacy32 }}
       docker: ${{ steps.aggregate.outputs.docker }}
 
     steps:
@@ -97,6 +98,17 @@ jobs:
               - "docs/addon_readme.md"
               - "docs/addon_readme_advanced.md"
               - "go.mod"
+            docker_ybeproxy_legacy32:
+              - ".github/workflows/ci.yml"
+              - "docker/ybeproxy-legacy32/**"
+              - "image/ybeproxy-legacy32/runtime.json"
+              - "cmd/**"
+              - "internal/**"
+              - "scripts/**"
+              - "bundled-addons/**"
+              - "docs/addon_readme.md"
+              - "docs/addon_readme_advanced.md"
+              - "go.mod"
 
       - name: Aggregate docker flag
         id: aggregate
@@ -105,8 +117,9 @@ jobs:
           DOCKER_OPENJK_MODERN64: ${{ steps.filter.outputs.docker_openjk_modern64 }}
           DOCKER_OPENJK_LEGACY32: ${{ steps.filter.outputs.docker_openjk_legacy32 }}
           DOCKER_VANILLA_LEGACY32: ${{ steps.filter.outputs.docker_vanilla_legacy32 }}
+          DOCKER_YBEPROXY_LEGACY32: ${{ steps.filter.outputs.docker_ybeproxy_legacy32 }}
         run: |
-          if [[ "${DOCKER_TAYSTJK}" == "true" || "${DOCKER_OPENJK_MODERN64}" == "true" || "${DOCKER_OPENJK_LEGACY32}" == "true" || "${DOCKER_VANILLA_LEGACY32}" == "true" ]]; then
+          if [[ "${DOCKER_TAYSTJK}" == "true" || "${DOCKER_OPENJK_MODERN64}" == "true" || "${DOCKER_OPENJK_LEGACY32}" == "true" || "${DOCKER_VANILLA_LEGACY32}" == "true" || "${DOCKER_YBEPROXY_LEGACY32}" == "true" ]]; then
             echo "docker=true" >> "$GITHUB_OUTPUT"
           else
             echo "docker=false" >> "$GITHUB_OUTPUT"
@@ -256,6 +269,9 @@ jobs:
           - target: vanilla-legacy32
             dockerfile: docker/vanilla-legacy32/Dockerfile
             cache_scope: vanilla-legacy32-image
+          - target: ybeproxy-legacy32
+            dockerfile: docker/ybeproxy-legacy32/Dockerfile
+            cache_scope: ybeproxy-legacy32-image
 
     steps:
       - name: Decide if this matrix cell should run
@@ -268,6 +284,7 @@ jobs:
           DOCKER_OPENJK_MODERN64: ${{ needs.changes.outputs.docker_openjk_modern64 }}
           DOCKER_OPENJK_LEGACY32: ${{ needs.changes.outputs.docker_openjk_legacy32 }}
           DOCKER_VANILLA_LEGACY32: ${{ needs.changes.outputs.docker_vanilla_legacy32 }}
+          DOCKER_YBEPROXY_LEGACY32: ${{ needs.changes.outputs.docker_ybeproxy_legacy32 }}
         run: |
           set -euo pipefail
           if [[ "$EVENT" == "workflow_dispatch" || "$REF" == refs/tags/v* ]]; then
@@ -279,6 +296,7 @@ jobs:
             openjk-modern64) flag="$DOCKER_OPENJK_MODERN64" ;;
             openjk-legacy32) flag="$DOCKER_OPENJK_LEGACY32" ;;
             vanilla-legacy32) flag="$DOCKER_VANILLA_LEGACY32" ;;
+            ybeproxy-legacy32) flag="$DOCKER_YBEPROXY_LEGACY32" ;;
             *) echo "Unknown target: $TARGET" >&2; exit 1 ;;
           esac
           if [[ "$flag" == "true" ]]; then
@@ -361,6 +379,14 @@ jobs:
             build_arg_ref: ""
             build_arg_commit: ""
             label_prefix: io.akiondev.vanilla
+          - target: ybeproxy-legacy32
+            dockerfile: docker/ybeproxy-legacy32/Dockerfile
+            cache_scope: ybeproxy-legacy32-image
+            upstream_repo: https://github.com/Yberion/JKA_YBEProxy.git
+            upstream_branch: master
+            build_arg_ref: YBEPROXY_REF
+            build_arg_commit: YBEPROXY_COMMIT
+            label_prefix: io.akiondev.ybeproxy
 
     steps:
       - name: Decide if this matrix cell should run
@@ -373,6 +399,7 @@ jobs:
           DOCKER_OPENJK_MODERN64: ${{ needs.changes.outputs.docker_openjk_modern64 }}
           DOCKER_OPENJK_LEGACY32: ${{ needs.changes.outputs.docker_openjk_legacy32 }}
           DOCKER_VANILLA_LEGACY32: ${{ needs.changes.outputs.docker_vanilla_legacy32 }}
+          DOCKER_YBEPROXY_LEGACY32: ${{ needs.changes.outputs.docker_ybeproxy_legacy32 }}
         run: |
           set -euo pipefail
           if [[ "$EVENT" == "workflow_dispatch" || "$REF" == refs/tags/v* ]]; then
@@ -384,6 +411,7 @@ jobs:
             openjk-modern64) flag="$DOCKER_OPENJK_MODERN64" ;;
             openjk-legacy32) flag="$DOCKER_OPENJK_LEGACY32" ;;
             vanilla-legacy32) flag="$DOCKER_VANILLA_LEGACY32" ;;
+            ybeproxy-legacy32) flag="$DOCKER_YBEPROXY_LEGACY32" ;;
             *) echo "Unknown target: $TARGET" >&2; exit 1 ;;
           esac
           if [[ "$flag" == "true" ]]; then
@@ -521,6 +549,13 @@ jobs:
           type=raw,value=vanilla-legacy32,enable={{is_default_branch}}
           type=raw,value=latest-vanilla-legacy32,enable={{is_default_branch}}
           type=raw,value=vanilla-legacy32-${SHORT_SHA}
+          TAGS
+                ;;
+              ybeproxy-legacy32)
+                cat <<TAGS
+          type=raw,value=ybeproxy-legacy32,enable={{is_default_branch}}
+          type=raw,value=latest-ybeproxy-legacy32,enable={{is_default_branch}}
+          type=raw,value=ybeproxy-legacy32-master-${SHORT_SHA}
           TAGS
                 ;;
               *)
