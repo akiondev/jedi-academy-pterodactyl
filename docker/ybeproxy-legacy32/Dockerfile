@@ -18,7 +18,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 FROM debian:12-slim AS builder
 
 ARG YBEPROXY_REPO=https://github.com/Yberion/JKA_YBEProxy.git
-ARG YBEPROXY_REF=master
+ARG YBEPROXY_REF=main
 
 # YBEProxy is a 32-bit (i386) game-module proxy library that replaces
 # `base/jampgamei386.so`. It is NOT a dedicated server engine; the
@@ -70,7 +70,7 @@ RUN mkdir -p build \
 FROM debian:12-slim
 
 ARG YBEPROXY_REPO=https://github.com/Yberion/JKA_YBEProxy.git
-ARG YBEPROXY_REF=master
+ARG YBEPROXY_REF=main
 ARG YBEPROXY_COMMIT=unknown
 
 LABEL org.opencontainers.image.title="YBEProxy legacy32 Pterodactyl Runtime"

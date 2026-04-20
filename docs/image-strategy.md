@@ -67,9 +67,9 @@ for details.
 | `vanilla-legacy32`                        | Latest vanilla legacy32 runtime image (operator-supplied engine). | Mutable. Always a vanilla legacy32 runtime image. |
 | `latest-vanilla-legacy32`                 | Alias of `vanilla-legacy32`.                                    | Mutable. Always a vanilla legacy32 runtime image. |
 | `vanilla-legacy32-<short_sha>`            | Vanilla legacy32 runtime image, pinned to a repository commit.  | Immutable per repository commit.               |
-| `ybeproxy-legacy32`                       | Latest YBEProxy legacy32 (`Yberion/JKA_YBEProxy` master, i386) build. | Mutable. Always a YBEProxy legacy32 build.    |
+| `ybeproxy-legacy32`                       | Latest YBEProxy legacy32 (`Yberion/JKA_YBEProxy` main, i386) build. | Mutable. Always a YBEProxy legacy32 build.    |
 | `latest-ybeproxy-legacy32`                | Alias of `ybeproxy-legacy32`.                                   | Mutable. Always a YBEProxy legacy32 build.    |
-| `ybeproxy-legacy32-master-<short_sha>`    | YBEProxy legacy32, pinned to an upstream commit.                | Immutable per upstream commit.                |
+| `ybeproxy-legacy32-main-<short_sha>`      | YBEProxy legacy32, pinned to an upstream commit.                | Immutable per upstream commit.                |
 | `taystjk-legacy32`                        | Latest experimental TaystJK legacy32 (`taysta/TaystJK` master, i386, MP dedicated only) build. Publish-gated. | Mutable. Experimental. Always a TaystJK legacy32 build. |
 | `latest-taystjk-legacy32`                 | Alias of `taystjk-legacy32`. Publish-gated.                     | Mutable. Experimental.                        |
 | `taystjk-legacy32-master-<short_sha>`     | TaystJK legacy32, pinned to an upstream commit. Publish-gated.  | Immutable per upstream commit. Experimental.  |

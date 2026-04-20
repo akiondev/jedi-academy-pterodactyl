@@ -78,10 +78,10 @@ mods, alternative `jampgame*.so` builds, etc.) remains
 See [`image-strategy.md`](image-strategy.md) for the full tag policy.
 The YBEProxy legacy32 family currently publishes:
 
-- `ybeproxy-legacy32` — latest YBEProxy legacy32 master build
+- `ybeproxy-legacy32` — latest YBEProxy legacy32 main build
   (mutable).
 - `latest-ybeproxy-legacy32` — alias of the above (mutable).
-- `ybeproxy-legacy32-master-<short_sha>` — pinned to an upstream
+- `ybeproxy-legacy32-main-<short_sha>` — pinned to an upstream
   YBEProxy commit (immutable).
 
 The `latest`, `taystjk*`, `openjk-modern64*`, `openjk-legacy32*` and

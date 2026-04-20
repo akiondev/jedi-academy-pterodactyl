@@ -401,7 +401,7 @@ jobs:
             dockerfile: docker/ybeproxy-legacy32/Dockerfile
             cache_scope: ybeproxy-legacy32-image
             upstream_repo: https://github.com/Yberion/JKA_YBEProxy.git
-            upstream_branch: master
+            upstream_branch: main
             build_arg_ref: YBEPROXY_REF
             build_arg_commit: YBEPROXY_COMMIT
             label_prefix: io.akiondev.ybeproxy
@@ -596,7 +596,7 @@ jobs:
                 cat <<TAGS
           type=raw,value=ybeproxy-legacy32,enable={{is_default_branch}}
           type=raw,value=latest-ybeproxy-legacy32,enable={{is_default_branch}}
-          type=raw,value=ybeproxy-legacy32-master-${SHORT_SHA}
+          type=raw,value=ybeproxy-legacy32-main-${SHORT_SHA}
           TAGS
                 ;;
               taystjk-legacy32)

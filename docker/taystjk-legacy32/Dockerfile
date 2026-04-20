@@ -62,10 +62,17 @@ WORKDIR /src/TaystJK
 # server-side game module. All client/renderer/UI/SP/JK2 targets are
 # disabled because this image runs a dedicated server only. -m32
 # forces the multilib toolchain to produce 32-bit (i386) ELF output.
+# `setarch i686` makes the kernel report `i686` to `uname -m`, which
+# in turn makes CMake set CMAKE_HOST_SYSTEM_PROCESSOR=i686 and the
+# upstream CMakeLists.txt then picks the i386 architecture suffix
+# (taystjkded.i386 / jampgamei386.so) instead of the host's x86_64.
+# The `Assets` custom target is built explicitly because the install
+# rule for `taystjk/japro-assets.pk3` is unconditional but the target
+# is not built by the default `all` target.
 RUN mkdir -p build \
     && cd build \
     && CFLAGS="-m32" CXXFLAGS="-m32" LDFLAGS="-m32" \
-       cmake \
+       setarch i686 cmake \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/opt/taystjk \
         -DBuildPortableVersion=ON \
@@ -86,8 +93,9 @@ RUN mkdir -p build \
         -DBuildDiscordRichPresence=OFF \
         -DBuildTests=OFF \
         .. \
-    && make -j"$(nproc)" \
-    && make install
+    && setarch i686 make -j"$(nproc)" \
+    && setarch i686 make -j"$(nproc)" Assets \
+    && setarch i686 make install
 
 FROM debian:12-slim
 
