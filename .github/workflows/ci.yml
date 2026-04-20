@@ -271,11 +271,9 @@ jobs:
           - target: taystjk
             dockerfile: docker/Dockerfile
             cache_scope: taystjk-image
-            changed_flag: docker_taystjk
           - target: openjk-modern64
             dockerfile: docker/openjk-modern64/Dockerfile
             cache_scope: openjk-modern64-image
-            changed_flag: docker_openjk_modern64
           - target: openjk-legacy32
             dockerfile: docker/openjk-legacy32/Dockerfile
             cache_scope: openjk-legacy32-image

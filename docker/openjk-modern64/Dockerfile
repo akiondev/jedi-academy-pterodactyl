@@ -44,8 +44,12 @@ WORKDIR /src/OpenJK
 
 # Build only the modern64 dedicated server (openjkded) and the MP
 # server-side game module (jampgame -> base/jampgamex86_64.so). All
-# SP, JK2, renderer, UI and client-side cgame targets are disabled
-# because this image runs a dedicated server only.
+# SP, JK2, renderer (rd-vanilla AND the experimental rd-rend2), UI and
+# client-side cgame targets are disabled because this image runs a
+# dedicated server only. Disabling rd-rend2 (`BuildMPRend2=OFF`) is
+# required: its CMakeLists unconditionally `find_package(OpenGL REQUIRED)`,
+# which fails on a headless builder that intentionally does not
+# install the OpenGL/GLX development packages.
 RUN mkdir -p build \
     && cd build \
     && cmake \
@@ -58,6 +62,7 @@ RUN mkdir -p build \
         -DBuildMPCGame=OFF \
         -DBuildMPUI=OFF \
         -DBuildMPRdVanilla=OFF \
+        -DBuildMPRend2=OFF \
         -DBuildSPEngine=OFF \
         -DBuildSPGame=OFF \
         -DBuildSPRdVanilla=OFF \

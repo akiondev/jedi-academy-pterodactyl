@@ -57,13 +57,24 @@ WORKDIR /src/OpenJK
 
 # Build only the legacy32 dedicated server (openjkded) and the MP
 # server-side game module (jampgame -> base/jampgamei386.so). All SP,
-# JK2, renderer, UI and client-side cgame targets are disabled because
-# this image runs a dedicated server only. -m32 forces the multilib
-# toolchain to produce 32-bit (i386) ELF binaries.
+# JK2, renderer (rd-vanilla AND the experimental rd-rend2), UI and
+# client-side cgame targets are disabled because this image runs a
+# dedicated server only. Disabling rd-rend2 (`BuildMPRend2=OFF`) is
+# required: its CMakeLists unconditionally `find_package(OpenGL REQUIRED)`,
+# which fails on a headless multilib builder that intentionally does
+# not install the i386 OpenGL/GLX development packages.
+#
+# `-m32` in CFLAGS/CXXFLAGS/LDFLAGS forces the multilib toolchain to
+# produce 32-bit (i386) ELF output. `setarch i686` makes the kernel
+# report `i686` to `uname -m`, which in turn makes CMake set
+# CMAKE_HOST_SYSTEM_PROCESSOR=i686 and the upstream CMakeLists.txt then
+# picks the i386 architecture suffix (openjkded.i386 / jampgamei386.so)
+# instead of the host's x86_64 — without `setarch i686`, the binaries
+# would be named `openjkded.x86_64` even though they are 32-bit code.
 RUN mkdir -p build \
     && cd build \
     && CFLAGS="-m32" CXXFLAGS="-m32" LDFLAGS="-m32" \
-       cmake \
+       setarch i686 cmake \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/opt/openjk \
         -DBuildPortableVersion=ON \
@@ -73,6 +84,7 @@ RUN mkdir -p build \
         -DBuildMPCGame=OFF \
         -DBuildMPUI=OFF \
         -DBuildMPRdVanilla=OFF \
+        -DBuildMPRend2=OFF \
         -DBuildSPEngine=OFF \
         -DBuildSPGame=OFF \
         -DBuildSPRdVanilla=OFF \
@@ -82,8 +94,8 @@ RUN mkdir -p build \
         -DBuildDiscordRichPresence=OFF \
         -DBuildTests=OFF \
         .. \
-    && make -j"$(nproc)" \
-    && make install
+    && setarch i686 make -j"$(nproc)" \
+    && setarch i686 make install
 
 FROM debian:12-slim
 
