@@ -10,9 +10,11 @@
 # `warn`, `debug`, `kv`, `kv_highlight`, `kv_value`, `bool_state`,
 # `section`).
 #
-# Note: hardcoded references to /usr/local/bin/taystjk-antivpn and the
-# TaystJK-namespaced cache path are intentionally preserved verbatim
-# in PR-A. They will be neutralized in later PRs.
+# Note: hardcoded references to the TaystJK-namespaced cache path are
+# intentionally preserved verbatim — the cache lives under the user
+# volume (/home/container/) and is out of scope for the in-image path
+# migration. The supervisor binary path is sourced from the runtime
+# manifest via ${JKA_PATH_ANTIVPN_BINARY}.
 
 configure_anti_vpn() {
   : "${ANTI_VPN_ENABLED:=false}"
@@ -154,9 +156,9 @@ print_anti_vpn_summary() {
     return
   fi
 
-  if [[ -x /usr/local/bin/taystjk-antivpn ]]; then
+  if [[ -x "${JKA_PATH_ANTIVPN_BINARY}" ]]; then
     ok "Anti-VPN supervisor ready"
-    debug "Supervisor binary: /usr/local/bin/taystjk-antivpn"
+    debug "Supervisor binary: ${JKA_PATH_ANTIVPN_BINARY}"
   else
     warn "Anti-VPN supervisor binary is missing; startup will continue without anti-VPN enforcement"
   fi

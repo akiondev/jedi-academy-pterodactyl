@@ -130,6 +130,28 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         run: jq . egg/egg-taystjk-pterodactyl.json >/dev/null
 
+      - name: Validate runtime manifest schema
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          jq -e '.schema_version == 1 and (.paths | type == "object")' image/runtime.json >/dev/null
+          for key in engine_dist_dir runtime_common_dir docs_dir bundled_addons_dir antivpn_binary upstream_commit_file upstream_ref_file; do
+            value="$(jq -r --arg k "$key" '.paths[$k] // empty' image/runtime.json)"
+            if [[ -z "$value" ]]; then
+              echo "image/runtime.json is missing required path '${key}'" >&2
+              exit 1
+            fi
+          done
+
+      - name: Guard against /opt/taystjk-* reintroductions
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          if grep -RIn -- '/opt/taystjk-' scripts/ image/; then
+            echo "Found /opt/taystjk-* reference under scripts/ or image/. Use \${JKA_PATH_*} from /opt/jka/runtime.json instead." >&2
+            exit 1
+          fi
+
   docker-build:
     name: Build Docker image (no push)
     runs-on: ubuntu-latest

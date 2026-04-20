@@ -10,12 +10,12 @@
 # `warn`, `debug`, `kv`, `kv_highlight`, `bool_state`), and
 # jka_security.sh for `require_safe_container_path`.
 #
-# Note: the hardcoded image-side paths below
-# (/opt/taystjk-bundled-addons, /opt/taystjk-docs) are intentionally
-# preserved verbatim in PR-A. They will be neutralized in later PRs.
+# Note: the hardcoded image-side paths previously referenced here are
+# now sourced from the runtime manifest via ${JKA_PATH_BUNDLED_ADDONS}
+# and ${JKA_PATH_DOCS}.
 
 sync_addon_docs() {
-  sync_image_managed_addon_tree "/opt/taystjk-docs/addons" "$ADDON_DOCS_DIR" "addon docs"
+  sync_image_managed_addon_tree "${JKA_PATH_DOCS}/addons" "$ADDON_DOCS_DIR" "addon docs"
 }
 
 sync_image_managed_addon_tree() {
@@ -37,12 +37,12 @@ sync_image_managed_addon_tree() {
 
 sync_managed_addon_examples() {
   info "Syncing addon examples into ${ADDON_EXAMPLES_DIR}"
-  sync_image_managed_addon_tree "/opt/taystjk-bundled-addons/examples" "$ADDON_EXAMPLES_DIR" "addon examples"
+  sync_image_managed_addon_tree "${JKA_PATH_BUNDLED_ADDONS}/examples" "$ADDON_EXAMPLES_DIR" "addon examples"
 }
 
 sync_managed_addon_defaults() {
   info "Syncing managed addon helpers into ${ADDON_DEFAULTS_DIR}"
-  sync_image_managed_addon_tree "/opt/taystjk-bundled-addons/defaults" "$ADDON_DEFAULTS_DIR" "addon defaults"
+  sync_image_managed_addon_tree "${JKA_PATH_BUNDLED_ADDONS}/defaults" "$ADDON_DEFAULTS_DIR" "addon defaults"
 }
 
 install_managed_status_helper() {

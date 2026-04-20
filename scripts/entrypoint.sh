@@ -3,16 +3,19 @@ set -euo pipefail
 
 export PATH="/home/container/bin:${PATH}"
 
-JKA_COMMON_DIR="${JKA_COMMON_DIR:-/opt/taystjk-runtime/common}"
+JKA_COMMON_DIR="${JKA_COMMON_DIR:-/opt/jka/runtime/common}"
 if [[ ! -d "${JKA_COMMON_DIR}" ]]; then
   printf 'entrypoint: shared layer not found at %s\n' "${JKA_COMMON_DIR}" >&2
   exit 1
 fi
 source "${JKA_COMMON_DIR}/jka_runtime_common.sh"
+source "${JKA_COMMON_DIR}/jka_runtime_manifest.sh"
 source "${JKA_COMMON_DIR}/jka_security.sh"
 source "${JKA_COMMON_DIR}/jka_server_cfg.sh"
 source "${JKA_COMMON_DIR}/jka_addon_loader.sh"
 source "${JKA_COMMON_DIR}/jka_antivpn_bootstrap.sh"
+
+load_runtime_manifest
 
 normalize_server_binary_name() {
   local requested="${SERVER_BINARY#./}"
@@ -33,7 +36,7 @@ is_base_mode() {
 
 is_image_managed_server_binary() {
   local binary_name="$1"
-  [[ -f "/opt/taystjk-dist/${binary_name}" ]]
+  [[ -f "${JKA_PATH_ENGINE_DIST}/${binary_name}" ]]
 }
 
 resolve_active_game_dir() {
@@ -73,22 +76,22 @@ sync_runtime_files() {
   local runtime_binary
   local found_runtime_binary=0
 
-  if compgen -G "/opt/taystjk-dist/taystjkded.*" >/dev/null; then
+  if compgen -G "${JKA_PATH_ENGINE_DIST}/taystjkded.*" >/dev/null; then
     log "Syncing image-managed TaystJK runtime files into container volume"
-    for runtime_binary in /opt/taystjk-dist/taystjkded.*; do
+    for runtime_binary in "${JKA_PATH_ENGINE_DIST}"/taystjkded.*; do
       [[ -f "$runtime_binary" ]] || continue
       install -m 0755 "$runtime_binary" "/home/container/${runtime_binary##*/}"
       found_runtime_binary=1
     done
   fi
 
-  if [[ -d /opt/taystjk-dist/taystjk ]]; then
+  if [[ -d "${JKA_PATH_ENGINE_DIST}/taystjk" ]]; then
     mkdir -p /home/container/taystjk
-    cp -af /opt/taystjk-dist/taystjk/. /home/container/taystjk/
+    cp -af "${JKA_PATH_ENGINE_DIST}/taystjk/." /home/container/taystjk/
   fi
 
   if [[ "$found_runtime_binary" -eq 0 ]]; then
-    log "No image-provided dedicated binaries were found under /opt/taystjk-dist"
+    log "No image-provided dedicated binaries were found under ${JKA_PATH_ENGINE_DIST}"
   fi
 }
 
@@ -310,8 +313,8 @@ print_launch_decision() {
 }
 
 launch_server() {
-  if [[ "$ANTI_VPN_EFFECTIVE_MODE" != "off" && -x /usr/local/bin/taystjk-antivpn ]]; then
-    exec /usr/local/bin/taystjk-antivpn supervise -- "${STARTUP_COMMAND[@]}"
+  if [[ "$ANTI_VPN_EFFECTIVE_MODE" != "off" && -x "${JKA_PATH_ANTIVPN_BINARY}" ]]; then
+    exec "${JKA_PATH_ANTIVPN_BINARY}" supervise -- "${STARTUP_COMMAND[@]}"
   fi
 
   if [[ "$ANTI_VPN_EFFECTIVE_MODE" != "off" ]]; then
