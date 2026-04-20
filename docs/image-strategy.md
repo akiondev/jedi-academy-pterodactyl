@@ -72,14 +72,21 @@ The repository keeps the following TaystJK-specific implementation details
 because generalizing them before a second runtime exists would be premature:
 
 - `docker/Dockerfile` is a single TaystJK-source build pipeline.
-- Image-internal paths under `/opt/taystjk-*` describe the current runtime
-  layout and stay TaystJK-prefixed.
+- Image-internal paths live under the neutral `/opt/jka/` prefix and are
+  declared in `/opt/jka/runtime.json` (`schema_version: 1`, paths only).
+  Legacy `/opt/taystjk-*` directory paths and `/usr/local/bin/taystjk-antivpn`
+  remain available as deprecated symlinks for one beta release window for
+  any external tooling that may have referenced them; they will be removed
+  in a future PR. The stamp files inside the engine directory were renamed
+  from `.taystjk-upstream-{commit,ref}` to `.upstream-{commit,ref}`.
 - `scripts/install_taystjk.sh` and `scripts/entrypoint.sh` encode
   TaystJK-specific defaults (`taystjkded.*`, `FS_GAME_MOD=taystjk`, default
   `server.cfg` template).
-- `cmd/taystjk-antivpn` is the in-image runtime supervisor. The Go module
-  path stays platform-named (`github.com/akiondev/jedi-academy-pterodactyl`)
-  while the binary keeps its TaystJK-prefixed name.
+- `cmd/taystjk-antivpn` is the in-image runtime supervisor source package.
+  The Go module path stays platform-named
+  (`github.com/akiondev/jedi-academy-pterodactyl`) and the source package
+  retains its TaystJK-prefixed name; the built binary is installed as
+  `/usr/local/bin/jka-antivpn` (with a deprecated `taystjk-antivpn` symlink).
 - Image labels under the `io.akiondev.taystjk.*` namespace describe the
   TaystJK upstream that was built into the image. Future runtimes get their
   own `io.akiondev.<runtime>.*` namespace; the existing labels are not
