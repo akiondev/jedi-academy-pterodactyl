@@ -16,7 +16,7 @@ It is intentionally scoped to anti-VPN behavior only:
 
 The anti-VPN feature is implemented as a compiled Go binary inside the runtime image:
 
-- binary: `taystjk-antivpn`
+- binary: `jka-antivpn` (a deprecated `taystjk-antivpn` symlink is preserved for one beta release window)
 - launch path: `scripts/entrypoint.sh`
 - runtime model: supervisor around the dedicated server process
 - signal source: stdout-first event capture with the resolved active server log path as fallback

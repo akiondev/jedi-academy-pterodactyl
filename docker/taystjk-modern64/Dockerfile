@@ -10,7 +10,7 @@ COPY internal ./internal
 
 RUN --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS="${TARGETOS}" GOARCH="${TARGETARCH:-amd64}" \
-    go build -trimpath -ldflags="-s -w" -o /out/taystjk-antivpn ./cmd/taystjk-antivpn
+    go build -trimpath -ldflags="-s -w" -o /out/jka-antivpn ./cmd/taystjk-antivpn
 
 FROM debian:12-slim AS builder
 
@@ -99,19 +99,26 @@ RUN apt-get update \
     && useradd --create-home --home-dir /home/container --shell /bin/bash container \
     && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /opt/taystjk-dist
-COPY --from=builder /opt/taystjk/JediAcademy/taystjkded.* /opt/taystjk-dist/
-COPY --from=builder /opt/taystjk/JediAcademy/taystjk /opt/taystjk-dist/taystjk
-COPY --from=antivpn-builder /out/taystjk-antivpn /usr/local/bin/taystjk-antivpn
-RUN printf '%s\n' "${TAYSTJK_COMMIT}" > /opt/taystjk-dist/.taystjk-upstream-commit \
-    && printf '%s\n' "${TAYSTJK_REF}" > /opt/taystjk-dist/.taystjk-upstream-ref
-RUN mkdir -p /opt/taystjk-docs/addons
-RUN mkdir -p /opt/taystjk-bundled-addons
-COPY --chown=container:container docs/addon_readme.md /opt/taystjk-docs/addons/ADDON_README.md
-COPY --chown=container:container docs/addon_readme_advanced.md /opt/taystjk-docs/addons/ADDON_README_ADVANCED.md
-COPY --chown=container:container bundled-addons/ /opt/taystjk-bundled-addons/
+RUN mkdir -p /opt/jka/engine /opt/jka/engine-payload
+COPY --from=builder /opt/taystjk/JediAcademy/taystjkded.* /opt/jka/engine/
+COPY --from=builder /opt/taystjk/JediAcademy/taystjk /opt/jka/engine-payload/taystjk
+COPY --from=antivpn-builder /out/jka-antivpn /usr/local/bin/jka-antivpn
+RUN printf '%s\n' "${TAYSTJK_COMMIT}" > /opt/jka/engine/.upstream-commit \
+    && printf '%s\n' "${TAYSTJK_REF}" > /opt/jka/engine/.upstream-ref
+RUN mkdir -p /opt/jka/docs/addons
+RUN mkdir -p /opt/jka/bundled-addons
+COPY --chown=container:container docs/addon_readme.md /opt/jka/docs/addons/ADDON_README.md
+COPY --chown=container:container docs/addon_readme_advanced.md /opt/jka/docs/addons/ADDON_README_ADVANCED.md
+COPY --chown=container:container bundled-addons/ /opt/jka/bundled-addons/
+COPY --chown=container:container scripts/common/ /opt/jka/runtime/common/
+COPY image/taystjk-modern64/runtime.json /opt/jka/runtime.json
 COPY --chown=container:container scripts/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh /usr/local/bin/taystjk-antivpn /opt/taystjk-dist/taystjkded.*
+RUN ln -s /opt/jka/engine /opt/taystjk-dist \
+    && ln -s /opt/jka/runtime /opt/taystjk-runtime \
+    && ln -s /opt/jka/docs /opt/taystjk-docs \
+    && ln -s /opt/jka/bundled-addons /opt/taystjk-bundled-addons \
+    && ln -s /usr/local/bin/jka-antivpn /usr/local/bin/taystjk-antivpn
+RUN chmod +x /entrypoint.sh /usr/local/bin/jka-antivpn /opt/jka/engine/taystjkded.*
 
 USER container
 ENV USER=container HOME=/home/container

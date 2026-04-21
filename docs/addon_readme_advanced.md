@@ -271,7 +271,7 @@ These are conventions, not mandatory fixed paths, but they are good patterns to 
 
 In the current official Docker image for this project, the runtime intentionally installs a stronger addon baseline.
 
-Verified from the local `docker/Dockerfile`, the runtime image includes:
+Verified from the local `docker/taystjk-modern64/Dockerfile`, the runtime image includes:
 
 - `bash`
 - `python3`

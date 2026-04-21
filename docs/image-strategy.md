@@ -20,10 +20,34 @@ the GHCR-only path keeps working unchanged when those are not configured.
 
 ## Runtime today
 
-TaystJK is the **current default and only automatically managed runtime**.
-Future runtimes (for example OpenJK) may be added later. When that happens
-they will be exposed through additional tags and, if needed, additional
-parallel eggs — not by replacing the platform identity.
+TaystJK is the **current default runtime** and is what `latest` points
+at. A second runtime family, **`openjk-modern64`**, is now also built
+and published from this repository as the first additional runtime
+family (built from `JACoders/OpenJK` master, MP dedicated server only).
+It is exposed through its own set of tags under the same platform image
+name and does not replace TaystJK. See
+[`openjk-modern64.md`](openjk-modern64.md) for details. A third runtime
+family, **`openjk-legacy32`**, is also published from this repository
+(built from `JACoders/OpenJK` master as a 32-bit i386 target, MP
+dedicated server only) and is exposed through its own set of tags. See
+[`openjk-legacy32.md`](openjk-legacy32.md) for details. A fourth
+runtime family, **`vanilla-legacy32`**, is also published as a manual
+runtime family: it provides a 32-bit (i386) Linux runtime environment
+for an operator-supplied vanilla Jedi Academy MP dedicated server
+binary and does not build, ship or auto-update any engine itself. See
+[`vanilla-legacy32.md`](vanilla-legacy32.md) for details. A fifth
+runtime family, **`ybeproxy-legacy32`**, is also published: it pairs
+the same 32-bit (i386) Linux runtime environment with the YBEProxy
+game-module proxy (`base/jampgamei386.so`) built from
+`Yberion/JKA_YBEProxy` master, while the engine itself remains
+operator-supplied. See [`ybeproxy-legacy32.md`](ybeproxy-legacy32.md)
+for details. A sixth runtime family, **`taystjk-legacy32`**, is built
+from the same TaystJK source tree as the default TaystJK image but
+targets a 32-bit (i386) Linux MP dedicated server. It is
+**experimental** and publish-gated behind an explicit opt-in (the
+`PUBLISH_TAYSTJK_LEGACY32` repository variable, or
+`workflow_dispatch`); see [`taystjk-legacy32.md`](taystjk-legacy32.md)
+for details.
 
 ## Tag policy
 
@@ -34,8 +58,21 @@ parallel eggs — not by replacing the platform identity.
 | `taystjk-master-<short_sha>`  | TaystJK master, pinned to an upstream commit.                                   | Immutable per upstream commit.                 |
 | `master-<short_sha>`          | Legacy alias of `taystjk-master-<short_sha>`. Kept for backward compatibility.  | Immutable per upstream commit.                 |
 | `v<semver>`                   | Repository release tags.                                                        | Immutable.                                     |
-| `openjk` *(future)*           | Reserved for a future OpenJK runtime build.                                     | Not yet published.                             |
-| `openjk-<ref>` *(future)*     | Reserved for OpenJK upstream-pinned builds.                                     | Not yet published.                             |
+| `openjk-modern64`                         | Latest OpenJK modern64 (`JACoders/OpenJK` master) build.        | Mutable. Always an OpenJK modern64 build.      |
+| `latest-openjk-modern64`                  | Alias of `openjk-modern64`.                                     | Mutable. Always an OpenJK modern64 build.      |
+| `openjk-modern64-master-<short_sha>`      | OpenJK modern64, pinned to an upstream commit.                  | Immutable per upstream commit.                 |
+| `openjk-legacy32`                         | Latest OpenJK legacy32 (`JACoders/OpenJK` master, i386) build.  | Mutable. Always an OpenJK legacy32 build.      |
+| `latest-openjk-legacy32`                  | Alias of `openjk-legacy32`.                                     | Mutable. Always an OpenJK legacy32 build.      |
+| `openjk-legacy32-master-<short_sha>`      | OpenJK legacy32, pinned to an upstream commit.                  | Immutable per upstream commit.                 |
+| `vanilla-legacy32`                        | Latest vanilla legacy32 runtime image (operator-supplied engine). | Mutable. Always a vanilla legacy32 runtime image. |
+| `latest-vanilla-legacy32`                 | Alias of `vanilla-legacy32`.                                    | Mutable. Always a vanilla legacy32 runtime image. |
+| `vanilla-legacy32-master-<short_sha>`     | Vanilla legacy32 runtime image, pinned to a repository commit.  | Immutable per repository commit.               |
+| `ybeproxy-legacy32`                       | Latest YBEProxy legacy32 (`Yberion/JKA_YBEProxy` main, i386) build. | Mutable. Always a YBEProxy legacy32 build.    |
+| `latest-ybeproxy-legacy32`                | Alias of `ybeproxy-legacy32`.                                   | Mutable. Always a YBEProxy legacy32 build.    |
+| `ybeproxy-legacy32-main-<short_sha>`      | YBEProxy legacy32, pinned to an upstream commit.                | Immutable per upstream commit.                |
+| `taystjk-legacy32`                        | Latest experimental TaystJK legacy32 (`taysta/TaystJK` master, i386, MP dedicated only) build. Publish-gated. | Mutable. Experimental. Always a TaystJK legacy32 build. |
+| `latest-taystjk-legacy32`                 | Alias of `taystjk-legacy32`. Publish-gated.                     | Mutable. Experimental.                        |
+| `taystjk-legacy32-master-<short_sha>`     | TaystJK legacy32, pinned to an upstream commit. Publish-gated.  | Immutable per upstream commit. Experimental.  |
 
 ### Defaults that operators see
 
@@ -71,15 +108,22 @@ change when the second runtime is introduced.
 The repository keeps the following TaystJK-specific implementation details
 because generalizing them before a second runtime exists would be premature:
 
-- `docker/Dockerfile` is a single TaystJK-source build pipeline.
-- Image-internal paths under `/opt/taystjk-*` describe the current runtime
-  layout and stay TaystJK-prefixed.
+- `docker/taystjk-modern64/Dockerfile` is a single TaystJK-source build pipeline.
+- Image-internal paths live under the neutral `/opt/jka/` prefix and are
+  declared in `/opt/jka/runtime.json` (`schema_version: 1`, paths only).
+  Legacy `/opt/taystjk-*` directory paths and `/usr/local/bin/taystjk-antivpn`
+  remain available as deprecated symlinks for one beta release window for
+  any external tooling that may have referenced them; they will be removed
+  in a future PR. The stamp files inside the engine directory were renamed
+  from `.taystjk-upstream-{commit,ref}` to `.upstream-{commit,ref}`.
 - `scripts/install_taystjk.sh` and `scripts/entrypoint.sh` encode
   TaystJK-specific defaults (`taystjkded.*`, `FS_GAME_MOD=taystjk`, default
   `server.cfg` template).
-- `cmd/taystjk-antivpn` is the in-image runtime supervisor. The Go module
-  path stays platform-named (`github.com/akiondev/jedi-academy-pterodactyl`)
-  while the binary keeps its TaystJK-prefixed name.
+- `cmd/taystjk-antivpn` is the in-image runtime supervisor source package.
+  The Go module path stays platform-named
+  (`github.com/akiondev/jedi-academy-pterodactyl`) and the source package
+  retains its TaystJK-prefixed name; the built binary is installed as
+  `/usr/local/bin/jka-antivpn` (with a deprecated `taystjk-antivpn` symlink).
 - Image labels under the `io.akiondev.taystjk.*` namespace describe the
   TaystJK upstream that was built into the image. Future runtimes get their
   own `io.akiondev.<runtime>.*` namespace; the existing labels are not
