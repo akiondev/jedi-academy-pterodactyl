@@ -103,10 +103,10 @@ validate_server_binary_selection() {
   fi
 
   if is_image_managed_server_binary "$server_binary_name"; then
-    fail "Configured TaystJK server binary ${server_binary_name} was not found in the image-managed runtime"
+    fail "Configured image-managed server binary ${server_binary_name} was not found in the image-managed runtime"
   fi
 
-  fail "Configured manual server binary ${server_binary_name} was not found under /home/container. Only TaystJK binaries are synced automatically; manual alternatives must be uploaded by the server owner"
+  fail "Configured manual server binary ${server_binary_name} was not found under /home/container. Only image-managed engine binaries are synced automatically; manual alternatives must be uploaded by the server owner"
 }
 
 validate_selected_runtime_paths() {

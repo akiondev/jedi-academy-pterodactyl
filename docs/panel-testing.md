@@ -315,7 +315,7 @@ Same shared lines as above, plus:
 
 | Log line | Means |
 | --- | --- |
-| `Configured TaystJK server binary taystjkded.i386 was not found in the image-managed runtime` | You are running the wrong image tag. Re-pull `taystjk-legacy32`. |
+| `Configured image-managed server binary taystjkded.i386 was not found in the image-managed runtime` | You are running the wrong image tag. Re-pull `taystjk-legacy32`. |
 | `Managed TaystJK mod directory taystjk was not found in the image-managed runtime` | You set `FS_GAME_MOD=taystjk` against an image where the payload is missing. Repull. |
 | `exec format error` immediately after `Launching…` | The node kernel does not support `i386` ELF execution at all. Verify with `uname -m` and that `linux32`/`i386` ELFs run on the host. |
 
@@ -396,7 +396,7 @@ Same shared lines as above, plus:
 
 | Log line | Means |
 | --- | --- |
-| `Configured TaystJK server binary openjkded.i386 was not found in the image-managed runtime` | Wrong image tag pulled. Re-pull `openjk-legacy32`. (The "TaystJK" word in this error message is a known cosmetic legacy label — the actual binary check is correct.) |
+| `Configured image-managed server binary openjkded.i386 was not found in the image-managed runtime` | Wrong image tag pulled. Re-pull `openjk-legacy32`. |
 | `Sys_LoadDll(jampgamei386) failed` | The image-managed payload was not synced (something deleted `/home/container/base/jampgamei386.so`). Restart to re-stage. |
 | `exec format error` | Host kernel cannot execute i386 ELFs. |
 

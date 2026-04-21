@@ -87,6 +87,8 @@ Warning: this is not an official Pterodactyl installation method. Follow the lin
 - `docs/addon_readme.md` — compact addon usage guide with quick examples
 - `docs/addon_readme_advanced.md` — full addon reference for developers and AI-guided scripting
 - `docs/anti-vpn.md` — anti-VPN design, variables, scoring and operating notes
+- `docs/operator-sheet.md` — short panel-only crib sheet per legacy32 family
+- `docs/panel-testing.md` — full step-by-step Pterodactyl panel walkthrough
 
 ## Key behavior
 
