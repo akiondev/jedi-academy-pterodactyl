@@ -111,7 +111,7 @@ COPY --chown=container:container docs/addon_readme.md /opt/jka/docs/addons/ADDON
 COPY --chown=container:container docs/addon_readme_advanced.md /opt/jka/docs/addons/ADDON_README_ADVANCED.md
 COPY --chown=container:container bundled-addons/ /opt/jka/bundled-addons/
 COPY --chown=container:container scripts/common/ /opt/jka/runtime/common/
-COPY image/runtime.json /opt/jka/runtime.json
+COPY image/taystjk-modern64/runtime.json /opt/jka/runtime.json
 COPY --chown=container:container scripts/entrypoint.sh /entrypoint.sh
 RUN ln -s /opt/jka/engine /opt/taystjk-dist \
     && ln -s /opt/jka/runtime /opt/taystjk-runtime \

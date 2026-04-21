@@ -9,7 +9,7 @@ PR-A only adds the files. Specifically:
 
 - `scripts/entrypoint.sh` does **not** source any file from this
   directory.
-- `docker/Dockerfile` does **not** copy this directory into the image.
+- `docker/taystjk-modern64/Dockerfile` does **not** copy this directory into the image.
 - No function names, hardcoded strings (e.g. `TaystJK`, `taystjk`),
   paths, env vars, or defaults are renamed in PR-A. They remain
   byte-identical to the originals in `scripts/entrypoint.sh`.

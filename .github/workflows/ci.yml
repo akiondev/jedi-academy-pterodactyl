@@ -25,7 +25,7 @@ jobs:
     outputs:
       go_validate: ${{ steps.filter.outputs.go_validate }}
       runtime_validate: ${{ steps.filter.outputs.runtime_validate }}
-      docker_taystjk: ${{ steps.filter.outputs.docker_taystjk }}
+      docker_taystjk_modern64: ${{ steps.filter.outputs.docker_taystjk_modern64 }}
       docker_openjk_modern64: ${{ steps.filter.outputs.docker_openjk_modern64 }}
       docker_openjk_legacy32: ${{ steps.filter.outputs.docker_openjk_legacy32 }}
       docker_vanilla_legacy32: ${{ steps.filter.outputs.docker_vanilla_legacy32 }}
@@ -54,11 +54,11 @@ jobs:
               - "scripts/**"
               - "egg/**"
               - "bundled-addons/**"
-            docker_taystjk:
+            docker_taystjk_modern64:
               - ".github/workflows/ci.yml"
               - ".github/workflows/upstream-taystjk-master-sync.yml"
-              - "docker/Dockerfile"
-              - "image/runtime.json"
+              - "docker/taystjk-modern64/**"
+              - "image/taystjk-modern64/runtime.json"
               - "cmd/**"
               - "internal/**"
               - "scripts/**"
@@ -125,14 +125,14 @@ jobs:
       - name: Aggregate docker flag
         id: aggregate
         env:
-          DOCKER_TAYSTJK: ${{ steps.filter.outputs.docker_taystjk }}
+          DOCKER_TAYSTJK_MODERN64: ${{ steps.filter.outputs.docker_taystjk_modern64 }}
           DOCKER_OPENJK_MODERN64: ${{ steps.filter.outputs.docker_openjk_modern64 }}
           DOCKER_OPENJK_LEGACY32: ${{ steps.filter.outputs.docker_openjk_legacy32 }}
           DOCKER_VANILLA_LEGACY32: ${{ steps.filter.outputs.docker_vanilla_legacy32 }}
           DOCKER_YBEPROXY_LEGACY32: ${{ steps.filter.outputs.docker_ybeproxy_legacy32 }}
           DOCKER_TAYSTJK_LEGACY32: ${{ steps.filter.outputs.docker_taystjk_legacy32 }}
         run: |
-          if [[ "${DOCKER_TAYSTJK}" == "true" || "${DOCKER_OPENJK_MODERN64}" == "true" || "${DOCKER_OPENJK_LEGACY32}" == "true" || "${DOCKER_VANILLA_LEGACY32}" == "true" || "${DOCKER_YBEPROXY_LEGACY32}" == "true" || "${DOCKER_TAYSTJK_LEGACY32}" == "true" ]]; then
+          if [[ "${DOCKER_TAYSTJK_MODERN64}" == "true" || "${DOCKER_OPENJK_MODERN64}" == "true" || "${DOCKER_OPENJK_LEGACY32}" == "true" || "${DOCKER_VANILLA_LEGACY32}" == "true" || "${DOCKER_YBEPROXY_LEGACY32}" == "true" || "${DOCKER_TAYSTJK_LEGACY32}" == "true" ]]; then
             echo "docker=true" >> "$GITHUB_OUTPUT"
           else
             echo "docker=false" >> "$GITHUB_OUTPUT"
@@ -281,9 +281,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - target: taystjk
-            dockerfile: docker/Dockerfile
-            cache_scope: taystjk-image
+          - target: taystjk-modern64
+            dockerfile: docker/taystjk-modern64/Dockerfile
+            cache_scope: taystjk-modern64-image
           - target: openjk-modern64
             dockerfile: docker/openjk-modern64/Dockerfile
             cache_scope: openjk-modern64-image
@@ -307,7 +307,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           REF: ${{ github.ref }}
           TARGET: ${{ matrix.target }}
-          DOCKER_TAYSTJK: ${{ needs.changes.outputs.docker_taystjk }}
+          DOCKER_TAYSTJK_MODERN64: ${{ needs.changes.outputs.docker_taystjk_modern64 }}
           DOCKER_OPENJK_MODERN64: ${{ needs.changes.outputs.docker_openjk_modern64 }}
           DOCKER_OPENJK_LEGACY32: ${{ needs.changes.outputs.docker_openjk_legacy32 }}
           DOCKER_VANILLA_LEGACY32: ${{ needs.changes.outputs.docker_vanilla_legacy32 }}
@@ -320,7 +320,7 @@ jobs:
             exit 0
           fi
           case "$TARGET" in
-            taystjk)         flag="$DOCKER_TAYSTJK" ;;
+            taystjk-modern64) flag="$DOCKER_TAYSTJK_MODERN64" ;;
             openjk-modern64) flag="$DOCKER_OPENJK_MODERN64" ;;
             openjk-legacy32) flag="$DOCKER_OPENJK_LEGACY32" ;;
             vanilla-legacy32) flag="$DOCKER_VANILLA_LEGACY32" ;;
@@ -376,9 +376,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - target: taystjk
-            dockerfile: docker/Dockerfile
-            cache_scope: taystjk-image
+          - target: taystjk-modern64
+            dockerfile: docker/taystjk-modern64/Dockerfile
+            cache_scope: taystjk-modern64-image
             upstream_repo: https://github.com/taysta/TaystJK.git
             upstream_branch: master
             build_arg_ref: TAYSTJK_REF
@@ -433,7 +433,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           REF: ${{ github.ref }}
           TARGET: ${{ matrix.target }}
-          DOCKER_TAYSTJK: ${{ needs.changes.outputs.docker_taystjk }}
+          DOCKER_TAYSTJK_MODERN64: ${{ needs.changes.outputs.docker_taystjk_modern64 }}
           DOCKER_OPENJK_MODERN64: ${{ needs.changes.outputs.docker_openjk_modern64 }}
           DOCKER_OPENJK_LEGACY32: ${{ needs.changes.outputs.docker_openjk_legacy32 }}
           DOCKER_VANILLA_LEGACY32: ${{ needs.changes.outputs.docker_vanilla_legacy32 }}
@@ -458,7 +458,7 @@ jobs:
             exit 0
           fi
           case "$TARGET" in
-            taystjk)         flag="$DOCKER_TAYSTJK" ;;
+            taystjk-modern64) flag="$DOCKER_TAYSTJK_MODERN64" ;;
             openjk-modern64) flag="$DOCKER_OPENJK_MODERN64" ;;
             openjk-legacy32) flag="$DOCKER_OPENJK_LEGACY32" ;;
             vanilla-legacy32) flag="$DOCKER_VANILLA_LEGACY32" ;;
@@ -573,7 +573,7 @@ jobs:
           {
             echo "patterns<<EOF"
             case "${TARGET}" in
-              taystjk)
+              taystjk-modern64)
                 cat <<TAGS
           type=ref,event=tag
           type=raw,value=latest,enable={{is_default_branch}}

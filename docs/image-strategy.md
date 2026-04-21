@@ -108,7 +108,7 @@ change when the second runtime is introduced.
 The repository keeps the following TaystJK-specific implementation details
 because generalizing them before a second runtime exists would be premature:
 
-- `docker/Dockerfile` is a single TaystJK-source build pipeline.
+- `docker/taystjk-modern64/Dockerfile` is a single TaystJK-source build pipeline.
 - Image-internal paths live under the neutral `/opt/jka/` prefix and are
   declared in `/opt/jka/runtime.json` (`schema_version: 1`, paths only).
   Legacy `/opt/taystjk-*` directory paths and `/usr/local/bin/taystjk-antivpn`
