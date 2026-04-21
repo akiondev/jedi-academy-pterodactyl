@@ -66,7 +66,7 @@ for details.
 | `openjk-legacy32-master-<short_sha>`      | OpenJK legacy32, pinned to an upstream commit.                  | Immutable per upstream commit.                 |
 | `vanilla-legacy32`                        | Latest vanilla legacy32 runtime image (operator-supplied engine). | Mutable. Always a vanilla legacy32 runtime image. |
 | `latest-vanilla-legacy32`                 | Alias of `vanilla-legacy32`.                                    | Mutable. Always a vanilla legacy32 runtime image. |
-| `vanilla-legacy32-<short_sha>`            | Vanilla legacy32 runtime image, pinned to a repository commit.  | Immutable per repository commit.               |
+| `vanilla-legacy32-master-<short_sha>`     | Vanilla legacy32 runtime image, pinned to a repository commit.  | Immutable per repository commit.               |
 | `ybeproxy-legacy32`                       | Latest YBEProxy legacy32 (`Yberion/JKA_YBEProxy` main, i386) build. | Mutable. Always a YBEProxy legacy32 build.    |
 | `latest-ybeproxy-legacy32`                | Alias of `ybeproxy-legacy32`.                                   | Mutable. Always a YBEProxy legacy32 build.    |
 | `ybeproxy-legacy32-main-<short_sha>`      | YBEProxy legacy32, pinned to an upstream commit.                | Immutable per upstream commit.                |

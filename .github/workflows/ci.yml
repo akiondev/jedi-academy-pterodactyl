@@ -195,6 +195,9 @@ jobs:
           while IFS= read -r common_file; do
             shell_files+=("$common_file")
           done < <(find scripts/common -maxdepth 1 -type f -name '*.sh' | LC_ALL=C sort)
+          while IFS= read -r runtime_file; do
+            shell_files+=("$runtime_file")
+          done < <(find scripts/runtimes -type f -name '*.sh' | LC_ALL=C sort)
           for shell_file in "${shell_files[@]}"; do
             echo "bash -n ${shell_file}"
             bash -n "$shell_file"
@@ -206,7 +209,12 @@ jobs:
 
       - name: Validate egg JSON
         if: steps.gate.outputs.run == 'true'
-        run: jq . egg/egg-taystjk-pterodactyl.json >/dev/null
+        run: |
+          set -euo pipefail
+          for egg in egg/*.json; do
+            echo "jq . ${egg}"
+            jq . "$egg" >/dev/null
+          done
 
       - name: Validate runtime manifest schema
         if: steps.gate.outputs.run == 'true'
@@ -223,8 +231,13 @@ jobs:
             upstream_commit_file
             upstream_ref_file
           )
-          manifests=(image/runtime.json)
+          mapfile -t manifests < <(find image -type f -name 'runtime.json' | LC_ALL=C sort)
+          if [[ ${#manifests[@]} -eq 0 ]]; then
+            echo "No runtime.json manifests found under image/" >&2
+            exit 1
+          fi
           for manifest in "${manifests[@]}"; do
+            echo "validating ${manifest}"
             jq -e '.schema_version == 2 and (.paths | type == "object")' "$manifest" >/dev/null \
               || { echo "${manifest} must declare schema_version == 2 with a paths object" >&2; exit 1; }
             for key in "${required_keys[@]}"; do

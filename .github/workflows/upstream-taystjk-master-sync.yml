@@ -126,10 +126,11 @@ jobs:
           set -euo pipefail
 
           docker run --rm --entrypoint /bin/sh "local/taystjk-upstream-sync:${{ steps.upstream.outputs.short_sha }}" -c '
-            test -x /opt/taystjk-dist/taystjkded.x86_64 &&
-            test -d /opt/taystjk-dist/taystjk &&
-            test -x /usr/local/bin/taystjk-antivpn &&
-            test -f /opt/taystjk-dist/.taystjk-upstream-commit
+            test -x /opt/jka/engine/taystjkded.x86_64 &&
+            test -d /opt/jka/engine-payload/taystjk &&
+            test -x /usr/local/bin/jka-antivpn &&
+            test -f /opt/jka/engine/.upstream-commit &&
+            test -f /opt/jka/runtime.json
           '
 
       - name: Compose published tag list
