@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/akiondev/jedi-academy-pterodactyl/blob/main/egg/egg-taystjk-pterodactyl.json"><strong>Download EGG</strong></a>
+  <a href="https://github.com/akiondev/jedi-academy-pterodactyl/blob/main/egg/egg-jka-taystjk-modern64-pterodactyl.json"><strong>Download EGG</strong></a>
   &nbsp;•&nbsp;
   <a href="https://github.com/taysta/TaystJK"><strong>TaystJK</strong></a>
   &nbsp;•&nbsp;
@@ -61,7 +61,7 @@ Warning: this is not an official Pterodactyl installation method. Follow the lin
 
 ## Quick install
 
-1. Import [egg/egg-taystjk-pterodactyl.json](egg/egg-taystjk-pterodactyl.json) into Pterodactyl.
+1. Import [egg/egg-jka-taystjk-modern64-pterodactyl.json](egg/egg-jka-taystjk-modern64-pterodactyl.json) into Pterodactyl.
 2. Create a server with the default image `ghcr.io/akiondev/jedi-academy-pterodactyl:latest` (or pin the runtime explicitly with `:taystjk`). A Docker Hub mirror is published in parallel at `docker.io/akiondev/jedi-academy-pterodactyl` when configured.
 3. Set `COPYRIGHT_ACKNOWLEDGED=true`.
 4. Add your legally owned Jedi Academy base assets manually into `/home/container/base`.
@@ -79,14 +79,16 @@ Warning: this is not an official Pterodactyl installation method. Follow the lin
 
 ## What this repo contains
 
-- `docker/Dockerfile` — source-built runtime image for TaystJK
-- `egg/egg-taystjk-pterodactyl.json` — importable Pterodactyl egg
+- `docker/taystjk-modern64/Dockerfile` — source-built runtime image for TaystJK
+- `egg/egg-jka-taystjk-modern64-pterodactyl.json` — importable Pterodactyl egg
 - `scripts/entrypoint.sh` — runtime preparation and launch helper
 - `scripts/install_taystjk.sh` — standalone install helper
 - `cmd/taystjk-antivpn` — Go-based anti-VPN supervisor for runtime join checks
 - `docs/addon_readme.md` — compact addon usage guide with quick examples
 - `docs/addon_readme_advanced.md` — full addon reference for developers and AI-guided scripting
 - `docs/anti-vpn.md` — anti-VPN design, variables, scoring and operating notes
+- `docs/operator-sheet.md` — short panel-only crib sheet per legacy32 family
+- `docs/panel-testing.md` — full step-by-step Pterodactyl panel walkthrough
 
 ## Key behavior
 
@@ -165,8 +167,8 @@ Read [docs/addon_readme.md](docs/addon_readme.md) for the compact addon guide an
 
 - Start with [scripts/entrypoint.sh](scripts/entrypoint.sh) if you want to understand the managed runtime flow, startup preparation, addon execution, helper refresh, and server launch path.
 - Use [scripts/install_taystjk.sh](scripts/install_taystjk.sh) to understand the standalone install flow and what the egg installer prepares automatically.
-- Read [egg/egg-taystjk-pterodactyl.json](egg/egg-taystjk-pterodactyl.json) for the panel-facing variable contract and install/startup behavior exposed in Pterodactyl.
-- Check [docker/Dockerfile](docker/Dockerfile) for the official runtime image build, source-built TaystJK packaging, and the current addon tool baseline shipped in the image.
+- Read [egg/egg-jka-taystjk-modern64-pterodactyl.json](egg/egg-jka-taystjk-modern64-pterodactyl.json) for the panel-facing variable contract and install/startup behavior exposed in Pterodactyl.
+- Check [docker/taystjk-modern64/Dockerfile](docker/taystjk-modern64/Dockerfile) for the official runtime image build, source-built TaystJK packaging, and the current addon tool baseline shipped in the image.
 
 ### Project areas
 
