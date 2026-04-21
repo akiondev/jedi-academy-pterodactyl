@@ -73,9 +73,17 @@ parse_extra_startup_args() {
   EXTRA_STARTUP_ARGV=("$@")
 }
 
+image_ships_taystjk_payload() {
+  [[ -d "${JKA_PATH_ENGINE_PAYLOAD_ROOT}/taystjk" ]]
+}
+
 determine_runtime_ownership() {
   if is_image_managed_server_binary "$server_binary_name"; then
-    SERVER_BINARY_OWNERSHIP="image-managed TaystJK"
+    if image_ships_taystjk_payload; then
+      SERVER_BINARY_OWNERSHIP="image-managed TaystJK"
+    else
+      SERVER_BINARY_OWNERSHIP="image-managed"
+    fi
   else
     SERVER_BINARY_OWNERSHIP="manual user-supplied"
   fi
@@ -208,10 +216,12 @@ print_asset_detection() {
     warn "Base assets missing"
   fi
 
-  if [[ -d /home/container/taystjk ]]; then
-    ok "Bundled TaystJK files found"
-  else
-    warn "Bundled TaystJK files missing"
+  if image_ships_taystjk_payload; then
+    if [[ -d /home/container/taystjk ]]; then
+      ok "Bundled TaystJK files found"
+    else
+      warn "Bundled TaystJK files missing"
+    fi
   fi
 }
 
