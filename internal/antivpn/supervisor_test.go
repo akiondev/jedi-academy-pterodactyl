@@ -282,3 +282,98 @@ func TestHandleLogLineClearsTrackedConnectionStateOnDisconnect(t *testing.T) {
 		t.Fatal("expected tracked slot state to be cleared on disconnect")
 	}
 }
+
+func TestClearConnectionStateClearsSeenEvents(t *testing.T) {
+	supervisor := &Supervisor{
+		connectionState: map[string]slotConnectionState{
+			"0": {
+				Addr:       netip.MustParseAddr("83.249.104.192"),
+				PlayerName: "Player",
+				SeenAt:     time.Now().UTC(),
+			},
+		},
+		seenEvents: map[string]time.Time{
+			"0|83.249.104.192": time.Now().UTC(),
+		},
+	}
+
+	supervisor.clearConnectionState("0")
+
+	if _, ok := supervisor.connectionState["0"]; ok {
+		t.Fatal("expected connection state to be cleared on disconnect")
+	}
+
+	supervisor.seenMu.Lock()
+	_, seenExists := supervisor.seenEvents["0|83.249.104.192"]
+	supervisor.seenMu.Unlock()
+
+	if seenExists {
+		t.Fatal("expected seenEvents entry to be cleared on disconnect so rapid reconnects get a fresh check")
+	}
+}
+
+func TestHandleLogLineSkipsCheckOnUserinfoWithoutIP(t *testing.T) {
+	supervisor := &Supervisor{
+		cfg: Config{EventDedupeInterval: 90 * time.Second},
+		connectionState: map[string]slotConnectionState{
+			"3": {
+				Addr:       netip.MustParseAddr("198.51.100.25"),
+				PlayerName: "OldName",
+				SeenAt:     time.Now().UTC(),
+			},
+		},
+		seenEvents: make(map[string]time.Time),
+		checkSlots: make(chan struct{}, 8),
+	}
+
+	// Simulate a team/name change with no IP field — should not trigger a check.
+	supervisor.handleLogLine(context.Background(), io.Discard,
+		`2026-01-17 22:16:15 ClientUserinfoChanged: 3 n\NewName\t\3\model\jeditrainer/blue`,
+		"stdout")
+
+	supervisor.seenMu.Lock()
+	seenCount := len(supervisor.seenEvents)
+	supervisor.seenMu.Unlock()
+
+	if seenCount != 0 {
+		t.Fatalf("expected no seenEvents after a name/team-only userinfo change, got %d", seenCount)
+	}
+
+	state, ok := supervisor.lookupConnectionState("3")
+	if !ok {
+		t.Fatal("expected connection state to still exist after name-only userinfo change")
+	}
+	if state.PlayerName != "NewName" {
+		t.Fatalf("expected player name updated to NewName, got %q", state.PlayerName)
+	}
+}
+
+func TestHandleLogLineSkipsCheckOnUserinfoWithSameIP(t *testing.T) {
+	supervisor := &Supervisor{
+		cfg: Config{EventDedupeInterval: 90 * time.Second},
+		connectionState: map[string]slotConnectionState{
+			"3": {
+				Addr:       netip.MustParseAddr("198.51.100.25"),
+				PlayerName: "Player",
+				SeenAt:     time.Now().UTC(),
+			},
+		},
+		seenEvents: make(map[string]time.Time),
+		checkSlots: make(chan struct{}, 8),
+	}
+
+	// Simulate a ClientUserinfoChanged with the same IP that the engine already tracks.
+	// Should not call processConnectionEvent (seenEvents must remain empty and no panic
+	// from a nil engine).
+	supervisor.handleLogLine(context.Background(), io.Discard,
+		`2026-04-16 17:28:09 ClientUserinfoChanged: 3 n\Player\t\3\ip\198.51.100.25:29070\cl_guid\abc123`,
+		"stdout")
+
+	supervisor.seenMu.Lock()
+	seenCount := len(supervisor.seenEvents)
+	supervisor.seenMu.Unlock()
+
+	if seenCount != 0 {
+		t.Fatalf("expected no seenEvents after userinfo change with unchanged IP, got %d", seenCount)
+	}
+}

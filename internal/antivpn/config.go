@@ -34,6 +34,7 @@ type Config struct {
 	ProviderMinInterval   time.Duration
 	LogPollInterval       time.Duration
 	BroadcastCooldown     time.Duration
+	EventDedupeInterval   time.Duration
 	BanCommand            string
 	KickCommand           string
 	BroadcastPassCommand  string
@@ -61,6 +62,7 @@ func LoadConfigFromEnv() (Config, error) {
 		ProviderMinInterval:  envDuration("ANTI_VPN_PROVIDER_MIN_INTERVAL", 250*time.Millisecond),
 		LogPollInterval:      envDuration("ANTI_VPN_LOG_POLL_INTERVAL", 750*time.Millisecond),
 		BroadcastCooldown:    envDuration("ANTI_VPN_BROADCAST_COOLDOWN", 90*time.Second),
+		EventDedupeInterval:  envDuration("ANTI_VPN_EVENT_DEDUPE_INTERVAL", 90*time.Second),
 		BanCommand:           envString("ANTI_VPN_BAN_COMMAND", ""),
 		KickCommand:          envString("ANTI_VPN_KICK_COMMAND", "clientkick %SLOT%"),
 		BroadcastPassCommand: envString("ANTI_VPN_BROADCAST_PASS_TEMPLATE", `say [Anti-VPN] VPN PASS: %PLAYER% cleared checks (%SCORE%/%THRESHOLD%). %SUMMARY%`),
@@ -105,6 +107,9 @@ func LoadConfigFromEnv() (Config, error) {
 	}
 	if cfg.BroadcastCooldown < 0 {
 		return Config{}, fmt.Errorf("ANTI_VPN_BROADCAST_COOLDOWN must be zero or greater")
+	}
+	if cfg.EventDedupeInterval <= 0 {
+		return Config{}, fmt.Errorf("ANTI_VPN_EVENT_DEDUPE_INTERVAL must be greater than zero")
 	}
 	if cfg.RetryCount < 0 || cfg.RetryCount > 5 {
 		return Config{}, fmt.Errorf("ANTI_VPN_RETRY_COUNT must be between 0 and 5")

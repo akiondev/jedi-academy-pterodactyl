@@ -183,6 +183,7 @@ Allowlisted addresses always bypass anti-VPN scoring.
 - `ANTI_VPN_BROADCAST_BLOCK_TEMPLATE`
 - `ANTI_VPN_BAN_COMMAND`
 - `ANTI_VPN_KICK_COMMAND`
+- `ANTI_VPN_EVENT_DEDUPE_INTERVAL`
 
 ## Enforcement notes
 
@@ -203,6 +204,8 @@ Recommended enforcement mode defaults:
 ## Operational notes
 
 - Primary event capture happens from the live server stdout stream, with the resolved active server log path used as a fallback path.
+- A check is triggered on `ClientConnect`, and on `ClientUserinfoChanged` only when the userinfo line carries a new or changed IP address. Name changes, team switches, and other userinfo updates that do not carry an IP field are ignored by the check pipeline — the player's display name is updated in tracked state but no API call is made.
+- When a player disconnects, the event dedupe entry for that slot is cleared immediately so that a new player joining the same slot gets a fresh check even within the dedupe window (`ANTI_VPN_EVENT_DEDUPE_INTERVAL`).
 - Custom startup commands bypass the normal anti-VPN supervisor path and are logged as such by the entrypoint.
 - Anonymous provider access is allowed for `proxycheck.io` and `ipapi.is`, but production deployments should still configure API keys there as well to avoid low shared limits.
 - `IPQualityScore`, `IPLocate`, `IPHub`, and `vpnapi.io` are only active when their API keys are configured.

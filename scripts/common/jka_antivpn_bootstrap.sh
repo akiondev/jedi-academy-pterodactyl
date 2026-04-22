@@ -2,9 +2,8 @@
 #
 # scripts/common/jka_antivpn_bootstrap.sh
 #
-# PR-A skeleton: anti-VPN configuration and reporting helpers.
-# Functions are textually copied from scripts/entrypoint.sh and are NOT
-# sourced by the runtime yet (see scripts/common/README.md).
+# Anti-VPN configuration and reporting helpers.
+# Sourced by scripts/entrypoint.sh as part of the shared runtime layer.
 #
 # Requires: jka_runtime_common.sh sourced first (for `info`, `ok`,
 # `warn`, `debug`, `kv`, `kv_highlight`, `kv_value`, `bool_state`,
@@ -40,6 +39,7 @@ configure_anti_vpn() {
   : "${ANTI_VPN_BROADCAST_BLOCK_TEMPLATE:=say [Anti-VPN] VPN BLOCKED: %PLAYER% triggered anti-VPN (%SCORE%/%THRESHOLD%). %SUMMARY%}"
   : "${ANTI_VPN_BAN_COMMAND:=}"
   : "${ANTI_VPN_KICK_COMMAND:=clientkick %SLOT%}"
+  : "${ANTI_VPN_EVENT_DEDUPE_INTERVAL:=90s}"
   : "${ANTI_VPN_LOG_PATH:=$(active_server_log_path)}"
 
   ANTI_VPN_MODE_NORMALIZED="$(printf '%s' "$ANTI_VPN_MODE" | tr '[:upper:]' '[:lower:]')"
@@ -150,6 +150,7 @@ print_anti_vpn_summary() {
   debug "Cache flush: ${ANTI_VPN_CACHE_FLUSH_INTERVAL}"
   debug "Timeout: ${ANTI_VPN_TIMEOUT_MS}"
   debug "Broadcast cooldown: ${ANTI_VPN_BROADCAST_COOLDOWN}"
+  debug "Event dedupe interval: ${ANTI_VPN_EVENT_DEDUPE_INTERVAL}"
 
   if [[ "$ANTI_VPN_EFFECTIVE_MODE" == "off" ]]; then
     warn "Anti-VPN supervision is disabled"

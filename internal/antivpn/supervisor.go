@@ -370,17 +370,23 @@ func (s *Supervisor) handleLogLine(ctx context.Context, stdin io.Writer, line st
 		return
 	}
 
-	if hasAddr {
-		s.storeConnectionState(slot, addr, playerName)
-	} else {
-		state, found := s.lookupConnectionState(slot)
-		if !found || !state.Addr.IsValid() {
-			return
+	if !hasAddr {
+		// Name/team-only userinfo change: update display name in tracked state but do
+		// not trigger a new connection check. The player was already checked on
+		// ClientConnect or the first ClientUserinfoChanged that carried an IP.
+		if strings.TrimSpace(playerName) != "" {
+			s.updateConnectionStateName(slot, playerName)
 		}
-		addr = state.Addr
-		if strings.TrimSpace(playerName) == "" {
-			playerName = state.PlayerName
-		}
+		return
+	}
+
+	// IP is present: only trigger a check when the address is genuinely new for this
+	// slot's active session. Subsequent ClientUserinfoChanged lines with the same IP
+	// (common in JKA on team/model changes) would otherwise re-queue redundant checks.
+	prevState, hasPrevState := s.lookupConnectionState(slot)
+	s.storeConnectionState(slot, addr, playerName)
+	if hasPrevState && prevState.Addr.IsValid() && prevState.Addr == addr {
+		return
 	}
 
 	s.processConnectionEvent(ctx, stdin, source, slot, addr, playerName)
@@ -457,8 +463,32 @@ func (s *Supervisor) clearConnectionState(slot string) {
 	}
 
 	s.connectionMu.Lock()
-	defer s.connectionMu.Unlock()
+	state, hasState := s.connectionState[slot]
 	delete(s.connectionState, slot)
+	s.connectionMu.Unlock()
+
+	// Also clear the dedupe entry for this slot so that a new player joining the
+	// same slot after a disconnect gets a fresh check even within the dedupe window.
+	if hasState && state.Addr.IsValid() {
+		s.seenMu.Lock()
+		delete(s.seenEvents, slot+"|"+state.Addr.String())
+		s.seenMu.Unlock()
+	}
+}
+
+func (s *Supervisor) updateConnectionStateName(slot, playerName string) {
+	if strings.TrimSpace(slot) == "" || strings.TrimSpace(playerName) == "" {
+		return
+	}
+
+	s.connectionMu.Lock()
+	defer s.connectionMu.Unlock()
+
+	if state, ok := s.connectionState[slot]; ok {
+		state.PlayerName = playerName
+		state.SeenAt = time.Now().UTC()
+		s.connectionState[slot] = state
+	}
 }
 
 func (s *Supervisor) enforceDecision(stdin io.Writer, slot string, addr netip.Addr, decision Decision) {
@@ -648,7 +678,7 @@ func (s *Supervisor) markEvent(key string) bool {
 		}
 	}
 
-	if seenAt, exists := s.seenEvents[key]; exists && now.Sub(seenAt) < 90*time.Second {
+	if seenAt, exists := s.seenEvents[key]; exists && now.Sub(seenAt) < s.cfg.EventDedupeInterval {
 		return false
 	}
 
