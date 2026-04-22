@@ -446,7 +446,7 @@ func (p *ipHubProvider) Lookup(ctx context.Context, ip netip.Addr) ProviderResul
 		return result
 	}
 
-	endpoint := fmt.Sprintf("http://v2.api.iphub.info/ip/%s", url.PathEscape(ip.String()))
+	endpoint := fmt.Sprintf("https://v2.api.iphub.info/ip/%s", url.PathEscape(ip.String()))
 	var payload ipHubResponse
 	status, err := getJSON(ctx, p.base, endpoint, map[string]string{"X-Key": p.apiKey}, &payload)
 	result.HTTPStatus = status

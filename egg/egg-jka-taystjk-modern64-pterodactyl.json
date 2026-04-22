@@ -450,6 +450,16 @@
       "user_editable": true,
       "rules": "required|string|max:128",
       "field_type": "text"
+    },
+    {
+      "name": "Anti-VPN Event Dedupe Interval",
+      "description": "Runtime variable. How long after a connection check is recorded before the same slot+IP combination can trigger another check. Supports Go-style durations such as 60s or 90s.",
+      "env_variable": "ANTI_VPN_EVENT_DEDUPE_INTERVAL",
+      "default_value": "90s",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|max:32",
+      "field_type": "text"
     }
   ]
 }
