@@ -92,7 +92,6 @@ gating above is satisfied):
 
 - `taystjk-legacy32` — latest experimental TaystJK legacy32 master
   build (mutable).
-- `latest-taystjk-legacy32` — alias of the above (mutable).
 - `taystjk-legacy32-master-<short_sha>` — pinned to an upstream
   TaystJK commit (immutable).
 

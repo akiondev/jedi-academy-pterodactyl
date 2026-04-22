@@ -51,28 +51,32 @@ for details.
 
 ## Tag policy
 
-| Tag                           | Meaning                                                                         | Stability                                      |
-| ----------------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------- |
-| `latest`                      | Current platform default. Today this points at the latest TaystJK master build. | Mutable. May change runtime in the future.     |
-| `taystjk`                     | Latest TaystJK master build. Today identical to `latest`.                       | Mutable. Always a TaystJK build.               |
-| `taystjk-master-<short_sha>`  | TaystJK master, pinned to an upstream commit.                                   | Immutable per upstream commit.                 |
-| `master-<short_sha>`          | Legacy alias of `taystjk-master-<short_sha>`. Kept for backward compatibility.  | Immutable per upstream commit.                 |
-| `v<semver>`                   | Repository release tags.                                                        | Immutable.                                     |
-| `openjk-modern64`                         | Latest OpenJK modern64 (`JACoders/OpenJK` master) build.        | Mutable. Always an OpenJK modern64 build.      |
-| `latest-openjk-modern64`                  | Alias of `openjk-modern64`.                                     | Mutable. Always an OpenJK modern64 build.      |
-| `openjk-modern64-master-<short_sha>`      | OpenJK modern64, pinned to an upstream commit.                  | Immutable per upstream commit.                 |
-| `openjk-legacy32`                         | Latest OpenJK legacy32 (`JACoders/OpenJK` master, i386) build.  | Mutable. Always an OpenJK legacy32 build.      |
-| `latest-openjk-legacy32`                  | Alias of `openjk-legacy32`.                                     | Mutable. Always an OpenJK legacy32 build.      |
-| `openjk-legacy32-master-<short_sha>`      | OpenJK legacy32, pinned to an upstream commit.                  | Immutable per upstream commit.                 |
-| `vanilla-legacy32`                        | Latest vanilla legacy32 runtime image (operator-supplied engine). | Mutable. Always a vanilla legacy32 runtime image. |
-| `latest-vanilla-legacy32`                 | Alias of `vanilla-legacy32`.                                    | Mutable. Always a vanilla legacy32 runtime image. |
-| `vanilla-legacy32-master-<short_sha>`     | Vanilla legacy32 runtime image, pinned to a repository commit.  | Immutable per repository commit.               |
-| `ybeproxy-legacy32`                       | Latest YBEProxy legacy32 (`Yberion/JKA_YBEProxy` main, i386) build. | Mutable. Always a YBEProxy legacy32 build.    |
-| `latest-ybeproxy-legacy32`                | Alias of `ybeproxy-legacy32`.                                   | Mutable. Always a YBEProxy legacy32 build.    |
-| `ybeproxy-legacy32-main-<short_sha>`      | YBEProxy legacy32, pinned to an upstream commit.                | Immutable per upstream commit.                |
-| `taystjk-legacy32`                        | Latest experimental TaystJK legacy32 (`taysta/TaystJK` master, i386, MP dedicated only) build. Publish-gated. | Mutable. Experimental. Always a TaystJK legacy32 build. |
-| `latest-taystjk-legacy32`                 | Alias of `taystjk-legacy32`. Publish-gated.                     | Mutable. Experimental.                        |
-| `taystjk-legacy32-master-<short_sha>`     | TaystJK legacy32, pinned to an upstream commit. Publish-gated.  | Immutable per upstream commit. Experimental.  |
+Every runtime family follows the same two-tag structure:
+
+- One **mutable** tag — `<runtime>` — always points at the latest build on the default branch.
+- One **immutable** tag — `<runtime>-<branch>-<short_sha>` — pinned to a specific upstream commit.
+
+The platform default (`taystjk-modern64`) additionally receives:
+
+- `latest` — the single bare mutable alias for the whole platform.
+- `v<semver>` — published on repository release tags.
+
+| Tag                                       | Meaning                                                                              | Stability                                      |
+| ----------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------- |
+| `latest`                                  | Platform default. Points at the latest `taystjk-modern64` build.                    | Mutable. Only one `latest` exists.             |
+| `v<semver>`                               | Repository release tag. Publishes the `taystjk-modern64` image at that point.       | Immutable.                                     |
+| `taystjk-modern64`                        | Latest TaystJK modern64 (`taysta/TaystJK` master) build. Identical to `latest`.     | Mutable. Always a TaystJK modern64 build.      |
+| `taystjk-modern64-master-<short_sha>`     | TaystJK modern64, pinned to an upstream commit.                                      | Immutable per upstream commit.                 |
+| `openjk-modern64`                         | Latest OpenJK modern64 (`JACoders/OpenJK` master) build.                             | Mutable. Always an OpenJK modern64 build.      |
+| `openjk-modern64-master-<short_sha>`      | OpenJK modern64, pinned to an upstream commit.                                       | Immutable per upstream commit.                 |
+| `openjk-legacy32`                         | Latest OpenJK legacy32 (`JACoders/OpenJK` master, i386) build.                      | Mutable. Always an OpenJK legacy32 build.      |
+| `openjk-legacy32-master-<short_sha>`      | OpenJK legacy32, pinned to an upstream commit.                                       | Immutable per upstream commit.                 |
+| `vanilla-legacy32`                        | Latest vanilla legacy32 runtime image (operator-supplied engine).                    | Mutable. Always a vanilla legacy32 runtime image. |
+| `vanilla-legacy32-master-<short_sha>`     | Vanilla legacy32 runtime image, pinned to a repository commit.                       | Immutable per repository commit.               |
+| `ybeproxy-legacy32`                       | Latest YBEProxy legacy32 (`Yberion/JKA_YBEProxy` main, i386) build.                 | Mutable. Always a YBEProxy legacy32 build.     |
+| `ybeproxy-legacy32-main-<short_sha>`      | YBEProxy legacy32, pinned to an upstream commit.                                     | Immutable per upstream commit.                 |
+| `taystjk-legacy32`                        | Latest experimental TaystJK legacy32 (`taysta/TaystJK` master, i386). Publish-gated. | Mutable. Experimental. Always a TaystJK legacy32 build. |
+| `taystjk-legacy32-master-<short_sha>`     | TaystJK legacy32, pinned to an upstream commit. Publish-gated.                       | Immutable per upstream commit. Experimental.   |
 
 ### Defaults that operators see
 
@@ -80,28 +84,21 @@ The egg exposes the following entries in `docker_images` (Pterodactyl will
 show the first as the default selection):
 
 1. `Jedi Academy Pterodactyl (latest, GHCR)` → `ghcr.io/akiondev/jedi-academy-pterodactyl:latest`
-2. `Jedi Academy Pterodactyl (TaystJK runtime, GHCR)` → `ghcr.io/akiondev/jedi-academy-pterodactyl:taystjk`
+2. `Jedi Academy Pterodactyl (TaystJK runtime, GHCR)` → `ghcr.io/akiondev/jedi-academy-pterodactyl:taystjk-modern64`
 3. `Jedi Academy Pterodactyl (latest, Docker Hub mirror)` → `docker.io/akiondev/jedi-academy-pterodactyl:latest`
-4. `Jedi Academy Pterodactyl (TaystJK runtime, Docker Hub mirror)` → `docker.io/akiondev/jedi-academy-pterodactyl:taystjk`
+4. `Jedi Academy Pterodactyl (TaystJK runtime, Docker Hub mirror)` → `docker.io/akiondev/jedi-academy-pterodactyl:taystjk-modern64`
 
 Operators that want to be insulated from a future runtime change should
-choose an explicit `taystjk*` tag rather than `latest`.
+choose an explicit `taystjk-modern64*` tag rather than `latest`.
 
 ## Multi-runtime roadmap
 
-When a second runtime (for example OpenJK) is actually integrated, the
-following additive changes are planned:
+All runtime families are now integrated and published from this repository.
+Each new runtime family added in the future follows the same two-tag model:
+`<runtime>` (mutable) + `<runtime>-<branch>-<short_sha>` (immutable).
 
-- Add a runtime-specific Dockerfile or build stage selected by build arg.
-- Publish runtime-specific tags (`openjk`, `openjk-<ref>`) under the same
-  platform image name.
-- Ship a parallel egg, e.g. `egg/egg-openjk-pterodactyl.json`, alongside
-  the existing TaystJK egg, instead of overloading a single egg.
-- Decide at that point whether `latest` should remain TaystJK-aliased or
-  be repointed. Until then, `latest == taystjk`.
-
-The platform image name and the existing TaystJK tags do **not** need to
-change when the second runtime is introduced.
+The platform image name and the existing tags do **not** need to change
+when additional runtimes are introduced.
 
 ## What is intentionally not generalized today
 
@@ -132,18 +129,22 @@ because generalizing them before a second runtime exists would be premature:
 ## Migration note for operators
 
 Before this strategy was adopted, the image was published as
-`ghcr.io/akiondev/jedi-academy-taystjk`. After the rename, the same image
-content is published as `ghcr.io/akiondev/jedi-academy-pterodactyl`.
+`ghcr.io/akiondev/jedi-academy-taystjk`. It was then renamed to
+`ghcr.io/akiondev/jedi-academy-pterodactyl`. The TaystJK-specific bare
+`taystjk` tag has now been replaced by `taystjk-modern64` to follow the
+unified tag scheme.
 
 To migrate an existing Pterodactyl server:
 
 1. Edit the server's docker image in the Pterodactyl panel.
-2. Replace `ghcr.io/akiondev/jedi-academy-taystjk:<tag>` with
-   `ghcr.io/akiondev/jedi-academy-pterodactyl:<tag>`.
+2. Replace the old image reference with the new one:
+   - `...:taystjk-taystjk` → `...:taystjk-modern64`
+   - `...:taystjk` → `...:taystjk-modern64`
+   - `...:latest` — no change needed; `latest` still points at TaystJK modern64.
 3. Restart the server. The TaystJK runtime is unchanged.
 
-The legacy GHCR package remains reachable for an interim period; it is
-not deleted as part of this rename.
+The legacy GHCR package `jedi-academy-taystjk` remains reachable for an
+interim period; it is not deleted.
 
 ## Versioning policy
 

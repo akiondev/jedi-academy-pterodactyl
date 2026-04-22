@@ -80,7 +80,6 @@ The YBEProxy legacy32 family currently publishes:
 
 - `ybeproxy-legacy32` — latest YBEProxy legacy32 main build
   (mutable).
-- `latest-ybeproxy-legacy32` — alias of the above (mutable).
 - `ybeproxy-legacy32-main-<short_sha>` — pinned to an upstream
   YBEProxy commit (immutable).
 

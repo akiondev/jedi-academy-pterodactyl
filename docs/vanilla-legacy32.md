@@ -77,8 +77,7 @@ See [`image-strategy.md`](image-strategy.md) for the full tag policy.
 The vanilla legacy32 family currently publishes:
 
 - `vanilla-legacy32` — latest vanilla legacy32 runtime image (mutable).
-- `latest-vanilla-legacy32` — alias of the above (mutable).
-- `vanilla-legacy32-<short_sha>` — pinned to a repository commit
+- `vanilla-legacy32-master-<short_sha>` — pinned to a repository commit
   (immutable). There is no upstream engine commit for this image
   because the engine itself is operator-supplied; the SHA reflects the
   state of the runtime image (Debian base, libraries, anti-VPN

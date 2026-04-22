@@ -62,7 +62,7 @@ Warning: this is not an official Pterodactyl installation method. Follow the lin
 ## Quick install
 
 1. Import [egg/egg-jka-taystjk-modern64-pterodactyl.json](egg/egg-jka-taystjk-modern64-pterodactyl.json) into Pterodactyl.
-2. Create a server with the default image `ghcr.io/akiondev/jedi-academy-pterodactyl:latest` (or pin the runtime explicitly with `:taystjk`). A Docker Hub mirror is published in parallel at `docker.io/akiondev/jedi-academy-pterodactyl` when configured.
+2. Create a server with the default image `ghcr.io/akiondev/jedi-academy-pterodactyl:latest` (or pin the runtime explicitly with `:taystjk-modern64`). A Docker Hub mirror is published in parallel at `docker.io/akiondev/jedi-academy-pterodactyl` when configured.
 3. Set `COPYRIGHT_ACKNOWLEDGED=true`.
 4. Add your legally owned Jedi Academy base assets manually into `/home/container/base`.
 5. Start the server and verify that `/home/container/base/assets0.pk3` exists.
