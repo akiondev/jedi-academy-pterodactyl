@@ -65,7 +65,6 @@ See [`image-strategy.md`](image-strategy.md) for the full tag policy.
 The OpenJK legacy32 family currently publishes:
 
 - `openjk-legacy32` — latest OpenJK legacy32 master build (mutable).
-- `latest-openjk-legacy32` — alias of the above (mutable).
 - `openjk-legacy32-master-<short_sha>` — pinned to an upstream OpenJK
   commit (immutable).
 

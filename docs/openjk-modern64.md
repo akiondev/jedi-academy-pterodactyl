@@ -59,7 +59,6 @@ See [`image-strategy.md`](image-strategy.md) for the full tag policy.
 The OpenJK modern64 family currently publishes:
 
 - `openjk-modern64` — latest OpenJK modern64 master build (mutable).
-- `latest-openjk-modern64` — alias of the above (mutable).
 - `openjk-modern64-master-<short_sha>` — pinned to an upstream OpenJK
   commit (immutable).
 
