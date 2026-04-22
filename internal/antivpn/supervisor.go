@@ -486,7 +486,6 @@ func (s *Supervisor) updateConnectionStateName(slot, playerName string) {
 
 	if state, ok := s.connectionState[slot]; ok {
 		state.PlayerName = playerName
-		state.SeenAt = time.Now().UTC()
 		s.connectionState[slot] = state
 	}
 }
