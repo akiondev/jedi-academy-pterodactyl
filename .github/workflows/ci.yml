@@ -577,43 +577,37 @@ jobs:
                 cat <<TAGS
           type=ref,event=tag
           type=raw,value=latest,enable={{is_default_branch}}
-          type=raw,value=taystjk,enable={{is_default_branch}}
-          type=raw,value=master-${SHORT_SHA}
-          type=raw,value=taystjk-master-${SHORT_SHA}
+          type=raw,value=taystjk-modern64,enable={{is_default_branch}}
+          type=raw,value=taystjk-modern64-master-${SHORT_SHA}
           TAGS
                 ;;
               openjk-modern64)
                 cat <<TAGS
           type=raw,value=openjk-modern64,enable={{is_default_branch}}
-          type=raw,value=latest-openjk-modern64,enable={{is_default_branch}}
           type=raw,value=openjk-modern64-master-${SHORT_SHA}
           TAGS
                 ;;
               openjk-legacy32)
                 cat <<TAGS
           type=raw,value=openjk-legacy32,enable={{is_default_branch}}
-          type=raw,value=latest-openjk-legacy32,enable={{is_default_branch}}
           type=raw,value=openjk-legacy32-master-${SHORT_SHA}
           TAGS
                 ;;
               vanilla-legacy32)
                 cat <<TAGS
           type=raw,value=vanilla-legacy32,enable={{is_default_branch}}
-          type=raw,value=latest-vanilla-legacy32,enable={{is_default_branch}}
           type=raw,value=vanilla-legacy32-master-${SHORT_SHA}
           TAGS
                 ;;
               ybeproxy-legacy32)
                 cat <<TAGS
           type=raw,value=ybeproxy-legacy32,enable={{is_default_branch}}
-          type=raw,value=latest-ybeproxy-legacy32,enable={{is_default_branch}}
           type=raw,value=ybeproxy-legacy32-main-${SHORT_SHA}
           TAGS
                 ;;
               taystjk-legacy32)
                 cat <<TAGS
           type=raw,value=taystjk-legacy32,enable={{is_default_branch}}
-          type=raw,value=latest-taystjk-legacy32,enable={{is_default_branch}}
           type=raw,value=taystjk-legacy32-master-${SHORT_SHA}
           TAGS
                 ;;

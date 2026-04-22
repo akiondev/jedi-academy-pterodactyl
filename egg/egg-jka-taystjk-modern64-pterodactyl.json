@@ -1,465 +1,465 @@
 {
-  "_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PTERODACTYL PANEL - Pterodactyl\u00ae https://pterodactyl.io",
-  "meta": {
-    "version": "PTDL_v2",
-    "update_url": null
-  },
-  "exported_at": "2026-04-16T14:05:00+02:00",
-  "name": "TaystJK",
-  "author": "admin@example.com",
-  "description": "Runs TaystJK dedicated server on Pterodactyl from a source-built runtime image without bundling copyrighted Jedi Academy game assets. TaystJK remains the default and only automatically managed runtime path. Users may still point startup at manually uploaded alternative binaries or mod folders when they explicitly provide them. Includes a lightweight runtime addon loader for user-owned top-level Bash and Python scripts under /home/container/addons, plus image-managed addon docs, examples, and helper defaults inside that addon area, and an optional anti-VPN runtime supervisor with stdout-first event capture, online API checks, local cache, public decision broadcasts, audit logging, allowlist support and weighted log-only/block decisions.",
-  "features": [],
-  "docker_images": {
-    "Jedi Academy Pterodactyl (latest, GHCR)": "ghcr.io/akiondev/jedi-academy-pterodactyl:latest",
-    "Jedi Academy Pterodactyl (TaystJK runtime, GHCR)": "ghcr.io/akiondev/jedi-academy-pterodactyl:taystjk",
-    "Jedi Academy Pterodactyl (latest, Docker Hub mirror)": "docker.io/akiondev/jedi-academy-pterodactyl:latest",
-    "Jedi Academy Pterodactyl (TaystJK runtime, Docker Hub mirror)": "docker.io/akiondev/jedi-academy-pterodactyl:taystjk"
-  },
-  "file_denylist": [],
-  "startup": "--panel-startup",
-  "config": {
-    "files": "{}",
-    "startup": "{\"done\": \"Resolving master.jkhub.org\"}",
-    "logs": "{}",
-    "stop": "quit"
-  },
-  "scripts": {
-    "installation": {
-      "script": "#!/bin/bash\nset -euo pipefail\nmkdir -p /mnt/server\ncd /mnt/server\ncat > /tmp/install_taystjk.sh <<'EOS'\n#!/usr/bin/env bash\nset -euo pipefail\n\nCOLOR_RESET=\"\"\nCOLOR_BOLD=\"\"\nCOLOR_INFO=\"\"\nCOLOR_OK=\"\"\nCOLOR_WARN=\"\"\nCOLOR_ERROR=\"\"\n\nsetup_colors() {\n  if [[ -t 1 && -z \"${NO_COLOR:-}\" ]]; then\n    COLOR_RESET=$'\\033[0m'\n    COLOR_BOLD=$'\\033[1m'\n    COLOR_INFO=$'\\033[36m'\n    COLOR_OK=$'\\033[32m'\n    COLOR_WARN=$'\\033[33m'\n    COLOR_ERROR=$'\\033[31m'\n  fi\n}\n\nprint_header() {\n  printf '%s\\n' \"============================================================\"\n  printf '%s\\n' \" TaystJK Installer\"\n  printf '%s\\n' \" Created by akiondev\"\n  printf '%s\\n\\n' \"============================================================\"\n}\n\nsection() {\n  printf '%b\\n' \"${COLOR_BOLD}${1}${COLOR_RESET}\"\n}\n\nkv() {\n  printf '%-16s %s\\n' \"$1\" \"$2\"\n}\n\ninfo() {\n  printf '%b\\n' \"${COLOR_INFO}[INFO]${COLOR_RESET} $*\"\n}\n\nok() {\n  printf '%b\\n' \"${COLOR_OK}[ OK ]${COLOR_RESET} $*\"\n}\n\nwarn() {\n  printf '%b\\n' \"${COLOR_WARN}[WARN]${COLOR_RESET} $*\"\n}\n\nlog() {\n  info \"$*\"\n}\n\nfail() {\n  printf '%b\\n' \"${COLOR_ERROR}[ERROR]${COLOR_RESET} $*\" >&2\n  printf '\\n' >&2\n  section \"What to Check Next\" >&2\n  printf '%s\\n' \"- Confirm /mnt/server/base/assets0.pk3 exists and comes from your own legally owned Jedi Academy installation\" >&2\n  printf '%s\\n' \"- Confirm COPYRIGHT_ACKNOWLEDGED is set to true\" >&2\n  printf '%s\\n' \"- Confirm the selected mod directory and config names are valid\" >&2\n  exit 1\n}\n\nrequire_safe_component() {\n  local value=\"$1\"\n  local variable_name=\"$2\"\n\n  if [[ -z \"$value\" || \"$value\" == \".\" || \"$value\" == \"..\" || \"$value\" == *\"/\"* || \"$value\" == *\"\\\\\"* || ! \"$value\" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then\n    fail \"${variable_name} must be a simple relative name using only letters, numbers, dots, underscores or dashes\"\n  fi\n}\n\nresolve_active_game_dir() {\n  local requested=\"$1\"\n  local requested_lower\n\n  requested_lower=\"$(printf '%s' \"$requested\" | tr '[:upper:]' '[:lower:]')\"\n  if [[ -z \"$requested_lower\" || \"$requested_lower\" == \"base\" ]]; then\n    printf 'base\\n'\n    return\n  fi\n\n  require_safe_component \"$requested\" \"FS_GAME_MOD\"\n  printf '%s\\n' \"$requested\"\n}\n\nis_taystjk_managed_mod_dir() {\n  local mod_dir=\"$1\"\n  [[ \"$mod_dir\" == \"taystjk\" ]]\n}\n\nis_base_mode() {\n  local mod_dir=\"$1\"\n  [[ \"$mod_dir\" == \"base\" ]]\n}\n\ndescribe_mod_ownership() {\n  local mod_dir=\"$1\"\n\n  if is_taystjk_managed_mod_dir \"$mod_dir\"; then\n    printf 'image-managed TaystJK\\n'\n  elif is_base_mode \"$mod_dir\"; then\n    printf 'manual base assets\\n'\n  else\n    printf 'manual user-supplied\\n'\n  fi\n}\n\nprepare_selected_mod_directory() {\n  local mod_path=\"/mnt/server/${active_game_dir}\"\n\n  if is_taystjk_managed_mod_dir \"$active_game_dir\"; then\n    mkdir -p \"$mod_path\"\n    return 0\n  fi\n\n  if is_base_mode \"$active_game_dir\"; then\n    return 0\n  fi\n\n  if [[ -d \"$mod_path\" ]]; then\n    return 0\n  fi\n\n  warn \"Configured manual mod directory ${active_game_dir} does not exist yet\"\n  warn \"Only taystjk is prepared automatically. Upload manual alternative mod folders into ${mod_path} before startup\"\n}\n\nprint_path_status() {\n  local label=\"$1\"\n  local path=\"$2\"\n  local kind=\"${3:-file}\"\n\n  if [[ \"$kind\" == \"dir\" ]]; then\n    if [[ -d \"$path\" ]]; then\n      ok \"${label}: found at ${path}\"\n    else\n      warn \"${label}: missing at ${path}\"\n    fi\n    return\n  fi\n\n  if [[ -f \"$path\" ]]; then\n    ok \"${label}: found at ${path}\"\n  else\n    warn \"${label}: missing at ${path}\"\n  fi\n}\n\nlist_dir_files() {\n  local path=\"$1\"\n  local pattern=\"${2:-*}\"\n  local files=()\n  local file\n  local result=\"\"\n\n  if [[ ! -d \"$path\" ]]; then\n    printf 'directory missing\\n'\n    return\n  fi\n\n  while IFS= read -r file; do\n    files+=(\"$file\")\n  done < <(\n    find \"$path\" -maxdepth 1 -type f -name \"$pattern\" -printf '%f\\n' 2>/dev/null | sort\n  )\n\n  for file in \"${files[@]}\"; do\n    if [[ -n \"$result\" ]]; then\n      result+=\", \"\n    fi\n    result+=\"$file\"\n  done\n\n  if [[ -n \"$result\" ]]; then\n    printf '%s\\n' \"$result\"\n  else\n    printf 'none detected\\n'\n  fi\n}\n\nprint_install_summary() {\n  section \"Installation Summary\"\n  kv \"Mod directory  :\" \"$active_game_dir\"\n  kv \"Mod mode       :\" \"$(describe_mod_ownership \"$active_game_dir\")\"\n  kv \"Server config  :\" \"${active_game_dir}/${SERVER_CONFIG}\"\n  kv \"Server port    :\" \"$SERVER_PORT\"\n  printf '\\n'\n}\n\nprint_install_checks() {\n  section \"Installation Checks\"\n  ok \"Server directories created\"\n  if is_taystjk_managed_mod_dir \"$active_game_dir\"; then\n    ok \"Managed TaystJK mod directory prepared at /mnt/server/${active_game_dir}\"\n  elif is_base_mode \"$active_game_dir\"; then\n    ok \"Base assets directory ready at /mnt/server/base\"\n  elif [[ -d \"/mnt/server/${active_game_dir}\" ]]; then\n    ok \"Manual mod directory detected at /mnt/server/${active_game_dir}\"\n  else\n    warn \"Manual mod directory is not present yet at /mnt/server/${active_game_dir}\"\n  fi\n  print_path_status \"Base assets\" \"/mnt/server/base/assets0.pk3\"\n  printf '\\n'\n}\n\nprint_install_inventory() {\n  section \"File Inventory\"\n  kv \"Base files      :\" \"$(list_dir_files /mnt/server/base 'assets*.pk3')\"\n  kv \"Mod files       :\" \"$(list_dir_files \"/mnt/server/${active_game_dir}\")\"\n  printf '\\n'\n}\n\nprint_install_result() {\n  section \"Result\"\n  info \"Installation complete\"\n  if [[ -f /mnt/server/base/assets0.pk3 ]]; then\n    ok \"Server can proceed to runtime startup checks\"\n  else\n    warn \"Upload your legally owned Jedi Academy base assets to /mnt/server/base\"\n  fi\n}\n\ncd /mnt/server\nsetup_colors\nprint_header\n\n: \"${COPYRIGHT_ACKNOWLEDGED:=false}\"\n: \"${SERVER_PORT:=29070}\"\n: \"${SERVER_CONFIG:=server.cfg}\"\n: \"${FS_GAME_MOD:=taystjk}\"\n\n[[ \"${COPYRIGHT_ACKNOWLEDGED}\" == \"true\" ]] || fail \"COPYRIGHT_ACKNOWLEDGED must be true. This egg does not distribute Jedi Academy assets.\"\n\nmkdir -p \\\n  /mnt/server/base \\\n  /mnt/server/logs \\\n  /mnt/server/addons \\\n  /mnt/server/addons/docs \\\n  /mnt/server/addons/examples \\\n  /mnt/server/addons/defaults \\\n  /tmp/taystjk-install\n\nrequire_safe_component \"$SERVER_CONFIG\" \"SERVER_CONFIG\"\nactive_game_dir=\"$(resolve_active_game_dir \"$FS_GAME_MOD\")\"\nprepare_selected_mod_directory\nprint_install_summary\n\nif is_taystjk_managed_mod_dir \"$active_game_dir\" && [[ ! -f \"/mnt/server/${active_game_dir}/${SERVER_CONFIG}\" ]]; then\n  cat > \"/mnt/server/${active_game_dir}/${SERVER_CONFIG}\" <<CFG\nseta sv_hostname \"TaystJK Pterodactyl Server\"\nseta g_motd \"Powered by TaystJK on Pterodactyl\"\nseta sv_maxclients \"16\"\nseta dedicated \"2\"\nseta net_port \"${SERVER_PORT}\"\nseta g_gametype \"0\"\nset d1 \"set g_gametype 0; map mp/ffa3; set nextmap vstr d1\"\nvstr d1\nCFG\nfi\n\ninfo \"Game assets are manual-only\"\nwarn \"This egg does not download, upload, fetch, or unpack Jedi Academy assets\"\nwarn \"Provide your own legally owned base assets manually in /mnt/server/base so that assets0.pk3 exists\"\n\nprint_install_checks\nprint_install_inventory\ninfo \"Selected fs_game mod directory: ${active_game_dir}\"\nif is_taystjk_managed_mod_dir \"$active_game_dir\"; then\n  ok \"taystjk remains the only automatically prepared mod directory\"\nelse\n  warn \"Selected mod directory ${active_game_dir} is treated as a manual user-owned path\"\n  warn \"Provide ${active_game_dir}/${SERVER_CONFIG} and any required mod files yourself before startup\"\nfi\n\nprint_install_result\n\nEOS\nchmod +x /tmp/install_taystjk.sh\n/tmp/install_taystjk.sh\n",
-      "container": "ghcr.io/pterodactyl/installers:debian",
-      "entrypoint": "bash"
-    }
-  },
-  "variables": [
-    {
-      "name": "Server Binary",
-      "description": "Runtime variable. Default image-managed dedicated server executable name built from TaystJK source. You may point this at a manually uploaded alternative binary, but only the TaystJK binary is automatically synced and maintained by the image.",
-      "env_variable": "SERVER_BINARY",
-      "default_value": "./taystjkded.x86_64",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|string|max:128|regex:/^(\\.\\/)?[A-Za-z0-9][A-Za-z0-9._-]*$/",
-      "field_type": "text"
-    },
-    {
-      "name": "fs_game Mod Directory",
-      "description": "Runtime variable. Active mod directory. Default is taystjk because the image-managed TaystJK runtime installs its bundled jaPRO-oriented content there. Use base for vanilla/base, or japlus, japro, mbii and other values only after manually uploading that mod folder yourself.",
-      "env_variable": "FS_GAME_MOD",
-      "default_value": "taystjk",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|string|max:64|regex:/^[A-Za-z0-9][A-Za-z0-9._-]*$/",
-      "field_type": "text"
-    },
-    {
-      "name": "Server Config",
-      "description": "Runtime variable. Configuration file executed at startup inside the active mod folder. The managed TaystJK default path can create this automatically when missing. Manual mod directories such as base, japlus, japro or mbii must provide their own config file.",
-      "env_variable": "SERVER_CONFIG",
-      "default_value": "server.cfg",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|string|max:64|regex:/^[A-Za-z0-9][A-Za-z0-9._-]*$/",
-      "field_type": "text"
-    },
-    {
-      "name": "Server Log Filename",
-      "description": "Runtime variable. Log filename inside the active mod folder. Default is server.log. Change this if your mod or server.cfg writes to a different log name, and managed helpers will follow the resolved active log path automatically.",
-      "env_variable": "SERVER_LOG_FILENAME",
-      "default_value": "server.log",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|string|max:64|regex:/^[A-Za-z0-9][A-Za-z0-9._-]*$/",
-      "field_type": "text"
-    },
-    {
-      "name": "Server Config Overrides Enabled",
-      "description": "Runtime variable. If true, non-empty override fields such as SERVER_RCON_PASSWORD, SERVER_HOSTNAME, SERVER_MOTD, SERVER_MAXCLIENTS and SERVER_GAMETYPE are written into the active server.cfg. If false, those config values stay user-owned and runtime helpers read directly from the active config/defaults.",
-      "env_variable": "SERVER_CFG_OVERRIDES_ENABLED",
-      "default_value": "true",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|string|in:true,false",
-      "field_type": "text"
-    },
-    {
-      "name": "Server RCON Password",
-      "description": "Runtime variable. Optional managed override for rconpassword in the active server.cfg when server config overrides are enabled. Leave blank to use the current config value instead. Addons and helper commands can read the effective value automatically through the runtime state files.",
-      "env_variable": "SERVER_RCON_PASSWORD",
-      "default_value": "",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "nullable|string|max:256",
-      "field_type": "text"
-    },
-    {
-      "name": "Server Hostname Override",
-      "description": "Runtime variable. Optional managed override for sv_hostname in the active server.cfg when server config overrides are enabled. Leave blank to use the current config value instead.",
-      "env_variable": "SERVER_HOSTNAME",
-      "default_value": "",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "nullable|string|max:256",
-      "field_type": "text"
-    },
-    {
-      "name": "Server MOTD Override",
-      "description": "Runtime variable. Optional managed override for g_motd in the active server.cfg when server config overrides are enabled. Leave blank to use the current config value instead.",
-      "env_variable": "SERVER_MOTD",
-      "default_value": "",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "nullable|string|max:256",
-      "field_type": "text"
-    },
-    {
-      "name": "Server Max Clients Override",
-      "description": "Runtime variable. Optional managed override for sv_maxclients in the active server.cfg when server config overrides are enabled. Leave blank to use the current config value instead.",
-      "env_variable": "SERVER_MAXCLIENTS",
-      "default_value": "",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "nullable|integer|between:1,128",
-      "field_type": "text"
-    },
-    {
-      "name": "Server Gametype Override",
-      "description": "Runtime variable. Optional managed override for g_gametype in the active server.cfg when server config overrides are enabled. Leave blank to use the current config value instead.",
-      "env_variable": "SERVER_GAMETYPE",
-      "default_value": "",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "nullable|integer|between:0,16",
-      "field_type": "text"
-    },
-    {
-      "name": "Extra Startup Args",
-      "description": "Runtime variable. Optional additional startup flags. Use shell-style quotes around values with spaces; shell control operators are not allowed.",
-      "env_variable": "EXTRA_STARTUP_ARGS",
-      "default_value": "",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "nullable|string|max:512",
-      "field_type": "text"
-    },
-    {
-      "name": "Debug Startup Output",
-      "description": "Runtime variable. Enable extra startup diagnostics in the console output.",
-      "env_variable": "DEBUG_STARTUP",
-      "default_value": "false",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|string|in:true,false",
-      "field_type": "text"
-    },
-    {
-      "name": "Addon Support Enabled",
-      "description": "Runtime variable. Enable the lightweight addon loader for top-level .sh and .py scripts in the addon directory before normal server startup. Rename a top-level addon file to end with .disable if you want to keep it without running it.",
-      "env_variable": "ADDONS_ENABLED",
-      "default_value": "true",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|string|in:true,false",
-      "field_type": "text"
-    },
-    {
-      "name": "Addon Checkserverstatus Enabled",
-      "description": "Runtime variable. Default is true on new installs. Enable or disable the built-in checkserverstatus addon helper that is refreshed from the image and installed into /home/container/bin during managed startup. Existing servers must save an explicit value in the panel if they were created before this variable existed.",
-      "env_variable": "ADDON_CHECKSERVERSTATUS_ENABLED",
-      "default_value": "true",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|string|in:true,false",
-      "field_type": "text"
-    },
-    {
-      "name": "Addon Chatlogger Enabled",
-      "description": "Runtime variable. Default is true on new installs. Enable or disable the built-in chat logger addon helper that tails the resolved active server log path and writes clean daily player chat logs into /home/container/chatlogs during managed startup. Existing servers must save an explicit value in the panel if they were created before this variable existed.",
-      "env_variable": "ADDON_CHATLOGGER_ENABLED",
-      "default_value": "true",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|string|in:true,false",
-      "field_type": "text"
-    },
-    {
-      "name": "Addon Directory",
-      "description": "Runtime variable. Directory under /home/container that stores user-owned top-level addons plus image-managed docs, examples, and helper defaults in docs/, examples/, and defaults/ subdirectories.",
-      "env_variable": "ADDONS_DIR",
-      "default_value": "/home/container/addons",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|string|max:256|regex:/^\\/home\\/container(\\/[A-Za-z0-9._-]+)*\\/?$/",
-      "field_type": "text"
-    },
-    {
-      "name": "Addon Strict Mode",
-      "description": "Runtime variable. If true, user addon failures or timeouts stop startup. If false, user addon failures are logged and startup continues.",
-      "env_variable": "ADDONS_STRICT",
-      "default_value": "false",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|string|in:true,false",
-      "field_type": "text"
-    },
-    {
-      "name": "Addon Timeout Seconds",
-      "description": "Runtime variable. Per-addon timeout in seconds for top-level user addon scripts before the loader treats the script as timed out.",
-      "env_variable": "ADDONS_TIMEOUT_SECONDS",
-      "default_value": "30",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|integer|between:1,3600",
-      "field_type": "text"
-    },
-    {
-      "name": "Addon Log Output",
-      "description": "Runtime variable. If true, user addon stdout and stderr are shown in the console. If false, only loader status messages are shown.",
-      "env_variable": "ADDONS_LOG_OUTPUT",
-      "default_value": "true",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|string|in:true,false",
-      "field_type": "text"
-    },
-    {
-      "name": "Copyright Acknowledged",
-      "description": "Required for install and runtime. Must be true. Confirms that you will provide only legally owned Jedi Academy files.",
-      "env_variable": "COPYRIGHT_ACKNOWLEDGED",
-      "default_value": "false",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|string|in:true,false",
-      "field_type": "text"
-    },
-    {
-      "name": "Anti-VPN Enabled",
-      "description": "Runtime variable. Enable the anti-VPN runtime supervisor.",
-      "env_variable": "ANTI_VPN_ENABLED",
-      "default_value": "false",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|string|in:true,false",
-      "field_type": "text"
-    },
-    {
-      "name": "Anti-VPN Mode",
-      "description": "Runtime variable. off, log-only or block.",
-      "env_variable": "ANTI_VPN_MODE",
-      "default_value": "block",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|string|in:off,log-only,block",
-      "field_type": "text"
-    },
-    {
-      "name": "Anti-VPN Score Threshold",
-      "description": "Runtime variable. Weighted score required before a decision becomes blockable.",
-      "env_variable": "ANTI_VPN_SCORE_THRESHOLD",
-      "default_value": "90",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|integer|between:1,200",
-      "field_type": "text"
-    },
-    {
-      "name": "Anti-VPN Allowlist",
-      "description": "Runtime variable. Comma or whitespace separated trusted IPs and CIDRs that always bypass anti-VPN checks.",
-      "env_variable": "ANTI_VPN_ALLOWLIST",
-      "default_value": "",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "nullable|string|max:4096",
-      "field_type": "text"
-    },
-    {
-      "name": "ProxyCheck API Key",
-      "description": "Provider variable. Optional API key for proxycheck.io. Without a key the provider runs on anonymous/free limits.",
-      "env_variable": "ANTI_VPN_PROXYCHECK_API_KEY",
-      "default_value": "",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "nullable|string|max:128",
-      "field_type": "text"
-    },
-    {
-      "name": "ipapi.is API Key",
-      "description": "Provider variable. Optional API key for ipapi.is. Without a key the provider runs on anonymous/free limits.",
-      "env_variable": "ANTI_VPN_IPAPIIS_API_KEY",
-      "default_value": "",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "nullable|string|max:128",
-      "field_type": "text"
-    },
-    {
-      "name": "IPQualityScore API Key",
-      "description": "Provider variable. API key for IPQualityScore VPN and hosting checks.",
-      "env_variable": "ANTI_VPN_IPQUALITYSCORE_API_KEY",
-      "default_value": "",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "nullable|string|max:128",
-      "field_type": "text"
-    },
-    {
-      "name": "IPLocate API Key",
-      "description": "Provider variable. API key for IPLocate privacy, VPN and hosting checks.",
-      "env_variable": "ANTI_VPN_IPLOCATE_API_KEY",
-      "default_value": "",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "nullable|string|max:128",
-      "field_type": "text"
-    },
-    {
-      "name": "IPHub API Key",
-      "description": "Provider variable. API key for IPHub non-residential checks.",
-      "env_variable": "ANTI_VPN_IPHUB_API_KEY",
-      "default_value": "",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "nullable|string|max:128",
-      "field_type": "text"
-    },
-    {
-      "name": "vpnapi.io API Key",
-      "description": "Provider variable. Optional API key for vpnapi.io VPN checks.",
-      "env_variable": "ANTI_VPN_VPNAPI_IO_API_KEY",
-      "default_value": "",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "nullable|string|max:128",
-      "field_type": "text"
-    },
-    {
-      "name": "Anti-VPN Timeout (ms)",
-      "description": "Runtime variable. Per-provider request timeout in milliseconds.",
-      "env_variable": "ANTI_VPN_TIMEOUT_MS",
-      "default_value": "1500",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|integer|between:100,10000",
-      "field_type": "text"
-    },
-    {
-      "name": "Anti-VPN Cache TTL",
-      "description": "Runtime variable. Local decision cache TTL. Supports Go-style durations such as 30m, 6h or 24h.",
-      "env_variable": "ANTI_VPN_CACHE_TTL",
-      "default_value": "6h",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|string|max:32",
-      "field_type": "text"
-    },
-    {
-      "name": "Anti-VPN Cache Flush Interval",
-      "description": "Runtime variable. How often the local anti-VPN cache is flushed to disk. Supports Go-style durations such as 1s, 2s or 10s.",
-      "env_variable": "ANTI_VPN_CACHE_FLUSH_INTERVAL",
-      "default_value": "2s",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|string|max:32",
-      "field_type": "text"
-    },
-    {
-      "name": "Anti-VPN Decision Logging",
-      "description": "Runtime variable. Emit structured anti-VPN decision summaries into the console output. Separate audit logging still goes to the anti-VPN audit log path.",
-      "env_variable": "ANTI_VPN_LOG_DECISIONS",
-      "default_value": "true",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|string|in:true,false",
-      "field_type": "text"
-    },
-    {
-      "name": "Anti-VPN Audit Log Path",
-      "description": "Runtime variable. Path for the dedicated structured anti-VPN audit log inside the server volume.",
-      "env_variable": "ANTI_VPN_AUDIT_LOG_PATH",
-      "default_value": "/home/container/logs/anti-vpn-audit.log",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|string|max:256",
-      "field_type": "text"
-    },
-    {
-      "name": "Anti-VPN Broadcast Mode",
-      "description": "Runtime variable. Public decision broadcast mode: off, block-only or pass-and-block.",
-      "env_variable": "ANTI_VPN_BROADCAST_MODE",
-      "default_value": "pass-and-block",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|string|in:off,block-only,pass-and-block",
-      "field_type": "text"
-    },
-    {
-      "name": "Anti-VPN Enforcement Mode",
-      "description": "Runtime variable. Select kick-only, ban-and-kick, ban-only or custom.",
-      "env_variable": "ANTI_VPN_ENFORCEMENT_MODE",
-      "default_value": "kick-only",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|string|in:kick-only,ban-and-kick,ban-only,custom",
-      "field_type": "text"
-    },
-    {
-      "name": "Anti-VPN Broadcast Cooldown",
-      "description": "Runtime variable. Cooldown before repeating the same public anti-VPN result for the same slot/action. Supports Go-style durations such as 30s or 90s.",
-      "env_variable": "ANTI_VPN_BROADCAST_COOLDOWN",
-      "default_value": "90s",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|string|max:32",
-      "field_type": "text"
-    },
-    {
-      "name": "Anti-VPN Pass Broadcast Template",
-      "description": "Runtime variable. Public server command template for a passed anti-VPN decision. Supports %PLAYER%, %SCORE%, %THRESHOLD%, %SUMMARY%, %IP% and %SLOT%.",
-      "env_variable": "ANTI_VPN_BROADCAST_PASS_TEMPLATE",
-      "default_value": "say [Anti-VPN] VPN PASS: %PLAYER% cleared checks (%SCORE%/%THRESHOLD%). %SUMMARY%",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|string|max:255",
-      "field_type": "text"
-    },
-    {
-      "name": "Anti-VPN Block Broadcast Template",
-      "description": "Runtime variable. Public server command template for a blocked anti-VPN decision. Supports %PLAYER%, %SCORE%, %THRESHOLD%, %SUMMARY%, %IP% and %SLOT%.",
-      "env_variable": "ANTI_VPN_BROADCAST_BLOCK_TEMPLATE",
-      "default_value": "say [Anti-VPN] VPN BLOCKED: %PLAYER% triggered anti-VPN (%SCORE%/%THRESHOLD%). %SUMMARY%",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|string|max:255",
-      "field_type": "text"
-    },
-    {
-      "name": "Anti-VPN Ban Command",
-      "description": "Runtime variable. Advanced setting used only when Anti-VPN Enforcement Mode is custom. Supports %IP%.",
-      "env_variable": "ANTI_VPN_BAN_COMMAND",
-      "default_value": "",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "nullable|string|max:128",
-      "field_type": "text"
-    },
-    {
-      "name": "Anti-VPN Kick Command",
-      "description": "Runtime variable. Advanced setting used only when Anti-VPN Enforcement Mode is custom. Supports %SLOT% and %IP%.",
-      "env_variable": "ANTI_VPN_KICK_COMMAND",
-      "default_value": "clientkick %SLOT%",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|string|max:128",
-      "field_type": "text"
-    },
-    {
-      "name": "Anti-VPN Event Dedupe Interval",
-      "description": "Runtime variable. How long after a connection check is recorded before the same slot+IP combination can trigger another check. Supports Go-style durations such as 60s or 90s.",
-      "env_variable": "ANTI_VPN_EVENT_DEDUPE_INTERVAL",
-      "default_value": "90s",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|string|max:32",
-      "field_type": "text"
-    }
-  ]
+	"_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PTERODACTYL PANEL - Pterodactyl\u00ae https://pterodactyl.io",
+	"meta": {
+		"version": "PTDL_v2",
+		"update_url": null
+	},
+	"exported_at": "2026-04-16T14:05:00+02:00",
+	"name": "TaystJK",
+	"author": "admin@example.com",
+	"description": "Runs TaystJK dedicated server on Pterodactyl from a source-built runtime image without bundling copyrighted Jedi Academy game assets. TaystJK remains the default and only automatically managed runtime path. Users may still point startup at manually uploaded alternative binaries or mod folders when they explicitly provide them. Includes a lightweight runtime addon loader for user-owned top-level Bash and Python scripts under /home/container/addons, plus image-managed addon docs, examples, and helper defaults inside that addon area, and an optional anti-VPN runtime supervisor with stdout-first event capture, online API checks, local cache, public decision broadcasts, audit logging, allowlist support and weighted log-only/block decisions.",
+	"features": [],
+	"docker_images": {
+		"Jedi Academy Pterodactyl (latest, GHCR)": "ghcr.io/akiondev/jedi-academy-pterodactyl:latest",
+		"Jedi Academy Pterodactyl (TaystJK runtime, GHCR)": "ghcr.io/akiondev/jedi-academy-pterodactyl:taystjk-modern64",
+		"Jedi Academy Pterodactyl (latest, Docker Hub mirror)": "docker.io/akiondev/jedi-academy-pterodactyl:latest",
+		"Jedi Academy Pterodactyl (TaystJK runtime, Docker Hub mirror)": "docker.io/akiondev/jedi-academy-pterodactyl:taystjk-modern64"
+	},
+	"file_denylist": [],
+	"startup": "--panel-startup",
+	"config": {
+		"files": "{}",
+		"startup": "{\"done\": \"Resolving master.jkhub.org\"}",
+		"logs": "{}",
+		"stop": "quit"
+	},
+	"scripts": {
+		"installation": {
+			"script": "#!/bin/bash\nset -euo pipefail\nmkdir -p /mnt/server\ncd /mnt/server\ncat > /tmp/install_taystjk.sh <<'EOS'\n#!/usr/bin/env bash\nset -euo pipefail\n\nCOLOR_RESET=\"\"\nCOLOR_BOLD=\"\"\nCOLOR_INFO=\"\"\nCOLOR_OK=\"\"\nCOLOR_WARN=\"\"\nCOLOR_ERROR=\"\"\n\nsetup_colors() {\n  if [[ -t 1 && -z \"${NO_COLOR:-}\" ]]; then\n    COLOR_RESET=$'\\033[0m'\n    COLOR_BOLD=$'\\033[1m'\n    COLOR_INFO=$'\\033[36m'\n    COLOR_OK=$'\\033[32m'\n    COLOR_WARN=$'\\033[33m'\n    COLOR_ERROR=$'\\033[31m'\n  fi\n}\n\nprint_header() {\n  printf '%s\\n' \"============================================================\"\n  printf '%s\\n' \" TaystJK Installer\"\n  printf '%s\\n' \" Created by akiondev\"\n  printf '%s\\n\\n' \"============================================================\"\n}\n\nsection() {\n  printf '%b\\n' \"${COLOR_BOLD}${1}${COLOR_RESET}\"\n}\n\nkv() {\n  printf '%-16s %s\\n' \"$1\" \"$2\"\n}\n\ninfo() {\n  printf '%b\\n' \"${COLOR_INFO}[INFO]${COLOR_RESET} $*\"\n}\n\nok() {\n  printf '%b\\n' \"${COLOR_OK}[ OK ]${COLOR_RESET} $*\"\n}\n\nwarn() {\n  printf '%b\\n' \"${COLOR_WARN}[WARN]${COLOR_RESET} $*\"\n}\n\nlog() {\n  info \"$*\"\n}\n\nfail() {\n  printf '%b\\n' \"${COLOR_ERROR}[ERROR]${COLOR_RESET} $*\" >&2\n  printf '\\n' >&2\n  section \"What to Check Next\" >&2\n  printf '%s\\n' \"- Confirm /mnt/server/base/assets0.pk3 exists and comes from your own legally owned Jedi Academy installation\" >&2\n  printf '%s\\n' \"- Confirm COPYRIGHT_ACKNOWLEDGED is set to true\" >&2\n  printf '%s\\n' \"- Confirm the selected mod directory and config names are valid\" >&2\n  exit 1\n}\n\nrequire_safe_component() {\n  local value=\"$1\"\n  local variable_name=\"$2\"\n\n  if [[ -z \"$value\" || \"$value\" == \".\" || \"$value\" == \"..\" || \"$value\" == *\"/\"* || \"$value\" == *\"\\\\\"* || ! \"$value\" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then\n    fail \"${variable_name} must be a simple relative name using only letters, numbers, dots, underscores or dashes\"\n  fi\n}\n\nresolve_active_game_dir() {\n  local requested=\"$1\"\n  local requested_lower\n\n  requested_lower=\"$(printf '%s' \"$requested\" | tr '[:upper:]' '[:lower:]')\"\n  if [[ -z \"$requested_lower\" || \"$requested_lower\" == \"base\" ]]; then\n    printf 'base\\n'\n    return\n  fi\n\n  require_safe_component \"$requested\" \"FS_GAME_MOD\"\n  printf '%s\\n' \"$requested\"\n}\n\nis_taystjk_managed_mod_dir() {\n  local mod_dir=\"$1\"\n  [[ \"$mod_dir\" == \"taystjk\" ]]\n}\n\nis_base_mode() {\n  local mod_dir=\"$1\"\n  [[ \"$mod_dir\" == \"base\" ]]\n}\n\ndescribe_mod_ownership() {\n  local mod_dir=\"$1\"\n\n  if is_taystjk_managed_mod_dir \"$mod_dir\"; then\n    printf 'image-managed TaystJK\\n'\n  elif is_base_mode \"$mod_dir\"; then\n    printf 'manual base assets\\n'\n  else\n    printf 'manual user-supplied\\n'\n  fi\n}\n\nprepare_selected_mod_directory() {\n  local mod_path=\"/mnt/server/${active_game_dir}\"\n\n  if is_taystjk_managed_mod_dir \"$active_game_dir\"; then\n    mkdir -p \"$mod_path\"\n    return 0\n  fi\n\n  if is_base_mode \"$active_game_dir\"; then\n    return 0\n  fi\n\n  if [[ -d \"$mod_path\" ]]; then\n    return 0\n  fi\n\n  warn \"Configured manual mod directory ${active_game_dir} does not exist yet\"\n  warn \"Only taystjk is prepared automatically. Upload manual alternative mod folders into ${mod_path} before startup\"\n}\n\nprint_path_status() {\n  local label=\"$1\"\n  local path=\"$2\"\n  local kind=\"${3:-file}\"\n\n  if [[ \"$kind\" == \"dir\" ]]; then\n    if [[ -d \"$path\" ]]; then\n      ok \"${label}: found at ${path}\"\n    else\n      warn \"${label}: missing at ${path}\"\n    fi\n    return\n  fi\n\n  if [[ -f \"$path\" ]]; then\n    ok \"${label}: found at ${path}\"\n  else\n    warn \"${label}: missing at ${path}\"\n  fi\n}\n\nlist_dir_files() {\n  local path=\"$1\"\n  local pattern=\"${2:-*}\"\n  local files=()\n  local file\n  local result=\"\"\n\n  if [[ ! -d \"$path\" ]]; then\n    printf 'directory missing\\n'\n    return\n  fi\n\n  while IFS= read -r file; do\n    files+=(\"$file\")\n  done < <(\n    find \"$path\" -maxdepth 1 -type f -name \"$pattern\" -printf '%f\\n' 2>/dev/null | sort\n  )\n\n  for file in \"${files[@]}\"; do\n    if [[ -n \"$result\" ]]; then\n      result+=\", \"\n    fi\n    result+=\"$file\"\n  done\n\n  if [[ -n \"$result\" ]]; then\n    printf '%s\\n' \"$result\"\n  else\n    printf 'none detected\\n'\n  fi\n}\n\nprint_install_summary() {\n  section \"Installation Summary\"\n  kv \"Mod directory  :\" \"$active_game_dir\"\n  kv \"Mod mode       :\" \"$(describe_mod_ownership \"$active_game_dir\")\"\n  kv \"Server config  :\" \"${active_game_dir}/${SERVER_CONFIG}\"\n  kv \"Server port    :\" \"$SERVER_PORT\"\n  printf '\\n'\n}\n\nprint_install_checks() {\n  section \"Installation Checks\"\n  ok \"Server directories created\"\n  if is_taystjk_managed_mod_dir \"$active_game_dir\"; then\n    ok \"Managed TaystJK mod directory prepared at /mnt/server/${active_game_dir}\"\n  elif is_base_mode \"$active_game_dir\"; then\n    ok \"Base assets directory ready at /mnt/server/base\"\n  elif [[ -d \"/mnt/server/${active_game_dir}\" ]]; then\n    ok \"Manual mod directory detected at /mnt/server/${active_game_dir}\"\n  else\n    warn \"Manual mod directory is not present yet at /mnt/server/${active_game_dir}\"\n  fi\n  print_path_status \"Base assets\" \"/mnt/server/base/assets0.pk3\"\n  printf '\\n'\n}\n\nprint_install_inventory() {\n  section \"File Inventory\"\n  kv \"Base files      :\" \"$(list_dir_files /mnt/server/base 'assets*.pk3')\"\n  kv \"Mod files       :\" \"$(list_dir_files \"/mnt/server/${active_game_dir}\")\"\n  printf '\\n'\n}\n\nprint_install_result() {\n  section \"Result\"\n  info \"Installation complete\"\n  if [[ -f /mnt/server/base/assets0.pk3 ]]; then\n    ok \"Server can proceed to runtime startup checks\"\n  else\n    warn \"Upload your legally owned Jedi Academy base assets to /mnt/server/base\"\n  fi\n}\n\ncd /mnt/server\nsetup_colors\nprint_header\n\n: \"${COPYRIGHT_ACKNOWLEDGED:=false}\"\n: \"${SERVER_PORT:=29070}\"\n: \"${SERVER_CONFIG:=server.cfg}\"\n: \"${FS_GAME_MOD:=taystjk}\"\n\n[[ \"${COPYRIGHT_ACKNOWLEDGED}\" == \"true\" ]] || fail \"COPYRIGHT_ACKNOWLEDGED must be true. This egg does not distribute Jedi Academy assets.\"\n\nmkdir -p \\\n  /mnt/server/base \\\n  /mnt/server/logs \\\n  /mnt/server/addons \\\n  /mnt/server/addons/docs \\\n  /mnt/server/addons/examples \\\n  /mnt/server/addons/defaults \\\n  /tmp/taystjk-install\n\nrequire_safe_component \"$SERVER_CONFIG\" \"SERVER_CONFIG\"\nactive_game_dir=\"$(resolve_active_game_dir \"$FS_GAME_MOD\")\"\nprepare_selected_mod_directory\nprint_install_summary\n\nif is_taystjk_managed_mod_dir \"$active_game_dir\" && [[ ! -f \"/mnt/server/${active_game_dir}/${SERVER_CONFIG}\" ]]; then\n  cat > \"/mnt/server/${active_game_dir}/${SERVER_CONFIG}\" <<CFG\nseta sv_hostname \"TaystJK Pterodactyl Server\"\nseta g_motd \"Powered by TaystJK on Pterodactyl\"\nseta sv_maxclients \"16\"\nseta dedicated \"2\"\nseta net_port \"${SERVER_PORT}\"\nseta g_gametype \"0\"\nset d1 \"set g_gametype 0; map mp/ffa3; set nextmap vstr d1\"\nvstr d1\nCFG\nfi\n\ninfo \"Game assets are manual-only\"\nwarn \"This egg does not download, upload, fetch, or unpack Jedi Academy assets\"\nwarn \"Provide your own legally owned base assets manually in /mnt/server/base so that assets0.pk3 exists\"\n\nprint_install_checks\nprint_install_inventory\ninfo \"Selected fs_game mod directory: ${active_game_dir}\"\nif is_taystjk_managed_mod_dir \"$active_game_dir\"; then\n  ok \"taystjk remains the only automatically prepared mod directory\"\nelse\n  warn \"Selected mod directory ${active_game_dir} is treated as a manual user-owned path\"\n  warn \"Provide ${active_game_dir}/${SERVER_CONFIG} and any required mod files yourself before startup\"\nfi\n\nprint_install_result\n\nEOS\nchmod +x /tmp/install_taystjk.sh\n/tmp/install_taystjk.sh\n",
+			"container": "ghcr.io/pterodactyl/installers:debian",
+			"entrypoint": "bash"
+		}
+	},
+	"variables": [
+		{
+			"name": "Server Binary",
+			"description": "Runtime variable. Default image-managed dedicated server executable name built from TaystJK source. You may point this at a manually uploaded alternative binary, but only the TaystJK binary is automatically synced and maintained by the image.",
+			"env_variable": "SERVER_BINARY",
+			"default_value": "./taystjkded.x86_64",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|string|max:128|regex:/^(\\.\\/)?[A-Za-z0-9][A-Za-z0-9._-]*$/",
+			"field_type": "text"
+		},
+		{
+			"name": "fs_game Mod Directory",
+			"description": "Runtime variable. Active mod directory. Default is taystjk because the image-managed TaystJK runtime installs its bundled jaPRO-oriented content there. Use base for vanilla/base, or japlus, japro, mbii and other values only after manually uploading that mod folder yourself.",
+			"env_variable": "FS_GAME_MOD",
+			"default_value": "taystjk",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|string|max:64|regex:/^[A-Za-z0-9][A-Za-z0-9._-]*$/",
+			"field_type": "text"
+		},
+		{
+			"name": "Server Config",
+			"description": "Runtime variable. Configuration file executed at startup inside the active mod folder. The managed TaystJK default path can create this automatically when missing. Manual mod directories such as base, japlus, japro or mbii must provide their own config file.",
+			"env_variable": "SERVER_CONFIG",
+			"default_value": "server.cfg",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|string|max:64|regex:/^[A-Za-z0-9][A-Za-z0-9._-]*$/",
+			"field_type": "text"
+		},
+		{
+			"name": "Server Log Filename",
+			"description": "Runtime variable. Log filename inside the active mod folder. Default is server.log. Change this if your mod or server.cfg writes to a different log name, and managed helpers will follow the resolved active log path automatically.",
+			"env_variable": "SERVER_LOG_FILENAME",
+			"default_value": "server.log",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|string|max:64|regex:/^[A-Za-z0-9][A-Za-z0-9._-]*$/",
+			"field_type": "text"
+		},
+		{
+			"name": "Server Config Overrides Enabled",
+			"description": "Runtime variable. If true, non-empty override fields such as SERVER_RCON_PASSWORD, SERVER_HOSTNAME, SERVER_MOTD, SERVER_MAXCLIENTS and SERVER_GAMETYPE are written into the active server.cfg. If false, those config values stay user-owned and runtime helpers read directly from the active config/defaults.",
+			"env_variable": "SERVER_CFG_OVERRIDES_ENABLED",
+			"default_value": "true",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|string|in:true,false",
+			"field_type": "text"
+		},
+		{
+			"name": "Server RCON Password",
+			"description": "Runtime variable. Optional managed override for rconpassword in the active server.cfg when server config overrides are enabled. Leave blank to use the current config value instead. Addons and helper commands can read the effective value automatically through the runtime state files.",
+			"env_variable": "SERVER_RCON_PASSWORD",
+			"default_value": "",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "nullable|string|max:256",
+			"field_type": "text"
+		},
+		{
+			"name": "Server Hostname Override",
+			"description": "Runtime variable. Optional managed override for sv_hostname in the active server.cfg when server config overrides are enabled. Leave blank to use the current config value instead.",
+			"env_variable": "SERVER_HOSTNAME",
+			"default_value": "",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "nullable|string|max:256",
+			"field_type": "text"
+		},
+		{
+			"name": "Server MOTD Override",
+			"description": "Runtime variable. Optional managed override for g_motd in the active server.cfg when server config overrides are enabled. Leave blank to use the current config value instead.",
+			"env_variable": "SERVER_MOTD",
+			"default_value": "",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "nullable|string|max:256",
+			"field_type": "text"
+		},
+		{
+			"name": "Server Max Clients Override",
+			"description": "Runtime variable. Optional managed override for sv_maxclients in the active server.cfg when server config overrides are enabled. Leave blank to use the current config value instead.",
+			"env_variable": "SERVER_MAXCLIENTS",
+			"default_value": "",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "nullable|integer|between:1,128",
+			"field_type": "text"
+		},
+		{
+			"name": "Server Gametype Override",
+			"description": "Runtime variable. Optional managed override for g_gametype in the active server.cfg when server config overrides are enabled. Leave blank to use the current config value instead.",
+			"env_variable": "SERVER_GAMETYPE",
+			"default_value": "",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "nullable|integer|between:0,16",
+			"field_type": "text"
+		},
+		{
+			"name": "Extra Startup Args",
+			"description": "Runtime variable. Optional additional startup flags. Use shell-style quotes around values with spaces; shell control operators are not allowed.",
+			"env_variable": "EXTRA_STARTUP_ARGS",
+			"default_value": "",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "nullable|string|max:512",
+			"field_type": "text"
+		},
+		{
+			"name": "Debug Startup Output",
+			"description": "Runtime variable. Enable extra startup diagnostics in the console output.",
+			"env_variable": "DEBUG_STARTUP",
+			"default_value": "false",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|string|in:true,false",
+			"field_type": "text"
+		},
+		{
+			"name": "Addon Support Enabled",
+			"description": "Runtime variable. Enable the lightweight addon loader for top-level .sh and .py scripts in the addon directory before normal server startup. Rename a top-level addon file to end with .disable if you want to keep it without running it.",
+			"env_variable": "ADDONS_ENABLED",
+			"default_value": "true",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|string|in:true,false",
+			"field_type": "text"
+		},
+		{
+			"name": "Addon Checkserverstatus Enabled",
+			"description": "Runtime variable. Default is true on new installs. Enable or disable the built-in checkserverstatus addon helper that is refreshed from the image and installed into /home/container/bin during managed startup. Existing servers must save an explicit value in the panel if they were created before this variable existed.",
+			"env_variable": "ADDON_CHECKSERVERSTATUS_ENABLED",
+			"default_value": "true",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|string|in:true,false",
+			"field_type": "text"
+		},
+		{
+			"name": "Addon Chatlogger Enabled",
+			"description": "Runtime variable. Default is true on new installs. Enable or disable the built-in chat logger addon helper that tails the resolved active server log path and writes clean daily player chat logs into /home/container/chatlogs during managed startup. Existing servers must save an explicit value in the panel if they were created before this variable existed.",
+			"env_variable": "ADDON_CHATLOGGER_ENABLED",
+			"default_value": "true",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|string|in:true,false",
+			"field_type": "text"
+		},
+		{
+			"name": "Addon Directory",
+			"description": "Runtime variable. Directory under /home/container that stores user-owned top-level addons plus image-managed docs, examples, and helper defaults in docs/, examples/, and defaults/ subdirectories.",
+			"env_variable": "ADDONS_DIR",
+			"default_value": "/home/container/addons",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|string|max:256|regex:/^\\/home\\/container(\\/[A-Za-z0-9._-]+)*\\/?$/",
+			"field_type": "text"
+		},
+		{
+			"name": "Addon Strict Mode",
+			"description": "Runtime variable. If true, user addon failures or timeouts stop startup. If false, user addon failures are logged and startup continues.",
+			"env_variable": "ADDONS_STRICT",
+			"default_value": "false",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|string|in:true,false",
+			"field_type": "text"
+		},
+		{
+			"name": "Addon Timeout Seconds",
+			"description": "Runtime variable. Per-addon timeout in seconds for top-level user addon scripts before the loader treats the script as timed out.",
+			"env_variable": "ADDONS_TIMEOUT_SECONDS",
+			"default_value": "30",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|integer|between:1,3600",
+			"field_type": "text"
+		},
+		{
+			"name": "Addon Log Output",
+			"description": "Runtime variable. If true, user addon stdout and stderr are shown in the console. If false, only loader status messages are shown.",
+			"env_variable": "ADDONS_LOG_OUTPUT",
+			"default_value": "true",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|string|in:true,false",
+			"field_type": "text"
+		},
+		{
+			"name": "Copyright Acknowledged",
+			"description": "Required for install and runtime. Must be true. Confirms that you will provide only legally owned Jedi Academy files.",
+			"env_variable": "COPYRIGHT_ACKNOWLEDGED",
+			"default_value": "false",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|string|in:true,false",
+			"field_type": "text"
+		},
+		{
+			"name": "Anti-VPN Enabled",
+			"description": "Runtime variable. Enable the anti-VPN runtime supervisor.",
+			"env_variable": "ANTI_VPN_ENABLED",
+			"default_value": "false",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|string|in:true,false",
+			"field_type": "text"
+		},
+		{
+			"name": "Anti-VPN Mode",
+			"description": "Runtime variable. off, log-only or block.",
+			"env_variable": "ANTI_VPN_MODE",
+			"default_value": "block",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|string|in:off,log-only,block",
+			"field_type": "text"
+		},
+		{
+			"name": "Anti-VPN Score Threshold",
+			"description": "Runtime variable. Weighted score required before a decision becomes blockable.",
+			"env_variable": "ANTI_VPN_SCORE_THRESHOLD",
+			"default_value": "90",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|integer|between:1,200",
+			"field_type": "text"
+		},
+		{
+			"name": "Anti-VPN Allowlist",
+			"description": "Runtime variable. Comma or whitespace separated trusted IPs and CIDRs that always bypass anti-VPN checks.",
+			"env_variable": "ANTI_VPN_ALLOWLIST",
+			"default_value": "",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "nullable|string|max:4096",
+			"field_type": "text"
+		},
+		{
+			"name": "ProxyCheck API Key",
+			"description": "Provider variable. Optional API key for proxycheck.io. Without a key the provider runs on anonymous/free limits.",
+			"env_variable": "ANTI_VPN_PROXYCHECK_API_KEY",
+			"default_value": "",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "nullable|string|max:128",
+			"field_type": "text"
+		},
+		{
+			"name": "ipapi.is API Key",
+			"description": "Provider variable. Optional API key for ipapi.is. Without a key the provider runs on anonymous/free limits.",
+			"env_variable": "ANTI_VPN_IPAPIIS_API_KEY",
+			"default_value": "",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "nullable|string|max:128",
+			"field_type": "text"
+		},
+		{
+			"name": "IPQualityScore API Key",
+			"description": "Provider variable. API key for IPQualityScore VPN and hosting checks.",
+			"env_variable": "ANTI_VPN_IPQUALITYSCORE_API_KEY",
+			"default_value": "",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "nullable|string|max:128",
+			"field_type": "text"
+		},
+		{
+			"name": "IPLocate API Key",
+			"description": "Provider variable. API key for IPLocate privacy, VPN and hosting checks.",
+			"env_variable": "ANTI_VPN_IPLOCATE_API_KEY",
+			"default_value": "",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "nullable|string|max:128",
+			"field_type": "text"
+		},
+		{
+			"name": "IPHub API Key",
+			"description": "Provider variable. API key for IPHub non-residential checks.",
+			"env_variable": "ANTI_VPN_IPHUB_API_KEY",
+			"default_value": "",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "nullable|string|max:128",
+			"field_type": "text"
+		},
+		{
+			"name": "vpnapi.io API Key",
+			"description": "Provider variable. Optional API key for vpnapi.io VPN checks.",
+			"env_variable": "ANTI_VPN_VPNAPI_IO_API_KEY",
+			"default_value": "",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "nullable|string|max:128",
+			"field_type": "text"
+		},
+		{
+			"name": "Anti-VPN Timeout (ms)",
+			"description": "Runtime variable. Per-provider request timeout in milliseconds.",
+			"env_variable": "ANTI_VPN_TIMEOUT_MS",
+			"default_value": "1500",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|integer|between:100,10000",
+			"field_type": "text"
+		},
+		{
+			"name": "Anti-VPN Cache TTL",
+			"description": "Runtime variable. Local decision cache TTL. Supports Go-style durations such as 30m, 6h or 24h.",
+			"env_variable": "ANTI_VPN_CACHE_TTL",
+			"default_value": "6h",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|string|max:32",
+			"field_type": "text"
+		},
+		{
+			"name": "Anti-VPN Cache Flush Interval",
+			"description": "Runtime variable. How often the local anti-VPN cache is flushed to disk. Supports Go-style durations such as 1s, 2s or 10s.",
+			"env_variable": "ANTI_VPN_CACHE_FLUSH_INTERVAL",
+			"default_value": "2s",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|string|max:32",
+			"field_type": "text"
+		},
+		{
+			"name": "Anti-VPN Decision Logging",
+			"description": "Runtime variable. Emit structured anti-VPN decision summaries into the console output. Separate audit logging still goes to the anti-VPN audit log path.",
+			"env_variable": "ANTI_VPN_LOG_DECISIONS",
+			"default_value": "true",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|string|in:true,false",
+			"field_type": "text"
+		},
+		{
+			"name": "Anti-VPN Audit Log Path",
+			"description": "Runtime variable. Path for the dedicated structured anti-VPN audit log inside the server volume.",
+			"env_variable": "ANTI_VPN_AUDIT_LOG_PATH",
+			"default_value": "/home/container/logs/anti-vpn-audit.log",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|string|max:256",
+			"field_type": "text"
+		},
+		{
+			"name": "Anti-VPN Broadcast Mode",
+			"description": "Runtime variable. Public decision broadcast mode: off, block-only or pass-and-block.",
+			"env_variable": "ANTI_VPN_BROADCAST_MODE",
+			"default_value": "pass-and-block",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|string|in:off,block-only,pass-and-block",
+			"field_type": "text"
+		},
+		{
+			"name": "Anti-VPN Enforcement Mode",
+			"description": "Runtime variable. Select kick-only, ban-and-kick, ban-only or custom.",
+			"env_variable": "ANTI_VPN_ENFORCEMENT_MODE",
+			"default_value": "kick-only",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|string|in:kick-only,ban-and-kick,ban-only,custom",
+			"field_type": "text"
+		},
+		{
+			"name": "Anti-VPN Broadcast Cooldown",
+			"description": "Runtime variable. Cooldown before repeating the same public anti-VPN result for the same slot/action. Supports Go-style durations such as 30s or 90s.",
+			"env_variable": "ANTI_VPN_BROADCAST_COOLDOWN",
+			"default_value": "90s",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|string|max:32",
+			"field_type": "text"
+		},
+		{
+			"name": "Anti-VPN Pass Broadcast Template",
+			"description": "Runtime variable. Public server command template for a passed anti-VPN decision. Supports %PLAYER%, %SCORE%, %THRESHOLD%, %SUMMARY%, %IP% and %SLOT%.",
+			"env_variable": "ANTI_VPN_BROADCAST_PASS_TEMPLATE",
+			"default_value": "say [Anti-VPN] VPN PASS: %PLAYER% cleared checks (%SCORE%/%THRESHOLD%). %SUMMARY%",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|string|max:255",
+			"field_type": "text"
+		},
+		{
+			"name": "Anti-VPN Block Broadcast Template",
+			"description": "Runtime variable. Public server command template for a blocked anti-VPN decision. Supports %PLAYER%, %SCORE%, %THRESHOLD%, %SUMMARY%, %IP% and %SLOT%.",
+			"env_variable": "ANTI_VPN_BROADCAST_BLOCK_TEMPLATE",
+			"default_value": "say [Anti-VPN] VPN BLOCKED: %PLAYER% triggered anti-VPN (%SCORE%/%THRESHOLD%). %SUMMARY%",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|string|max:255",
+			"field_type": "text"
+		},
+		{
+			"name": "Anti-VPN Ban Command",
+			"description": "Runtime variable. Advanced setting used only when Anti-VPN Enforcement Mode is custom. Supports %IP%.",
+			"env_variable": "ANTI_VPN_BAN_COMMAND",
+			"default_value": "",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "nullable|string|max:128",
+			"field_type": "text"
+		},
+		{
+			"name": "Anti-VPN Kick Command",
+			"description": "Runtime variable. Advanced setting used only when Anti-VPN Enforcement Mode is custom. Supports %SLOT% and %IP%.",
+			"env_variable": "ANTI_VPN_KICK_COMMAND",
+			"default_value": "clientkick %SLOT%",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|string|max:128",
+			"field_type": "text"
+		},
+		{
+			"name": "Anti-VPN Event Dedupe Interval",
+			"description": "Runtime variable. How long after a connection check is recorded before the same slot+IP combination can trigger another check. Supports Go-style durations such as 60s or 90s.",
+			"env_variable": "ANTI_VPN_EVENT_DEDUPE_INTERVAL",
+			"default_value": "90s",
+			"user_viewable": true,
+			"user_editable": true,
+			"rules": "required|string|max:32",
+			"field_type": "text"
+		}
+	]
 }
