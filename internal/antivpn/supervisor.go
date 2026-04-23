@@ -479,6 +479,17 @@ func (s *Supervisor) clearConnectionState(slot string) {
 		s.seenMu.Lock()
 		delete(s.seenEvents, slot+"|"+state.Addr.String())
 		s.seenMu.Unlock()
+
+		// Clear any broadcast cooldown entries for this slot+IP so intentional
+		// reconnects can emit a fresh anti-VPN pass/block message for the new session.
+		prefix := slot + "|" + state.Addr.String() + "|"
+		s.broadcastMu.Lock()
+		for key := range s.broadcastSeen {
+			if strings.HasPrefix(key, prefix) {
+				delete(s.broadcastSeen, key)
+			}
+		}
+		s.broadcastMu.Unlock()
 	}
 }
 

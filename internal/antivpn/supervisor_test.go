@@ -314,6 +314,11 @@ func TestClearConnectionStateClearsSeenEvents(t *testing.T) {
 		seenEvents: map[string]time.Time{
 			"0|83.249.104.192": time.Now().UTC(),
 		},
+		broadcastSeen: map[string]time.Time{
+			"0|83.249.104.192|allow": time.Now().UTC(),
+			"0|83.249.104.192|block": time.Now().UTC(),
+			"2|203.0.113.5|allow":    time.Now().UTC(),
+		},
 	}
 
 	supervisor.clearConnectionState("0")
@@ -328,6 +333,19 @@ func TestClearConnectionStateClearsSeenEvents(t *testing.T) {
 
 	if seenExists {
 		t.Fatal("expected seenEvents entry to be cleared on disconnect so rapid reconnects get a fresh check")
+	}
+
+	supervisor.broadcastMu.Lock()
+	_, broadcastAllowExists := supervisor.broadcastSeen["0|83.249.104.192|allow"]
+	_, broadcastBlockExists := supervisor.broadcastSeen["0|83.249.104.192|block"]
+	_, unrelatedExists := supervisor.broadcastSeen["2|203.0.113.5|allow"]
+	supervisor.broadcastMu.Unlock()
+
+	if broadcastAllowExists || broadcastBlockExists {
+		t.Fatal("expected broadcast cooldown entries for disconnected slot/ip to be cleared")
+	}
+	if !unrelatedExists {
+		t.Fatal("expected unrelated broadcast cooldown entries to remain")
 	}
 }
 
