@@ -52,6 +52,8 @@ type Supervisor struct {
 	connectionMu    sync.Mutex
 	connectionState map[string]slotConnectionState
 	checkSlots      chan struct{}
+	liveFeed        *liveFeedWriter
+	liveFeedErrOnce sync.Once
 }
 
 type synchronizedWriter struct {
@@ -76,6 +78,11 @@ func NewSupervisor(cfg Config, logger *slog.Logger) (*Supervisor, error) {
 		logger.Warn("anti-vpn audit log unavailable, continuing without file audit output", "path", cfg.AuditLogPath, "error", auditErr)
 	}
 
+	liveFeed, liveFeedErr := newLiveFeedWriter(cfg.LiveOutputPath, cfg.LiveOutputMaxBytes)
+	if liveFeedErr != nil && logger != nil {
+		logger.Warn("anti-vpn live output mirror unavailable, continuing without addon live feed", "path", cfg.LiveOutputPath, "error", liveFeedErr)
+	}
+
 	return &Supervisor{
 		cfg:             cfg,
 		logger:          logger,
@@ -86,11 +93,12 @@ func NewSupervisor(cfg Config, logger *slog.Logger) (*Supervisor, error) {
 		broadcastSeen:   make(map[string]time.Time),
 		connectionState: make(map[string]slotConnectionState),
 		checkSlots:      make(chan struct{}, 8),
+		liveFeed:        liveFeed,
 	}, nil
 }
 
 func (s *Supervisor) Close() error {
-	errs := make([]error, 0, 2)
+	errs := make([]error, 0, 3)
 
 	if s.engine != nil {
 		if err := s.engine.Close(); err != nil {
@@ -99,6 +107,11 @@ func (s *Supervisor) Close() error {
 	}
 	if s.auditCloser != nil {
 		if err := s.auditCloser.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if s.liveFeed != nil {
+		if err := s.liveFeed.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -153,6 +166,8 @@ func (s *Supervisor) Run(ctx context.Context, serverCommand []string) error {
 		"score_threshold", s.cfg.ScoreThreshold,
 		"cache_ttl", s.cfg.CacheTTL.String(),
 		"cache_flush_interval", s.cfg.CacheFlushInterval.String(),
+		"live_output_path", s.cfg.LiveOutputPath,
+		"live_output_enabled", s.liveFeed != nil,
 	)
 
 	go s.scanOutput(runCtx, stdout, os.Stdout, "stdout", true, serverInput)
@@ -195,6 +210,20 @@ func (s *Supervisor) scanOutput(ctx context.Context, stream io.Reader, destinati
 		if _, err := fmt.Fprintln(destination, line); err != nil {
 			s.logger.Warn("anti-vpn stream mirror failed", "source", source, "error", err)
 			return
+		}
+
+		// Mirror every captured line into the runtime-managed live output
+		// file so that addons can subscribe to live server events without
+		// having to scrape Pterodactyl console output or race the engine's
+		// own server.log writes.
+		if s.liveFeed != nil {
+			if err := s.liveFeed.WriteLine(line); err != nil {
+				s.liveFeedErrOnce.Do(func() {
+					if s.logger != nil {
+						s.logger.Warn("anti-vpn live output mirror write failed; disabling live feed for this run", "source", source, "path", s.cfg.LiveOutputPath, "error", err)
+					}
+				})
+			}
 		}
 
 		if inspect {

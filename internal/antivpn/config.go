@@ -39,6 +39,16 @@ type Config struct {
 	KickCommand           string
 	BroadcastPassCommand  string
 	BroadcastBlockCommand string
+	// LiveOutputPath is the runtime-managed file the supervisor mirrors
+	// every stdout/stderr line into. Addons consume this file via
+	// `tail -F` (or any line-oriented reader) instead of tailing the
+	// engine-written server.log. An empty value disables the mirror.
+	LiveOutputPath string
+	// LiveOutputMaxBytes is the soft size cap for the live mirror file.
+	// When the file grows past this size the supervisor renames the
+	// current file to "<path>.1" (replacing any previous rotation) and
+	// reopens a fresh file. Zero or negative disables rotation.
+	LiveOutputMaxBytes int64
 }
 
 func LoadConfigFromEnv() (Config, error) {
@@ -67,6 +77,8 @@ func LoadConfigFromEnv() (Config, error) {
 		KickCommand:          envString("ANTI_VPN_KICK_COMMAND", "clientkick %SLOT%"),
 		BroadcastPassCommand: envString("ANTI_VPN_BROADCAST_PASS_TEMPLATE", `say [Anti-VPN] VPN PASS: %PLAYER% cleared checks (%SCORE%/%THRESHOLD%). %SUMMARY%`),
 		BroadcastBlockCommand: envString("ANTI_VPN_BROADCAST_BLOCK_TEMPLATE", `say [Anti-VPN] VPN BLOCKED: %PLAYER% triggered anti-VPN (%SCORE%/%THRESHOLD%). %SUMMARY%`),
+		LiveOutputPath:       envString("TAYSTJK_LIVE_OUTPUT_PATH", "/home/container/.runtime/live/server-output.log"),
+		LiveOutputMaxBytes:   int64(envInt("TAYSTJK_LIVE_OUTPUT_MAX_BYTES", 10*1024*1024)),
 	}
 
 	mode, err := parseMode(envString("ANTI_VPN_MODE", string(ModeBlock)))
@@ -118,6 +130,12 @@ func LoadConfigFromEnv() (Config, error) {
 	cfg.CachePath = filepath.Clean(cfg.CachePath)
 	cfg.AuditLogPath = filepath.Clean(cfg.AuditLogPath)
 	cfg.LogPath = filepath.Clean(cfg.LogPath)
+	if strings.TrimSpace(cfg.LiveOutputPath) != "" {
+		cfg.LiveOutputPath = filepath.Clean(cfg.LiveOutputPath)
+	}
+	if cfg.LiveOutputMaxBytes < 0 {
+		cfg.LiveOutputMaxBytes = 0
+	}
 
 	return cfg, nil
 }

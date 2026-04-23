@@ -145,6 +145,7 @@ print_anti_vpn_summary() {
   print_anti_vpn_providers
   debug "Capture mode: stdout-first with active log fallback"
   debug "Server log path: ${ANTI_VPN_LOG_PATH}"
+  debug "Live output mirror: ${TAYSTJK_LIVE_OUTPUT_MODE} (${TAYSTJK_LIVE_OUTPUT_PATH})"
   debug "Decision logs: $(printf '%s' "$(bool_state "$ANTI_VPN_LOG_DECISIONS")" | tr '[:lower:]' '[:upper:]')"
   debug "Cache TTL: ${ANTI_VPN_CACHE_TTL}"
   debug "Cache flush: ${ANTI_VPN_CACHE_FLUSH_INTERVAL}"

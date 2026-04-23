@@ -170,13 +170,17 @@ def worker_log(message: str) -> None:
 def load_runtime_env() -> dict[str, str]:
     state: dict[str, str] = {}
 
-    runtime_mod_dir = os.getenv("TAYSTJK_ACTIVE_MOD_DIR")
-    if runtime_mod_dir:
-        state["TAYSTJK_ACTIVE_MOD_DIR"] = runtime_mod_dir.strip()
+    tracked_keys = {
+        "TAYSTJK_ACTIVE_MOD_DIR",
+        "TAYSTJK_ACTIVE_SERVER_LOG_PATH",
+        "TAYSTJK_LIVE_OUTPUT_ENABLED",
+        "TAYSTJK_LIVE_OUTPUT_PATH",
+    }
 
-    runtime_log_path = os.getenv("TAYSTJK_ACTIVE_SERVER_LOG_PATH")
-    if runtime_log_path:
-        state["TAYSTJK_ACTIVE_SERVER_LOG_PATH"] = runtime_log_path.strip()
+    for key in tracked_keys:
+        value = os.getenv(key)
+        if value:
+            state[key] = value.strip()
 
     if not RUNTIME_ENV_PATH.is_file():
         return state
@@ -188,7 +192,7 @@ def load_runtime_env() -> dict[str, str]:
                 continue
             key, raw_value = line.split("=", 1)
             key = key.strip()
-            if key not in {"TAYSTJK_ACTIVE_MOD_DIR", "TAYSTJK_ACTIVE_SERVER_LOG_PATH"}:
+            if key not in tracked_keys:
                 continue
             state.setdefault(key, raw_value.strip().strip("\"'"))
     except OSError as exc:
@@ -208,6 +212,38 @@ def active_server_log_path() -> Path:
     if runtime_log_path:
         return Path(runtime_log_path)
     return HOME_DIR / active_mod_dir() / "server.log"
+
+
+def live_output_path() -> Path | None:
+    """Return the supervisor-managed live mirror file when available.
+
+    The chatlogger prefers this file because it is written directly by the
+    anti-VPN supervisor which owns the dedicated server's stdout/stderr
+    pipes. It contains every line the engine prints, including lines that
+    the engine does not flush to its own server.log promptly. When the
+    supervisor is disabled (``TAYSTJK_LIVE_OUTPUT_ENABLED`` != ``true``)
+    we fall back to tailing ``server.log`` for backwards compatibility.
+    """
+    runtime_env = load_runtime_env()
+    enabled = runtime_env.get("TAYSTJK_LIVE_OUTPUT_ENABLED", "").strip().lower()
+    if enabled != "true":
+        return None
+    raw_path = runtime_env.get("TAYSTJK_LIVE_OUTPUT_PATH", "").strip()
+    if not raw_path:
+        return None
+    return Path(raw_path)
+
+
+def preferred_tail_source() -> tuple[Path, str]:
+    """Return (path, source_label) for the chatlogger to tail.
+
+    Prefers the runtime live-output mirror when available; otherwise falls
+    back to the active server.log path.
+    """
+    live = live_output_path()
+    if live is not None:
+        return live, "live-output"
+    return active_server_log_path(), "server-log"
 
 
 def current_plain_log_path(now: datetime) -> Path:
@@ -609,6 +645,7 @@ class WorkerRuntime:
             f"last_chat={self.last_chat_at or 'never'}"
         )
         worker_log(message)
+        tail_path, tail_source = preferred_tail_source()
         write_state(
             {
                 "pid": os.getpid(),
@@ -618,6 +655,8 @@ class WorkerRuntime:
                 "last_chat_at": self.last_chat_at,
                 "last_chat": self.last_chat_summary,
                 "server_log_path": str(active_server_log_path()),
+                "tail_source": tail_source,
+                "tail_path": str(tail_path),
             }
         )
 
@@ -690,16 +729,18 @@ def worker_loop() -> int:
     backoff = TAIL_RESTART_BACKOFF_INITIAL
 
     while not _shutdown_requested:
-        server_log_path = active_server_log_path()
+        tail_path, tail_source = preferred_tail_source()
 
-        # Wait for the log file to exist before spawning tail; tail -F can
-        # also wait on its own, but blocking here keeps the worker log
-        # easier to interpret.
-        if not server_log_path.exists():
-            worker_log(f"server log {server_log_path} not present yet, waiting")
+        # Wait for the tail source to exist before spawning tail; tail -F
+        # can also wait on its own, but blocking here keeps the worker log
+        # easier to interpret. The supervisor creates the live mirror file
+        # as soon as the dedicated server process starts, so this only
+        # blocks early during cold startup.
+        if not tail_path.exists():
+            worker_log(f"tail source {tail_path} ({tail_source}) not present yet, waiting")
             wait_until = time.monotonic() + 5
             while not _shutdown_requested and time.monotonic() < wait_until:
-                if server_log_path.exists():
+                if tail_path.exists():
                     break
                 time.sleep(0.5)
                 runtime.heartbeat()
@@ -707,9 +748,9 @@ def worker_loop() -> int:
                 break
             continue
 
-        worker_log(f"tailing {server_log_path}")
+        worker_log(f"tailing {tail_path} (source={tail_source})")
         try:
-            proc = _start_tail(server_log_path)
+            proc = _start_tail(tail_path)
         except (OSError, ValueError) as exc:
             worker_log(f"failed to start tail: {exc}; retrying in {backoff}s")
             _sleep_with_heartbeat(runtime, backoff)
@@ -788,10 +829,14 @@ def show_status() -> int:
     record = read_pid_record()
     state = read_state()
 
+    tail_path, tail_source = preferred_tail_source()
+
     print(f"{ADDON_LABEL} status")
     print(f"  pid file:        {PID_PATH}")
     print(f"  worker log:      {WORKER_LOG_PATH}")
     print(f"  chatlogs dir:    {CHATLOGS_DIR}")
+    print(f"  tail source:     {tail_source}")
+    print(f"  tail path:       {tail_path}")
     print(f"  server log path: {active_server_log_path()}")
 
     if record is None:

@@ -1,0 +1,9 @@
+{
+  "enabled": true,
+  "rcon_host": "127.0.0.1",
+  "rcon_timeout_seconds": 3,
+  "announce_command": "svsay",
+  "fallback_to_server_log": true,
+  "min_seconds_between_announcements": 3,
+  "log_file": "/home/container/logs/bundled-live-team-announcer.log"
+}
