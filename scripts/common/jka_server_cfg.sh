@@ -84,12 +84,21 @@ write_runtime_state() {
   local runtime_env_path="${runtime_dir}/taystjk-effective.env"
   local runtime_json_path="${runtime_dir}/taystjk-effective.json"
   local overrides_enabled_json="false"
+  local live_output_enabled_json="false"
 
   mkdir -p "$runtime_dir"
   chmod 700 "$runtime_dir"
 
   if [[ "$SERVER_CFG_OVERRIDES_ENABLED" == "true" ]]; then
     overrides_enabled_json="true"
+  fi
+
+  if [[ "$TAYSTJK_LIVE_OUTPUT_ENABLED" == "true" ]]; then
+    live_output_enabled_json="true"
+  fi
+
+  if [[ -n "$TAYSTJK_LIVE_OUTPUT_PATH" ]]; then
+    mkdir -p "$(dirname "$TAYSTJK_LIVE_OUTPUT_PATH")"
   fi
 
   {
@@ -105,6 +114,12 @@ write_runtime_state() {
     printf 'TAYSTJK_EFFECTIVE_SERVER_MAXCLIENTS=%q\n' "$TAYSTJK_EFFECTIVE_SERVER_MAXCLIENTS"
     printf 'TAYSTJK_EFFECTIVE_SERVER_GAMETYPE=%q\n' "$TAYSTJK_EFFECTIVE_SERVER_GAMETYPE"
     printf 'TAYSTJK_EFFECTIVE_SERVER_RCON_PASSWORD=%q\n' "$TAYSTJK_EFFECTIVE_SERVER_RCON_PASSWORD"
+    printf 'TAYSTJK_LIVE_OUTPUT_ENABLED=%q\n' "$TAYSTJK_LIVE_OUTPUT_ENABLED"
+    printf 'TAYSTJK_LIVE_OUTPUT_MODE=%q\n' "$TAYSTJK_LIVE_OUTPUT_MODE"
+    printf 'TAYSTJK_LIVE_OUTPUT_SOURCE=%q\n' "$TAYSTJK_LIVE_OUTPUT_SOURCE"
+    printf 'TAYSTJK_LIVE_OUTPUT_FORMAT=%q\n' "$TAYSTJK_LIVE_OUTPUT_FORMAT"
+    printf 'TAYSTJK_LIVE_OUTPUT_PATH=%q\n' "$TAYSTJK_LIVE_OUTPUT_PATH"
+    printf 'TAYSTJK_LIVE_OUTPUT_MAX_BYTES=%q\n' "$TAYSTJK_LIVE_OUTPUT_MAX_BYTES"
   } > "$runtime_env_path"
   chmod 600 "$runtime_env_path"
 
@@ -119,7 +134,13 @@ write_runtime_state() {
     --arg effective_server_motd "$TAYSTJK_EFFECTIVE_SERVER_MOTD" \
     --arg effective_server_maxclients "$TAYSTJK_EFFECTIVE_SERVER_MAXCLIENTS" \
     --arg effective_server_gametype "$TAYSTJK_EFFECTIVE_SERVER_GAMETYPE" \
+    --arg live_output_mode "$TAYSTJK_LIVE_OUTPUT_MODE" \
+    --arg live_output_source "$TAYSTJK_LIVE_OUTPUT_SOURCE" \
+    --arg live_output_format "$TAYSTJK_LIVE_OUTPUT_FORMAT" \
+    --arg live_output_path "$TAYSTJK_LIVE_OUTPUT_PATH" \
+    --arg live_output_max_bytes "$TAYSTJK_LIVE_OUTPUT_MAX_BYTES" \
     --argjson server_cfg_overrides_enabled "$overrides_enabled_json" \
+    --argjson live_output_enabled "$live_output_enabled_json" \
     '{
       active_mod_dir: $active_mod_dir,
       active_server_config: $active_server_config,
@@ -131,7 +152,15 @@ write_runtime_state() {
       effective_server_hostname: $effective_server_hostname,
       effective_server_motd: $effective_server_motd,
       effective_server_maxclients: $effective_server_maxclients,
-      effective_server_gametype: $effective_server_gametype
+      effective_server_gametype: $effective_server_gametype,
+      live_output: {
+        enabled: $live_output_enabled,
+        mode: $live_output_mode,
+        source: $live_output_source,
+        format: $live_output_format,
+        path: $live_output_path,
+        max_bytes: $live_output_max_bytes
+      }
     }' > "$runtime_json_path"
   chmod 600 "$runtime_json_path"
 }
@@ -175,6 +204,41 @@ active_server_log_path() {
   printf '/home/container/%s/%s\n' "$active_game_dir" "$SERVER_LOG_FILENAME"
 }
 
+# Live-output addon mirror configuration. The supervisor mirrors every
+# stdout/stderr line it scans into a runtime-managed file under
+# /home/container/.runtime/live so addons can subscribe to live server
+# output without having to scrape Pterodactyl console output. Defaults
+# can be overridden by the operator via TAYSTJK_LIVE_OUTPUT_* environment
+# variables.
+configure_live_output_settings() {
+  : "${TAYSTJK_LIVE_OUTPUT_PATH:=/home/container/.runtime/live/server-output.log}"
+  : "${TAYSTJK_LIVE_OUTPUT_MAX_BYTES:=10485760}"
+  : "${TAYSTJK_LIVE_OUTPUT_FORMAT:=lines}"
+  : "${TAYSTJK_LIVE_OUTPUT_SOURCE:=stdout-first}"
+
+  if [[ ! "$TAYSTJK_LIVE_OUTPUT_MAX_BYTES" =~ ^[0-9]+$ ]]; then
+    warn "TAYSTJK_LIVE_OUTPUT_MAX_BYTES=${TAYSTJK_LIVE_OUTPUT_MAX_BYTES} is invalid, falling back to 10485760"
+    TAYSTJK_LIVE_OUTPUT_MAX_BYTES="10485760"
+  fi
+
+  require_safe_container_path "$TAYSTJK_LIVE_OUTPUT_PATH" "TAYSTJK_LIVE_OUTPUT_PATH"
+}
+
+resolve_effective_live_output_settings() {
+  # Live-output mirroring is owned by the anti-VPN supervisor because that
+  # is the only process in the runtime that owns the dedicated server's
+  # stdout/stderr pipes. When the supervisor is disabled, the mirror file
+  # is not produced and addons must fall back to the engine-written
+  # server.log.
+  if [[ "$ANTI_VPN_EFFECTIVE_MODE" == "off" ]]; then
+    TAYSTJK_LIVE_OUTPUT_ENABLED="false"
+    TAYSTJK_LIVE_OUTPUT_MODE="disabled"
+  else
+    TAYSTJK_LIVE_OUTPUT_ENABLED="true"
+    TAYSTJK_LIVE_OUTPUT_MODE="supervisor-mirror"
+  fi
+}
+
 resolve_effective_server_settings() {
   local active_config_path="$1"
   local config_port=""
@@ -210,6 +274,8 @@ resolve_effective_server_settings() {
   TAYSTJK_SERVER_CFG_OVERRIDES_ENABLED="$SERVER_CFG_OVERRIDES_ENABLED"
   TAYSTJK_EFFECTIVE_SERVER_BINARY="$server_binary_name"
 
+  resolve_effective_live_output_settings
+
   if [[ "$SERVER_CFG_OVERRIDES_ENABLED" == "true" ]]; then
     TAYSTJK_EFFECTIVE_SERVER_PORT="$SERVER_PORT"
     TAYSTJK_EFFECTIVE_SERVER_HOSTNAME="${SERVER_HOSTNAME:-${config_hostname:-TaystJK Pterodactyl Server}}"
@@ -238,7 +304,13 @@ resolve_effective_server_settings() {
     TAYSTJK_EFFECTIVE_SERVER_MOTD \
     TAYSTJK_EFFECTIVE_SERVER_MAXCLIENTS \
     TAYSTJK_EFFECTIVE_SERVER_GAMETYPE \
-    TAYSTJK_EFFECTIVE_SERVER_RCON_PASSWORD
+    TAYSTJK_EFFECTIVE_SERVER_RCON_PASSWORD \
+    TAYSTJK_LIVE_OUTPUT_ENABLED \
+    TAYSTJK_LIVE_OUTPUT_MODE \
+    TAYSTJK_LIVE_OUTPUT_SOURCE \
+    TAYSTJK_LIVE_OUTPUT_FORMAT \
+    TAYSTJK_LIVE_OUTPUT_PATH \
+    TAYSTJK_LIVE_OUTPUT_MAX_BYTES
 
   write_runtime_state
 }

@@ -13,13 +13,14 @@ This guide is synced into:
 - Rename a top-level addon file to end with `.disable` if you want to keep it without running it.
 - Files inside `docs/`, `examples/`, and `defaults/` are **not** executed.
 - The built-in `checkserverstatus` helper is controlled by `ADDON_CHECKSERVERSTATUS_ENABLED`.
-- The built-in `chatlogger` helper is controlled by `ADDON_CHATLOGGER_ENABLED`, follows the resolved active server log path from runtime state, and writes daily player chat logs into `/home/container/chatlogs`.
+- The built-in `chatlogger` helper is controlled by `ADDON_CHATLOGGER_ENABLED`. It now consumes the runtime-managed **live output mirror** by default and falls back to tailing the active `server.log` only when the live mirror is not available. It writes daily player chat logs into `/home/container/chatlogs`.
 - Scripts run in alphabetical order before normal managed startup.
 - If `ADDONS_STRICT=false`, failed addons are logged and startup continues.
 - If `ADDONS_STRICT=true`, a failed addon stops startup.
 - Useful runtime state is available in:
   - `/home/container/.runtime/taystjk-effective.env`
   - `/home/container/.runtime/taystjk-effective.json`
+- **Live server output** is the preferred event source for event-driven addons. The anti-VPN supervisor mirrors every line the server prints to its stdout/stderr into `$TAYSTJK_LIVE_OUTPUT_PATH` (default `/home/container/.runtime/live/server-output.log`). Multiple addons can `tail -F` it concurrently. Tailing `server.log` is now considered fallback / legacy.
 
 ## 2. How to use addons
 
@@ -58,6 +59,13 @@ If you want to use the bundled announcer example, copy these files from `example
 /home/container/addons/examples/20-python-announcer.py
 /home/container/addons/examples/20-python-announcer.config.json
 /home/container/addons/examples/20-python-announcer.messages.txt
+```
+
+If you want to use the bundled live-event team announcer example (recommended pattern for new event-driven addons), copy these instead:
+
+```text
+/home/container/addons/examples/20-live-team-announcer.py
+/home/container/addons/examples/20-live-team-announcer.config.json
 ```
 
 If you later want to keep that copied announcer without running it, rename the copied script to:
@@ -101,3 +109,39 @@ if not config_path or not os.path.isfile(config_path):
 
 print(f"[addon:python] Config found: {config_path}")
 ```
+
+### Live-output example (preferred for event-driven addons)
+
+The supervisor mirrors every server stdout/stderr line into a runtime-managed file. Addons can subscribe to it with `tail -F`.
+
+Bash:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+LIVE="${TAYSTJK_LIVE_OUTPUT_PATH:-/home/container/.runtime/live/server-output.log}"
+
+# tail -F handles rotation, truncation, and unlink+recreate transparently.
+tail -n 0 -F -- "${LIVE}" | while IFS= read -r line; do
+  if [[ "${line}" == *"ChangeTeam:"* ]]; then
+    echo "[addon:bash-live] ${line}"
+  fi
+done
+```
+
+Python:
+
+```python
+#!/usr/bin/env python3
+import os, subprocess
+
+live = os.getenv("TAYSTJK_LIVE_OUTPUT_PATH", "/home/container/.runtime/live/server-output.log")
+proc = subprocess.Popen(["tail", "-n", "0", "-F", "--", live],
+                        stdout=subprocess.PIPE, text=True, bufsize=1)
+for line in proc.stdout:
+    if "ChangeTeam:" in line:
+        print(f"[addon:python-live] {line.rstrip()}")
+```
+
+To send a message back to the server while reacting to a live line, use the same RCON path as the bundled `examples/20-python-announcer.py` (`say` or `svsay` over UDP using `TAYSTJK_EFFECTIVE_SERVER_PORT` and `TAYSTJK_EFFECTIVE_SERVER_RCON_PASSWORD`). See `examples/20-live-team-announcer.py` for a complete worked example.

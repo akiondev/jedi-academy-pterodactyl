@@ -330,6 +330,150 @@ Important values include:
 - `TAYSTJK_EFFECTIVE_SERVER_GAMETYPE`
 - `TAYSTJK_EFFECTIVE_SERVER_RCON_PASSWORD`
 
+### Live-output runtime state
+
+The runtime also publishes the live-output addon interface state. Every variable below is exported into the addon process environment **and** persisted into both the `.env` and `.json` runtime state files:
+
+- `TAYSTJK_LIVE_OUTPUT_ENABLED` — `true` when the supervisor is running and is mirroring live server output, `false` otherwise. When `false`, addons must fall back to tailing `TAYSTJK_ACTIVE_SERVER_LOG_PATH`.
+- `TAYSTJK_LIVE_OUTPUT_MODE` — `supervisor-mirror` when enabled, `disabled` otherwise. Reserved for future modes; addons should treat anything other than `disabled` as "live output is available".
+- `TAYSTJK_LIVE_OUTPUT_SOURCE` — describes where the supervisor reads from. Default: `stdout-first` (matches the existing anti-VPN capture model: stdout/stderr first, log file fallback if appropriate).
+- `TAYSTJK_LIVE_OUTPUT_FORMAT` — line delivery format. Default: `lines` (one server-printed line per file line, no JSON envelope, no timestamping by the runtime).
+- `TAYSTJK_LIVE_OUTPUT_PATH` — absolute path to the live mirror file. Default: `/home/container/.runtime/live/server-output.log`. Multiple addons may `tail -F` this file concurrently.
+- `TAYSTJK_LIVE_OUTPUT_MAX_BYTES` — soft size cap before the supervisor rotates the file. When the file grows past this size the supervisor renames it to `<path>.1` (replacing any previous archive) and reopens a fresh file. Default: `10485760` (10 MiB).
+
+## Live server output (preferred event source)
+
+Event-driven addons should consume **live server output** instead of tailing `server.log` themselves.
+
+### Why this exists
+
+A regular user addon launched from `entrypoint.sh` does not own the dedicated server's stdout/stderr pipes. The anti-VPN supervisor does, because it directly supervises the engine. Historically that meant:
+
+- backend-managed features (anti-VPN) reacted in near real time
+- addon-based features depended on tailing `server.log`, which the engine flushes lazily and rotates between maps, leading to delayed or fragile reactions
+
+To close that gap, the supervisor now mirrors every line it scans on stdout/stderr into a runtime-managed **live output file**. Addons consume that file with any line-oriented reader, and benefit from the same near-real-time stream the supervisor uses internally.
+
+### Architecture
+
+- The anti-VPN supervisor owns the engine's stdout/stderr pipes (verified in `internal/antivpn/supervisor.go`, the `scanOutput` path).
+- For every line the supervisor scans, it appends that line (newline-terminated) to `$TAYSTJK_LIVE_OUTPUT_PATH`.
+- The file is a regular append-only file, **not** a FIFO/socket. This is intentional: a regular file allows multiple consumers (`tail -F`) to read concurrently, never blocks the supervisor's hot path on a missing reader, never loses lines on consumer disconnect, and is trivially inspectable with `cat` / `less`.
+- The supervisor performs size-based rotation. When the file grows past `TAYSTJK_LIVE_OUTPUT_MAX_BYTES` it renames the current file to `<path>.1` (replacing any previous archive) and reopens a fresh file. Consumers using `tail -F` reattach automatically.
+- When the supervisor is disabled (`ANTI_VPN_ENABLED=false` or `ANTI_VPN_MODE=off`), `TAYSTJK_LIVE_OUTPUT_ENABLED=false` and the live file is not produced. Addons must fall back to `TAYSTJK_ACTIVE_SERVER_LOG_PATH`.
+
+### When to use live output vs server.log fallback
+
+- **Use live output** for any event-driven addon: chat watchers, team-change watchers, kill-feed watchers, RCON-triggered automations, webhook bridges, map-change announcers, etc.
+- **Use the `server.log` fallback** only when:
+  - the addon explicitly needs to scan history written before it started, or
+  - the supervisor is disabled and you still want the addon to function in a degraded mode.
+
+The bundled `chatlogger` helper demonstrates the recommended pattern: prefer `TAYSTJK_LIVE_OUTPUT_PATH` when it is enabled, otherwise transparently fall back to `TAYSTJK_ACTIVE_SERVER_LOG_PATH`.
+
+### Lifecycle and reliability guarantees
+
+- The live mirror file exists for the entire lifetime of an active supervisor run. The file is opened on supervisor startup and closed on supervisor shutdown.
+- Across server restarts (engine respawn), the supervisor process keeps running and keeps appending. There is **no** mid-stream truncation. Lines from `ShutdownGame` to `InitGame` continue uninterrupted.
+- Across worker (supervisor) restarts the file is reopened in append mode, so consumers using `tail -F` resume cleanly.
+- Rotation is best-effort and never fatal. If rotation fails (e.g. disk full), the supervisor disables further mirror writes for the rest of the run rather than blocking the server. A warning is logged once.
+- Mirror writes are **never** allowed to block the engine. A failing write disables the mirror for the rest of the run; the engine continues normally.
+
+### Performance caveats
+
+- Every line the engine prints is written to disk via the supervisor. This is the same I/O profile the engine's own `server.log` already produces, so it is not a new bottleneck in practice. Operators with very chatty mods can lower `TAYSTJK_LIVE_OUTPUT_MAX_BYTES` to keep the active file small.
+- Multiple `tail -F` consumers are cheap, but each one runs its own `tail` process. Prefer one consumer per addon.
+- There is no per-line JSON envelope. If an addon needs structured events, parse them from the line text itself, the same way anti-VPN parses `ClientConnect:` / `ClientUserinfoChanged:` / `ChangeTeam:` lines.
+
+### Bundled / default consumers
+
+- `defaults/40-chatlogger.py` — primary input is the live mirror file when available, with automatic fallback to `server.log`. The status command (`--status`) prints which source is currently being tailed.
+- `examples/20-live-team-announcer.py` — bundled example that consumes the live mirror file, parses `ChangeTeam:` events, and announces team changes via `say` or `svsay` over RCON. Activate it by copying the script and its `.config.json` into the top-level addon directory.
+
+### Concrete examples
+
+#### Bash: react to ChangeTeam events from live output
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+LIVE="${TAYSTJK_LIVE_OUTPUT_PATH:-/home/container/.runtime/live/server-output.log}"
+
+if [[ ! -e "${LIVE}" ]]; then
+  echo "[addon:bash-live] live output not available; supervisor disabled?"
+  exit 1
+fi
+
+# tail -F follows rotation, truncation, and unlink+recreate.
+tail -n 0 -F -- "${LIVE}" | while IFS= read -r line; do
+  if [[ "${line}" == *"ChangeTeam:"* ]]; then
+    echo "[addon:bash-live] ${line}"
+  fi
+done
+```
+
+#### Python: react to ChangeTeam events and announce via RCON
+
+```python
+#!/usr/bin/env python3
+import os, re, socket, subprocess
+
+LIVE = os.getenv("TAYSTJK_LIVE_OUTPUT_PATH", "/home/container/.runtime/live/server-output.log")
+PORT = int(os.getenv("TAYSTJK_EFFECTIVE_SERVER_PORT", "29070"))
+PASSWORD = os.getenv("TAYSTJK_EFFECTIVE_SERVER_RCON_PASSWORD", "")
+
+CHANGE_TEAM = re.compile(
+    r'ChangeTeam:\s*\d+\s*\[[^\]]*\]\s*\([^)]*\)\s*"(?P<player>[^"]+)"\s+\w+\s*->\s*(?P<team>\w+)'
+)
+
+def announce(message: str, command: str = "svsay") -> None:
+    if not PASSWORD:
+        return
+    payload = b"\xff\xff\xff\xffrcon " + PASSWORD.encode() + f' {command} "{message}"'.encode()
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(3)
+    try:
+        sock.sendto(payload, ("127.0.0.1", PORT))
+    finally:
+        sock.close()
+
+proc = subprocess.Popen(["tail", "-n", "0", "-F", "--", LIVE],
+                        stdout=subprocess.PIPE, text=True, bufsize=1)
+for line in proc.stdout:
+    match = CHANGE_TEAM.search(line)
+    if not match:
+        continue
+    team = match.group("team").upper()
+    player = match.group("player")
+    if team == "RED":
+        announce(f"{player} joined RED TEAM")
+    elif team == "BLUE":
+        announce(f"{player} joined BLUE TEAM")
+    elif team in {"SPECTATOR", "FREE"}:
+        announce(f"{player} changed SPECTATORS")
+```
+
+To use `say` instead of `svsay`, change the `command` argument in `announce()`. Both go through the same UDP RCON path used by the bundled examples.
+
+#### Migration: switching an existing tail addon to live output
+
+Before:
+
+```bash
+tail -n 0 -F -- "${TAYSTJK_ACTIVE_SERVER_LOG_PATH}"
+```
+
+After:
+
+```bash
+TAIL_PATH="${TAYSTJK_LIVE_OUTPUT_PATH:-${TAYSTJK_ACTIVE_SERVER_LOG_PATH}}"
+if [[ "${TAYSTJK_LIVE_OUTPUT_ENABLED:-false}" != "true" ]]; then
+  TAIL_PATH="${TAYSTJK_ACTIVE_SERVER_LOG_PATH}"
+fi
+tail -n 0 -F -- "${TAIL_PATH}"
+```
+
 ### Recommended read order for addons
 
 When an addon needs runtime values, prefer this order:
@@ -416,9 +560,15 @@ The managed chat logger:
 
 - is refreshed from the image every managed startup
 - is controlled by the egg variable `ADDON_CHATLOGGER_ENABLED`
-- tails the resolved active server log path with `tail -n 0 -F`, so it
-  transparently reattaches when the engine rotates, truncates, unlinks
-  or recreates `server.log` between maps or game restarts
+- prefers the runtime-managed **live output mirror** (`TAYSTJK_LIVE_OUTPUT_PATH`,
+  default `/home/container/.runtime/live/server-output.log`) as its
+  primary input, because that file is written directly by the anti-VPN
+  supervisor that owns the engine's stdout/stderr pipes
+- falls back to tailing `TAYSTJK_ACTIVE_SERVER_LOG_PATH` with
+  `tail -n 0 -F` when the live mirror is unavailable (e.g. supervisor
+  disabled), preserving backwards compatibility. In both cases `tail -F`
+  transparently reattaches when the underlying file rotates, truncates,
+  is unlinked, or is recreated
 - writes clean daily chat logs into `/home/container/chatlogs`
 - maintains `/home/container/chatlogs/latest.log` as a symlink to the current day
 - keeps recent logs as plain `.log` files
@@ -427,8 +577,8 @@ The managed chat logger:
 - keeps worker state in `/home/container/logs/chatlogger.pid` (JSON)
 - writes worker output, restart traces, and a periodic heartbeat to
   `/home/container/logs/chatlogger-helper.log`
-- records progress and the most recent captured chat in
-  `/home/container/logs/chatlogger-state.json` for `--status`
+- records progress, the active tail source, and the most recent captured
+  chat in `/home/container/logs/chatlogger-state.json` for `--status`
 
 Recognized chat verbs include `say`, `chat`, `sayteam`, `teamsay`,
 `team`, `tell`, `whisper`, `pm`, `amsay`, `amtell`, `smsay`, `smtell`,
@@ -473,7 +623,7 @@ Operational pattern it demonstrates:
 - the launcher checks for an existing PID
 - stale PID files are removed if the process no longer exists
 - a detached worker is started in a new session
-- the worker tails the resolved active server log path and keeps running after startup
+- the worker tails the runtime live-output mirror (or falls back to the resolved active server log path) and keeps running after startup
 
 ## Bundled example template
 
@@ -485,7 +635,16 @@ The project ships a Python announcer example:
 /home/container/addons/examples/20-python-announcer.messages.txt
 ```
 
-This is an example template, not a live addon by default.
+This is an example template, not a live addon by default. It uses a periodic timer (no live event input).
+
+A second bundled example demonstrates the **preferred** event-driven model — consuming the live server output mirror written by the supervisor:
+
+```text
+/home/container/addons/examples/20-live-team-announcer.py
+/home/container/addons/examples/20-live-team-announcer.config.json
+```
+
+The live team announcer parses `ChangeTeam:` lines from `TAYSTJK_LIVE_OUTPUT_PATH` and emits human-friendly messages such as `Padawan joined RED TEAM`, `Padawan joined BLUE TEAM`, and `Padawan changed SPECTATORS` over `say` or `svsay`. Use it as a reference when writing new event-driven addons.
 
 To activate it, copy those files into the top-level addon directory:
 
@@ -744,7 +903,7 @@ Check:
   validates the recorded PID against `/proc/<pid>/cmdline` on every
   managed startup, so a recycled PID will trigger a clean restart
   automatically
-- the active server log exists at the path published in `TAYSTJK_ACTIVE_SERVER_LOG_PATH`
+- the active server log exists at the path published in `TAYSTJK_ACTIVE_SERVER_LOG_PATH`, **or** the live mirror file at `TAYSTJK_LIVE_OUTPUT_PATH` is being written by the supervisor (check the chatlogger `--status` output for the active `tail source`)
 
 Useful commands:
 

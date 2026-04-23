@@ -265,6 +265,7 @@ print_paths() {
   kv "Runtime env" "/home/container/.runtime/taystjk-effective.env"
   kv "Runtime json" "/home/container/.runtime/taystjk-effective.json"
   kv "Server log" "$TAYSTJK_ACTIVE_SERVER_LOG_PATH"
+  kv "Live output" "$TAYSTJK_LIVE_OUTPUT_PATH"
   kv "Anti-VPN log" "$ANTI_VPN_LOG_PATH"
   kv "Chatlogs dir" "/home/container/chatlogs"
   kv "Audit log" "$ANTI_VPN_AUDIT_LOG_PATH"
@@ -339,6 +340,7 @@ configure_addons
 configure_server_settings
 configure_server_logging
 configure_anti_vpn
+configure_live_output_settings
 
 mkdir -p /home/container/base /home/container/logs
 if is_taystjk_managed_mod_dir "$active_game_dir"; then
