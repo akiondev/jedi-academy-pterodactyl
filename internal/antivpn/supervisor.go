@@ -504,21 +504,16 @@ func (s *Supervisor) clearConnectionState(slot string) {
 
 	// Also clear the dedupe entry for this slot so that a new player joining the
 	// same slot after a disconnect gets a fresh check even within the dedupe window.
+	// The broadcast cooldown is intentionally NOT cleared here: the cooldown is
+	// keyed by IP (not slot), and persisting it across disconnects prevents a rapid
+	// kick-and-reconnect cycle from mass-spamming the console with repeated VPN PASS
+	// or VPN BLOCKED announcements. The natural cooldown window (BroadcastCooldown)
+	// ensures that a legitimately reconnecting player still receives a fresh broadcast
+	// once the window expires.
 	if hasState && state.Addr.IsValid() {
 		s.seenMu.Lock()
 		delete(s.seenEvents, slot+"|"+state.Addr.String())
 		s.seenMu.Unlock()
-
-		// Clear any broadcast cooldown entries for this slot+IP so intentional
-		// reconnects can emit a fresh anti-VPN pass/block message for the new session.
-		prefix := slot + "|" + state.Addr.String() + "|"
-		s.broadcastMu.Lock()
-		for key := range s.broadcastSeen {
-			if strings.HasPrefix(key, prefix) {
-				delete(s.broadcastSeen, key)
-			}
-		}
-		s.broadcastMu.Unlock()
 	}
 }
 
@@ -602,7 +597,7 @@ func (s *Supervisor) auditDecision(source, slot string, addr netip.Addr, decisio
 }
 
 func (s *Supervisor) broadcastDecision(stdin io.Writer, slot, playerName string, decision Decision) {
-	if !s.shouldBroadcast(slot, decision) {
+	if !s.shouldBroadcast(decision) {
 		return
 	}
 
@@ -674,7 +669,7 @@ func decisionAction(decision Decision) string {
 	}
 }
 
-func (s *Supervisor) shouldBroadcast(slot string, decision Decision) bool {
+func (s *Supervisor) shouldBroadcast(decision Decision) bool {
 	switch s.cfg.BroadcastMode {
 	case BroadcastOff:
 		return false
@@ -692,7 +687,11 @@ func (s *Supervisor) shouldBroadcast(slot string, decision Decision) bool {
 	}
 
 	now := time.Now().UTC()
-	key := slot + "|" + decision.IP + "|" + decisionAction(decision)
+	// Key by IP only (no slot) so the cooldown persists across disconnect/reconnect
+	// cycles regardless of which slot the player lands on. This prevents a rapid
+	// kick-and-reconnect loop (e.g., triggered by a long in-game chat message) from
+	// mass-spamming the console with repeated VPN PASS/BLOCK announcements.
+	key := decision.IP + "|" + decisionAction(decision)
 
 	s.broadcastMu.Lock()
 	defer s.broadcastMu.Unlock()
