@@ -155,7 +155,7 @@ func (s *Supervisor) Run(ctx context.Context, serverCommand []string) error {
 	)
 
 	go s.scanOutput(runCtx, stdout, os.Stdout, "stdout", true, serverInput)
-	go s.scanOutput(runCtx, stderr, os.Stderr, "stderr", false, serverInput)
+	go s.scanOutput(runCtx, stderr, os.Stderr, "stderr", true, serverInput)
 	go s.forwardConsoleInput(runCtx, serverInput)
 	go s.monitorLogFile(runCtx, serverInput)
 
