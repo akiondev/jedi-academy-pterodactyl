@@ -179,11 +179,11 @@ print_basic_server_info() {
   local rcon_state="NOT SET"
 
   log_path="$(active_server_log_path)"
-  process_line="$(pgrep -af 'taystjkded' | head -n 1 || true)"
+  process_line="$(pgrep -af "${TAYSTJK_EFFECTIVE_SERVER_BINARY:-taystjkded}" | head -n 1 || true)"
   [[ -n "$process_line" ]] && process_state="RUNNING"
   [[ -n "$(effective_rcon_password)" ]] && rcon_state="CONFIGURED"
 
-  printf '%s%sTaystJK Server Status%s\n' "${COLOR_BOLD}" "${COLOR_BLUE}" "${COLOR_RESET}"
+  printf '%s%sJKA Server Status%s\n' "${COLOR_BOLD}" "${COLOR_BLUE}" "${COLOR_RESET}"
   section "SERVER"
   kv "Time" "$(date '+%Y-%m-%d %H:%M:%S %Z')"
   kv "Mod" "$(active_mod_dir)"
