@@ -7,7 +7,7 @@ the default TaystJK image and the `openjk-modern64`,
 server engine with the **YBEProxy** game-module proxy
 (`base/jampgamei386.so`) built from the
 [Yberion/JKA_YBEProxy](https://github.com/Yberion/JKA_YBEProxy)
-`master` branch.
+`main` branch.
 
 YBEProxy is a server-side game-module proxy. It is **not** a dedicated
 server engine and does **not** replace the engine the same way OpenJK
@@ -76,13 +76,8 @@ mods, alternative `jampgame*.so` builds, etc.) remains
 ## Tags
 
 See [`image-strategy.md`](image-strategy.md) for the full tag policy.
-The YBEProxy legacy32 family currently publishes:
+The YBEProxy legacy32 family publishes:
 
-- `ybeproxy-legacy32` — latest YBEProxy legacy32 main build
-  (mutable).
-- `ybeproxy-legacy32-main-<short_sha>` — pinned to an upstream
-  YBEProxy commit (immutable).
+- `ybeproxy-legacy32` — canonical mutable tag for this runtime.
 
-The `latest`, `taystjk*`, `openjk-modern64*`, `openjk-legacy32*` and
-`vanilla-legacy32*` tags continue to point at their respective
-runtimes and are unaffected by this image.
+No extra `latest-*`, SHA/immutable, or release image tags are published.

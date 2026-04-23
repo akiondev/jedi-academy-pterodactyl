@@ -62,7 +62,7 @@ Warning: this is not an official Pterodactyl installation method. Follow the lin
 ## Quick install
 
 1. Import [egg/egg-jka-taystjk-modern64-pterodactyl.json](egg/egg-jka-taystjk-modern64-pterodactyl.json) into Pterodactyl.
-2. Create a server with the default image `ghcr.io/akiondev/jedi-academy-pterodactyl:latest` (or pin the runtime explicitly with `:taystjk-modern64`). A Docker Hub mirror is published in parallel at `docker.io/akiondev/jedi-academy-pterodactyl` when configured.
+2. Create a server with the runtime tag you want, for example `ghcr.io/akiondev/jedi-academy-pterodactyl:taystjk-modern64`. A Docker Hub mirror is published in parallel at `docker.io/akiondev/jedi-academy-pterodactyl` when configured.
 3. Set `COPYRIGHT_ACKNOWLEDGED=true`.
 4. Add your legally owned Jedi Academy base assets manually into `/home/container/base`.
 5. Start the server and verify that `/home/container/base/assets0.pk3` exists.
@@ -76,6 +76,31 @@ Warning: this is not an official Pterodactyl installation method. Follow the lin
 2. Upload your own mod folder into `/home/container/<modname>`, then set `FS_GAME_MOD` to that folder name, for example `japlus` or `mbii`.
 3. Place the active config file inside that mod folder and set `SERVER_CONFIG` if you are not using `server.cfg`.
 4. Start the server. The runtime will launch manual binaries and mod folders if they exist, but it will not install, sync, or manage them for you.
+
+## Runtime tags and update policy
+
+Canonical public runtime tags (and the only ones published):
+
+1. `taystjk-modern64`
+2. `taystjk-legacy32`
+3. `openjk-modern64`
+4. `openjk-legacy32`
+5. `ybeproxy-legacy32`
+6. `vanilla-legacy32`
+
+Not published: global `latest`, runtime `latest-*`, SHA/immutable tags, release image tags, or legacy alias tags.
+
+Auto-updating upstream TaystJK engine tracks:
+
+- `taystjk-modern64`
+- `taystjk-legacy32`
+
+Non-auto-updating engine tracks:
+
+- `openjk-modern64`
+- `openjk-legacy32`
+- `ybeproxy-legacy32` (manual engine, image-managed YBEProxy payload)
+- `vanilla-legacy32` (manual engine, no image-managed engine payload)
 
 ## What this repo contains
 

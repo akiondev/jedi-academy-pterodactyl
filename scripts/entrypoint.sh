@@ -198,7 +198,11 @@ print_runtime_summary() {
 
 print_preflight_checks() {
   section "CHECKS"
-  ok "Runtime files synced from image"
+  if [[ "${JKA_SYNC_FOUND_RUNTIME_BINARY:-0}" == "1" ]]; then
+    ok "Image-managed runtime binaries synced from image"
+  else
+    info "No image-managed engine binary in this runtime; expecting operator-supplied SERVER_BINARY under /home/container"
+  fi
   ok "Server binary found"
   ok "Container home prepared"
   if [[ "${#EXTRA_STARTUP_ARGV[@]}" -gt 0 ]]; then

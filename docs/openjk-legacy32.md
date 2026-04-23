@@ -62,11 +62,8 @@ them up.
 ## Tags
 
 See [`image-strategy.md`](image-strategy.md) for the full tag policy.
-The OpenJK legacy32 family currently publishes:
+The OpenJK legacy32 family publishes:
 
-- `openjk-legacy32` — latest OpenJK legacy32 master build (mutable).
-- `openjk-legacy32-master-<short_sha>` — pinned to an upstream OpenJK
-  commit (immutable).
+- `openjk-legacy32` — canonical mutable tag for this runtime.
 
-The `latest`, `taystjk*`, and `openjk-modern64*` tags continue to point
-at their respective runtimes and are unaffected by this image.
+No extra `latest-*`, SHA/immutable, or release image tags are published.
