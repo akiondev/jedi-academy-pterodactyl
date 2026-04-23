@@ -65,4 +65,7 @@ sync_runtime_files() {
   if [[ "$found_runtime_binary" -eq 0 ]]; then
     log "No image-provided dedicated binaries were found under ${JKA_PATH_ENGINE_DIST} matching ${JKA_PATH_ENGINE_BINARY_GLOB}"
   fi
+
+  JKA_SYNC_FOUND_RUNTIME_BINARY="$found_runtime_binary"
+  export JKA_SYNC_FOUND_RUNTIME_BINARY
 }

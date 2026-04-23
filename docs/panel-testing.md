@@ -4,6 +4,15 @@ Practical, family-by-family instructions for verifying that each
 runtime image actually starts in a real Pterodactyl panel.
 
 This document is written to be followed step by step in the panel.
+Canonical runtime tag order (with vanilla last where ordering matters):
+
+1. `taystjk-modern64`
+2. `taystjk-legacy32`
+3. `openjk-modern64`
+4. `openjk-legacy32`
+5. `ybeproxy-legacy32`
+6. `vanilla-legacy32`
+
 It assumes:
 
 - A working Pterodactyl panel + Wings node with internet egress.
@@ -45,7 +54,9 @@ family (these lines must all appear, in this order):
 2. A `SERVER` block with `Mode: Dedicated server`, the configured
    `Mod`, `Config`, `Port` and `Binary`.
 3. A `CHECKS` block with at least:
-   - `[ OK ] Runtime files synced from image`
+   - either `[ OK ] Image-managed runtime binaries synced from image`
+     **or** an explicit manual-engine note for runtimes without an
+     image-managed engine binary
    - `[ OK ] Server binary found`
    - `[ OK ] Container home prepared`
 4. `[ OK ] Base assets found`
@@ -254,7 +265,7 @@ container).
 
 ---
 
-## Family: `taystjk-legacy32` (experimental)
+## Family: `taystjk-legacy32`
 
 ### A. Egg
 
@@ -264,11 +275,8 @@ options:
 - `ghcr.io/akiondev/jedi-academy-pterodactyl:taystjk-legacy32`
 - `docker.io/akiondev/jedi-academy-pterodactyl:taystjk-legacy32`
 
-This image is **experimental**. It is only published from CI when
-either the workflow is run via `workflow_dispatch` or the repo
-variable `PUBLISH_TAYSTJK_LEGACY32=true` is set; otherwise the
-runtime image is built but not pushed. Verify the tag exists in your
-registry before creating the panel server.
+This runtime is published on the canonical mutable tag
+`taystjk-legacy32`.
 
 ### B. Files you must upload yourself
 
@@ -328,8 +336,6 @@ log says it loaded `taystjk/jampgamei386.so` (or equivalent).
 
 ### H. Step-by-step panel checklist
 
-- [ ] Confirm the registry actually has the
-      `taystjk-legacy32` tag (this image is publish-gated).
 - [ ] Import `egg/egg-jka-taystjk-legacy32-pterodactyl.json`.
 - [ ] Create a new server using this egg.
 - [ ] Wait for the installer to finish.

@@ -1,7 +1,15 @@
 # Operator sheet — legacy32 families
 
 Short, panel-only crib sheet for the four shipping legacy32 runtime
-families. For full background, error tables and the complete
+families. Canonical runtime order (with vanilla last where ordering
+matters):
+
+1. `taystjk-legacy32`
+2. `openjk-legacy32`
+3. `ybeproxy-legacy32`
+4. `vanilla-legacy32`
+
+For full background, error tables and the complete
 step-by-step panel walkthrough, see [`docs/panel-testing.md`](panel-testing.md).
 
 All four families share:
@@ -78,13 +86,11 @@ A start is **godkänd** when the console reaches
   `FS_GAME_MOD` to something other than `base`, so the
   image-managed `base/jampgamei386.so` was bypassed.
 
-## taystjk-legacy32 (experimental, publish-gated)
+## taystjk-legacy32
 
 - **Egg:** `egg/egg-jka-taystjk-legacy32-pterodactyl.json`
 - **Image:** `ghcr.io/akiondev/jedi-academy-pterodactyl:taystjk-legacy32`
-  — published only on `workflow_dispatch` or when the repo variable
-  `PUBLISH_TAYSTJK_LEGACY32=true` is set. Confirm the tag exists in
-  your registry before creating the panel server.
+  (or the same tag on Docker Hub).
 - **You upload:** base PK3s only.
 - **Image ships:** `taystjkded.i386` (synced into
   `/home/container/`) and the bundled `taystjk/` mod payload (staged

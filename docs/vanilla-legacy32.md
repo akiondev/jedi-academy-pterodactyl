@@ -74,15 +74,8 @@ and select them through the usual `fs_game` / mod-loading variables.
 ## Tags
 
 See [`image-strategy.md`](image-strategy.md) for the full tag policy.
-The vanilla legacy32 family currently publishes:
+The vanilla legacy32 family publishes:
 
-- `vanilla-legacy32` — latest vanilla legacy32 runtime image (mutable).
-- `vanilla-legacy32-master-<short_sha>` — pinned to a repository commit
-  (immutable). There is no upstream engine commit for this image
-  because the engine itself is operator-supplied; the SHA reflects the
-  state of the runtime image (Debian base, libraries, anti-VPN
-  supervisor, addon loader, runtime helpers).
+- `vanilla-legacy32` — canonical mutable tag for this runtime.
 
-The `latest`, `taystjk*`, `openjk-modern64*` and `openjk-legacy32*`
-tags continue to point at their respective runtimes and are unaffected
-by this image.
+No extra `latest-*`, SHA/immutable, or release image tags are published.

@@ -367,7 +367,7 @@ jobs:
     needs:
       - changes
       - validate
-    if: ((github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && (needs.changes.outputs.docker == 'true' || startsWith(github.ref, 'refs/tags/v'))) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    if: github.ref == 'refs/heads/main' && (needs.changes.outputs.docker == 'true' || github.event_name == 'workflow_dispatch')
     permissions:
       contents: read
       packages: write
@@ -424,7 +424,6 @@ jobs:
             build_arg_ref: TAYSTJK_REF
             build_arg_commit: TAYSTJK_COMMIT
             label_prefix: io.akiondev.taystjk-legacy32
-            experimental: true
 
     steps:
       - name: Decide if this matrix cell should run
@@ -439,21 +438,9 @@ jobs:
           DOCKER_VANILLA_LEGACY32: ${{ needs.changes.outputs.docker_vanilla_legacy32 }}
           DOCKER_YBEPROXY_LEGACY32: ${{ needs.changes.outputs.docker_ybeproxy_legacy32 }}
           DOCKER_TAYSTJK_LEGACY32: ${{ needs.changes.outputs.docker_taystjk_legacy32 }}
-          EXPERIMENTAL: ${{ matrix.experimental }}
-          PUBLISH_TAYSTJK_LEGACY32: ${{ vars.PUBLISH_TAYSTJK_LEGACY32 }}
         run: |
           set -euo pipefail
-          # Experimental runtimes (currently: taystjk-legacy32) are
-          # gated behind an explicit opt-in repository variable so they
-          # do not publish from default-branch pushes or release tags
-          # by accident. They still publish on workflow_dispatch so
-          # maintainers can build and push them on demand.
-          if [[ "$EXPERIMENTAL" == "true" && "$EVENT" != "workflow_dispatch" && "$PUBLISH_TAYSTJK_LEGACY32" != "true" ]]; then
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "Skipping experimental ${TARGET}: not opted in (set vars.PUBLISH_TAYSTJK_LEGACY32=true or use workflow_dispatch)."
-            exit 0
-          fi
-          if [[ "$EVENT" == "workflow_dispatch" || "$REF" == refs/tags/v* ]]; then
+          if [[ "$EVENT" == "workflow_dispatch" ]]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -519,16 +506,6 @@ jobs:
           echo "sha=${upstream_sha}" >> "$GITHUB_OUTPUT"
           echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
 
-      - name: Resolve repository commit for manual runtimes
-        if: steps.gate.outputs.run == 'true' && matrix.upstream_repo == ''
-        id: repo_commit
-        run: |
-          set -euo pipefail
-          sha="${GITHUB_SHA}"
-          short_sha="${sha:0:12}"
-          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
-          echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
-
       - name: Set up Docker Buildx
         if: steps.gate.outputs.run == 'true'
         uses: docker/setup-buildx-action@v3
@@ -567,7 +544,6 @@ jobs:
         id: tagspec
         env:
           TARGET: ${{ matrix.target }}
-          SHORT_SHA: ${{ steps.upstream.outputs.short_sha || steps.repo_commit.outputs.short_sha }}
         run: |
           set -euo pipefail
           {
@@ -575,40 +551,32 @@ jobs:
             case "${TARGET}" in
               taystjk-modern64)
                 cat <<TAGS
-          type=ref,event=tag
-          type=raw,value=latest,enable={{is_default_branch}}
-          type=raw,value=taystjk-modern64,enable={{is_default_branch}}
-          type=raw,value=taystjk-modern64-master-${SHORT_SHA}
+          type=raw,value=taystjk-modern64
           TAGS
                 ;;
               openjk-modern64)
                 cat <<TAGS
-          type=raw,value=openjk-modern64,enable={{is_default_branch}}
-          type=raw,value=openjk-modern64-master-${SHORT_SHA}
+          type=raw,value=openjk-modern64
           TAGS
                 ;;
               openjk-legacy32)
                 cat <<TAGS
-          type=raw,value=openjk-legacy32,enable={{is_default_branch}}
-          type=raw,value=openjk-legacy32-master-${SHORT_SHA}
+          type=raw,value=openjk-legacy32
           TAGS
                 ;;
               vanilla-legacy32)
                 cat <<TAGS
-          type=raw,value=vanilla-legacy32,enable={{is_default_branch}}
-          type=raw,value=vanilla-legacy32-master-${SHORT_SHA}
+          type=raw,value=vanilla-legacy32
           TAGS
                 ;;
               ybeproxy-legacy32)
                 cat <<TAGS
-          type=raw,value=ybeproxy-legacy32,enable={{is_default_branch}}
-          type=raw,value=ybeproxy-legacy32-main-${SHORT_SHA}
+          type=raw,value=ybeproxy-legacy32
           TAGS
                 ;;
               taystjk-legacy32)
                 cat <<TAGS
-          type=raw,value=taystjk-legacy32,enable={{is_default_branch}}
-          type=raw,value=taystjk-legacy32-master-${SHORT_SHA}
+          type=raw,value=taystjk-legacy32
           TAGS
                 ;;
               *)

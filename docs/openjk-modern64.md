@@ -56,11 +56,8 @@ them up.
 ## Tags
 
 See [`image-strategy.md`](image-strategy.md) for the full tag policy.
-The OpenJK modern64 family currently publishes:
+The OpenJK modern64 family publishes:
 
-- `openjk-modern64` — latest OpenJK modern64 master build (mutable).
-- `openjk-modern64-master-<short_sha>` — pinned to an upstream OpenJK
-  commit (immutable).
+- `openjk-modern64` — canonical mutable tag for this runtime.
 
-The `latest` and `taystjk*` tags continue to point at the TaystJK
-runtime and are unaffected by this image.
+No extra `latest-*`, SHA/immutable, or release image tags are published.
