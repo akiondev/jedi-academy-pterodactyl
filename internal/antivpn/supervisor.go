@@ -20,6 +20,7 @@ import (
 
 var (
 	logTimestampPrefixPattern = `(?:\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}|\d+:\d{2})`
+	ansiEscapePattern         = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
 	clientConnectPattern = regexp.MustCompile(
 		`^(?:\s*` + logTimestampPrefixPattern + `\s+)?ClientConnect:\s+(\d+)\s+\[([^\]]+)\](?:\s+\([^)]+\))?(?:\s+"([^"]*)")?\s*$`,
 	)
@@ -353,6 +354,11 @@ func (s *Supervisor) monitorLogFile(ctx context.Context, stdin io.Writer) {
 }
 
 func (s *Supervisor) handleLogLine(ctx context.Context, stdin io.Writer, line string, source string) {
+	line = normalizeLogLineForParsing(line)
+	if line == "" {
+		return
+	}
+
 	if slot, ok := parseClientDisconnect(line); ok {
 		s.clearConnectionState(slot)
 		return
@@ -697,6 +703,15 @@ func parseClientConnect(line string) (string, netip.Addr, string, bool) {
 	}
 
 	return matches[1], addr, normalizeLoggedPlayerName(matches[3]), true
+}
+
+func normalizeLogLineForParsing(line string) string {
+	line = ansiEscapePattern.ReplaceAllString(line, "")
+	line = strings.TrimSpace(strings.TrimRight(line, "\r\n"))
+	if line == "" {
+		return ""
+	}
+	return line
 }
 
 func parseClientDisconnect(line string) (string, bool) {

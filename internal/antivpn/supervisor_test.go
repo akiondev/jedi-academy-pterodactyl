@@ -78,6 +78,25 @@ func TestParseClientConnectNormalizesTrailingColorReset(t *testing.T) {
 	}
 }
 
+func TestParseClientConnectFromANSIWrappedLine(t *testing.T) {
+	line := "\x1b[32m2026-01-17 22:16:15 ClientConnect: 0 [83.249.104.192] (GUID) \"Akion\"\x1b[0m"
+	line = normalizeLogLineForParsing(line)
+
+	slot, addr, player, ok := parseClientConnect(line)
+	if !ok {
+		t.Fatalf("expected parser to match ANSI-wrapped ClientConnect line")
+	}
+	if slot != "0" {
+		t.Fatalf("expected slot 0, got %q", slot)
+	}
+	if addr != netip.MustParseAddr("83.249.104.192") {
+		t.Fatalf("expected parsed IP 83.249.104.192, got %s", addr)
+	}
+	if player != "Akion" {
+		t.Fatalf("expected parsed player name Akion, got %q", player)
+	}
+}
+
 func TestParseServerIPFieldSupportsPortSuffix(t *testing.T) {
 	addr, err := parseServerIPField("203.0.113.44:29070")
 	if err != nil {
@@ -375,5 +394,36 @@ func TestHandleLogLineSkipsCheckOnUserinfoWithSameIP(t *testing.T) {
 
 	if seenCount != 0 {
 		t.Fatalf("expected no seenEvents after userinfo change with unchanged IP, got %d", seenCount)
+	}
+}
+
+func TestHandleLogLineParsesANSIWrappedClientConnect(t *testing.T) {
+	supervisor := &Supervisor{
+		cfg: Config{
+			EventDedupeInterval: time.Hour,
+		},
+		connectionState: make(map[string]slotConnectionState),
+		seenEvents: map[string]time.Time{
+			"0|83.249.104.192": time.Now().UTC(),
+		},
+		checkSlots: make(chan struct{}, 1),
+	}
+
+	supervisor.handleLogLine(
+		context.Background(),
+		io.Discard,
+		"\x1b[32m2026-01-17 22:16:15 ClientConnect: 0 [83.249.104.192] (GUID) \"Akion\"\x1b[0m",
+		"stdout",
+	)
+
+	state, ok := supervisor.lookupConnectionState("0")
+	if !ok {
+		t.Fatal("expected ANSI-wrapped ClientConnect to update tracked connection state")
+	}
+	if state.Addr != netip.MustParseAddr("83.249.104.192") {
+		t.Fatalf("unexpected tracked address after ANSI-wrapped connect: %s", state.Addr)
+	}
+	if state.PlayerName != "Akion" {
+		t.Fatalf("unexpected tracked player name after ANSI-wrapped connect: %q", state.PlayerName)
 	}
 }
