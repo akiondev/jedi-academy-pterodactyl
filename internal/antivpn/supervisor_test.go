@@ -315,9 +315,9 @@ func TestClearConnectionStateClearsSeenEvents(t *testing.T) {
 			"0|83.249.104.192": time.Now().UTC(),
 		},
 		broadcastSeen: map[string]time.Time{
-			"0|83.249.104.192|allow": time.Now().UTC(),
-			"0|83.249.104.192|block": time.Now().UTC(),
-			"2|203.0.113.5|allow":    time.Now().UTC(),
+			"83.249.104.192|allow": time.Now().UTC(),
+			"83.249.104.192|block": time.Now().UTC(),
+			"203.0.113.5|allow":    time.Now().UTC(),
 		},
 	}
 
@@ -335,17 +335,75 @@ func TestClearConnectionStateClearsSeenEvents(t *testing.T) {
 		t.Fatal("expected seenEvents entry to be cleared on disconnect so rapid reconnects get a fresh check")
 	}
 
+	// Broadcast cooldown entries must survive disconnect so that rapid
+	// kick-and-reconnect cycles cannot bypass the cooldown and spam the console.
 	supervisor.broadcastMu.Lock()
-	_, broadcastAllowExists := supervisor.broadcastSeen["0|83.249.104.192|allow"]
-	_, broadcastBlockExists := supervisor.broadcastSeen["0|83.249.104.192|block"]
-	_, unrelatedExists := supervisor.broadcastSeen["2|203.0.113.5|allow"]
+	_, broadcastAllowExists := supervisor.broadcastSeen["83.249.104.192|allow"]
+	_, broadcastBlockExists := supervisor.broadcastSeen["83.249.104.192|block"]
+	_, unrelatedExists := supervisor.broadcastSeen["203.0.113.5|allow"]
 	supervisor.broadcastMu.Unlock()
 
-	if broadcastAllowExists || broadcastBlockExists {
-		t.Fatal("expected broadcast cooldown entries for disconnected slot/ip to be cleared")
+	if !broadcastAllowExists || !broadcastBlockExists {
+		t.Fatal("expected broadcast cooldown entries to persist across disconnect")
 	}
 	if !unrelatedExists {
 		t.Fatal("expected unrelated broadcast cooldown entries to remain")
+	}
+}
+
+func TestBroadcastCooldownPersistsDespiteRapidReconnect(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	supervisor := &Supervisor{
+		cfg: Config{
+			BroadcastMode:        BroadcastPassAndBlock,
+			BroadcastCooldown:    90 * time.Second,
+			BroadcastPassCommand: `say [Anti-VPN] VPN PASS: %PLAYER% cleared checks (%SCORE%/%THRESHOLD%). %SUMMARY%`,
+		},
+		logger:        logger,
+		broadcastSeen: make(map[string]time.Time),
+	}
+
+	decision := Decision{
+		IP:        "198.51.100.25",
+		Allowed:   true,
+		Score:     10,
+		Threshold: 90,
+	}
+
+	var stdin bytes.Buffer
+
+	// First broadcast must be sent.
+	supervisor.broadcastDecision(&stdin, "0", "Player", decision)
+	if stdin.Len() == 0 {
+		t.Fatal("expected first broadcast to be sent")
+	}
+
+	// Verify the broadcast cooldown entry was recorded.
+	supervisor.broadcastMu.Lock()
+	broadcastKeyExists := false
+	for k := range supervisor.broadcastSeen {
+		if strings.HasPrefix(k, "198.51.100.25|") {
+			broadcastKeyExists = true
+		}
+	}
+	supervisor.broadcastMu.Unlock()
+
+	if !broadcastKeyExists {
+		t.Fatal("expected broadcastSeen entry to exist after first broadcast")
+	}
+
+	// Second broadcast (simulating immediate reconnect) must be suppressed.
+	stdin.Reset()
+	supervisor.broadcastDecision(&stdin, "0", "Player", decision)
+	if stdin.Len() != 0 {
+		t.Fatalf("expected second broadcast within cooldown to be suppressed, got: %q", stdin.String())
+	}
+
+	// Broadcast on a different slot must also be suppressed (IP-level cooldown).
+	stdin.Reset()
+	supervisor.broadcastDecision(&stdin, "1", "Player", decision)
+	if stdin.Len() != 0 {
+		t.Fatalf("expected broadcast for different slot within cooldown to be suppressed, got: %q", stdin.String())
 	}
 }
 
