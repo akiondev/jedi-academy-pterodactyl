@@ -580,20 +580,50 @@ def remove_pid_if_owned() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _seconds_until_next_time_of_day(target: _dt.time, tz: _dt.tzinfo | None) -> float:
-    """Return seconds until the next occurrence of ``target`` in ``tz``."""
-    now = _dt.datetime.now(tz=tz)
-    today_target = now.replace(
+def _today_target(now: _dt.datetime, target: _dt.time) -> _dt.datetime:
+    return now.replace(
         hour=target.hour,
         minute=target.minute,
         second=target.second,
         microsecond=0,
     )
-    if today_target <= now:
-        today_target = today_target + _dt.timedelta(days=1)
-    delta = (today_target - now).total_seconds()
-    # Always sleep at least 1s so a fast-running tick never busy-loops.
-    return max(1.0, delta)
+
+
+def _seconds_until_slot(
+    target: _dt.time,
+    tz: _dt.tzinfo | None,
+    fired_today: bool,
+) -> float:
+    """Return seconds to wait before this daily slot is due to fire.
+
+    If today's slot has not been fired yet and the wall clock is already
+    at-or-past it (e.g. the worker just started), returns ``0.0`` so the
+    firing pass executes it immediately. Otherwise returns the strictly
+    positive distance to the next not-yet-fired occurrence.
+    """
+    now = _dt.datetime.now(tz=tz)
+    today_target = _today_target(now, target)
+    if not fired_today and now >= today_target:
+        return 0.0
+    next_target = today_target if now < today_target else today_target + _dt.timedelta(days=1)
+    return max(0.0, (next_target - now).total_seconds())
+
+
+def _slot_due_now(
+    target: _dt.time,
+    tz: _dt.tzinfo | None,
+    fired_today: bool,
+) -> tuple[bool, _dt.date]:
+    """Return ``(due_now, today_date)`` for a daily slot.
+
+    ``due_now`` is True iff the wall clock is at-or-past today's slot AND we
+    have not already fired today's occurrence. ``today_date`` is the local
+    (or zone-aware) date corresponding to the current wall clock so the
+    caller can record it as the new ``last_fired`` marker.
+    """
+    now = _dt.datetime.now(tz=tz)
+    today_target = _today_target(now, target)
+    return (not fired_today and now >= today_target, now.date())
 
 
 def _interruptible_sleep(seconds: float) -> bool:
@@ -683,7 +713,15 @@ def run_scheduled_loop(
     """Dispatch announcements based on the ``schedule`` list."""
     cursor = [0]
     # Per-entry monotonic deadlines for ``every_seconds`` entries.
+    # Keyed by list index; if the user reorders entries mid-run a deadline
+    # may carry over to a sibling entry, but for an example helper that's
+    # an acceptable trade-off vs. fingerprinting.
     monotonic_deadlines: dict[int, float] = {}
+    # Per-entry "date of last successful fire" for ``time_of_day`` entries
+    # so each daily slot fires exactly once per day even if the scheduler
+    # wakes slightly after the wall-clock target.
+    last_fired_date: dict[int, _dt.date] = {}
+
     base = time.monotonic()
     for index, entry in enumerate(initial_config["schedule"]):
         if "every_seconds" in entry:
@@ -699,48 +737,54 @@ def run_scheduled_loop(
             return run_simple_interval_loop(config, messages_cache)
 
         # Reconcile per-entry deadlines if the schedule list shrunk/grew.
-        # We index by position; any new every_seconds entries get a fresh
-        # deadline relative to "now" so a config edit doesn't replay old slots.
         now_monotonic = time.monotonic()
         for index, entry in enumerate(config["schedule"]):
             if "every_seconds" in entry and index not in monotonic_deadlines:
                 monotonic_deadlines[index] = now_monotonic + float(entry["every_seconds"])
-        # Drop deadlines for indices that no longer exist.
-        valid_indices = {
+        valid_every_indices = {
             i for i, e in enumerate(config["schedule"]) if "every_seconds" in e
         }
         for stale in list(monotonic_deadlines.keys()):
-            if stale not in valid_indices:
+            if stale not in valid_every_indices:
                 monotonic_deadlines.pop(stale, None)
+        valid_time_indices = {
+            i for i, e in enumerate(config["schedule"]) if "time_of_day" in e
+        }
+        for stale in list(last_fired_date.keys()):
+            if stale not in valid_time_indices:
+                last_fired_date.pop(stale, None)
 
         # Compute sleep horizon = min over all entries of their next-due time.
         tz = config.get("tzinfo")
+        today = _dt.datetime.now(tz=tz).date()
         wakeups: list[float] = []
         now_monotonic = time.monotonic()
         for index, entry in enumerate(config["schedule"]):
             if "time_of_day" in entry:
-                wakeups.append(_seconds_until_next_time_of_day(entry["time_of_day"], tz))
+                fired_today = last_fired_date.get(index) == today
+                wakeups.append(_seconds_until_slot(entry["time_of_day"], tz, fired_today))
             else:
                 deadline = monotonic_deadlines.get(index, now_monotonic)
                 wakeups.append(max(0.0, deadline - now_monotonic))
 
         # Sleep until the soonest entry. Cap at 60s so config edits and clock
-        # changes (DST) are picked up promptly without spinning.
+        # changes (DST) are picked up promptly without spinning. A 0.0 wakeup
+        # falls through immediately and the firing pass handles the slot.
         sleep_for = min(wakeups) if wakeups else 60.0
         sleep_for = min(60.0, max(0.0, sleep_for))
-        if _interruptible_sleep(sleep_for):
+        if sleep_for > 0 and _interruptible_sleep(sleep_for):
+            return 0
+        if _shutdown_event.is_set():
             return 0
 
-        # Fire any entries whose deadline has now passed (within a 1s grace).
+        # Fire any entries whose deadline has now passed.
         now_monotonic = time.monotonic()
         messages = messages_cache.get(config["messages_path"])
         for index, entry in enumerate(config["schedule"]):
             if "time_of_day" in entry:
-                remaining = _seconds_until_next_time_of_day(entry["time_of_day"], tz)
-                # If we're within a 2s window of (or just past) the slot, fire
-                # it. The next iteration's sleep will land us at the following
-                # day's occurrence.
-                if remaining > 2.0:
+                fired_today = last_fired_date.get(index) == today
+                due, today_for_entry = _slot_due_now(entry["time_of_day"], tz, fired_today)
+                if not due:
                     continue
             else:
                 deadline = monotonic_deadlines.get(index)
@@ -751,18 +795,15 @@ def run_scheduled_loop(
             literal = entry.get("message")
             message = literal if literal else _next_message(messages, cursor)
             if not message:
-                # No literal AND messages.txt is empty => log once per tick and skip.
                 if "time_of_day" in entry:
                     log("Schedule slot due but no literal message and messages.txt is empty")
                 continue
-            dispatch_announcement(config, message)
+            ok = dispatch_announcement(config, message)
 
-            if "time_of_day" in entry:
-                # Make sure we don't immediately re-fire this slot in the next
-                # loop iteration: pause briefly so wall clock advances past the
-                # 2s grace window.
-                if _interruptible_sleep(2.0):
-                    return 0
+            if "time_of_day" in entry and ok:
+                # Mark today's occurrence as fired so we don't repeat until
+                # the next calendar day in this entry's timezone.
+                last_fired_date[index] = today_for_entry
 
     return 0
 
