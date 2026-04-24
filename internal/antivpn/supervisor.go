@@ -367,6 +367,54 @@ func (s *Supervisor) runCheckServerStatus(ctx context.Context) {
 	fmt.Fprintln(os.Stdout, "[helper:checkserverstatus] checkserverstatus failed")
 }
 
+// logMonitorMaxBytesPerPoll caps how many bytes the log-file fallback tail
+// will read in a single poll iteration. The supervisor's stdout/stderr
+// scanner is the authoritative source for live ClientConnect /
+// ClientUserinfoChanged / ClientDisconnect events; the log-file tailer
+// exists only as a defensive fallback for environments where stdout capture
+// is unreliable. Capping per-poll reads ensures a sudden large append (or a
+// future regression that mis-handles offsets) cannot replay an arbitrarily
+// large historical window in one burst, which previously produced
+// console-flooding audit/broadcast storms (>10000 decisions/second) that
+// starved legitimate connection processing on the JKA engine.
+const logMonitorMaxBytesPerPoll int64 = 1 * 1024 * 1024
+
+// logOffsetAction enumerates how the log-tail offset was adjusted on a poll
+// iteration. It is consumed by monitorLogFile to decide what (if anything)
+// to log.
+type logOffsetAction int
+
+const (
+	logOffsetActionNone logOffsetAction = iota
+	// logOffsetActionReattachAfterShrink indicates the file shrank below the
+	// previous offset (rotated, truncated, or replaced). The new offset is
+	// the current end-of-file; no replay is performed.
+	logOffsetActionReattachAfterShrink
+	// logOffsetActionSkipBacklog indicates the unread window exceeded the
+	// per-poll cap and the offset was advanced to within the cap, skipping
+	// the leading bytes.
+	logOffsetActionSkipBacklog
+)
+
+// nextLogOffset computes the next read offset for the log-file fallback
+// tailer given the previous offset, the current file size and the per-poll
+// cap. It returns the new offset, an action describing the adjustment (for
+// logging) and the number of bytes skipped (only meaningful for the backlog
+// cap case).
+//
+// The function is intentionally pure so the offset-recovery logic can be
+// unit-tested independently of file system / goroutine plumbing.
+func nextLogOffset(previousOffset, currentSize, maxBytesPerPoll int64) (int64, logOffsetAction, int64) {
+	if currentSize < previousOffset {
+		return currentSize, logOffsetActionReattachAfterShrink, 0
+	}
+	if maxBytesPerPoll > 0 && currentSize-previousOffset > maxBytesPerPoll {
+		skipped := currentSize - previousOffset - maxBytesPerPoll
+		return currentSize - maxBytesPerPoll, logOffsetActionSkipBacklog, skipped
+	}
+	return previousOffset, logOffsetActionNone, 0
+}
+
 func (s *Supervisor) monitorLogFile(ctx context.Context, stdin io.Writer) {
 	path := filepath.Clean(s.cfg.LogPath)
 	var offset int64
@@ -397,9 +445,48 @@ func (s *Supervisor) monitorLogFile(ctx context.Context, stdin io.Writer) {
 			attached = true
 			s.logger.Info("anti-vpn log monitor attached", "path", path)
 		}
-		if stat.Size() < offset {
-			offset = 0
+		newOffset, action, skipped := nextLogOffset(offset, stat.Size(), logMonitorMaxBytesPerPoll)
+		switch action {
+		case logOffsetActionReattachAfterShrink:
+			// File rotated, truncated, or replaced. Re-attach to the
+			// CURRENT end-of-file instead of replaying the (potentially
+			// large) post-rotation content from offset 0.
+			//
+			// The supervisor's stdout/stderr scanner is the primary
+			// source for live engine events; it has already processed any
+			// ClientConnect/Userinfo/Disconnect lines emitted in real
+			// time. Replaying from 0 here would re-feed historical
+			// events (with stale slot/IP pairings) into handleLogLine,
+			// which in turn re-triggers cache-hit decisions, audit-log
+			// writes, and `say` broadcasts at microsecond cadence,
+			// flooding the engine command buffer and preventing new
+			// players from completing their connection handshake.
+			//
+			// Skipping straight to end-of-file is safe: the worst case
+			// is that the fallback tailer misses a handful of events
+			// that were written between two polls, all of which were
+			// already observed via stdout. If stdout capture is broken
+			// in some deployment, a full reattach still beats a
+			// thundering herd of stale replays.
+			if s.logger != nil {
+				s.logger.Warn(
+					"anti-vpn log file shrank; re-attaching to current end-of-file without replay to avoid event storm",
+					"path", path,
+					"previous_offset", offset,
+					"new_size", stat.Size(),
+				)
+			}
+		case logOffsetActionSkipBacklog:
+			if s.logger != nil {
+				s.logger.Warn(
+					"anti-vpn log poll backlog exceeds cap; skipping ahead to avoid replay storm",
+					"path", path,
+					"skipped_bytes", skipped,
+					"cap_bytes", logMonitorMaxBytesPerPoll,
+				)
+			}
 		}
+		offset = newOffset
 
 		if _, err := file.Seek(offset, io.SeekStart); err != nil {
 			file.Close()
