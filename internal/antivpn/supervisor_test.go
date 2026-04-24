@@ -267,7 +267,7 @@ func TestBroadcastDecisionSanitizesPlayerNameBeforeWritingCommand(t *testing.T) 
 		Score:             10,
 		Threshold:         90,
 		ProviderSuccesses: 1,
-	})
+	}, "connect")
 
 	command := strings.TrimSpace(stdin.String())
 	if command == "" {
@@ -373,7 +373,7 @@ func TestBroadcastCooldownPersistsDespiteRapidReconnect(t *testing.T) {
 	var stdin bytes.Buffer
 
 	// First broadcast must be sent.
-	supervisor.broadcastDecision(&stdin, "0", "Player", decision)
+	supervisor.broadcastDecision(&stdin, "0", "Player", decision, "connect")
 	if stdin.Len() == 0 {
 		t.Fatal("expected first broadcast to be sent")
 	}
@@ -394,14 +394,14 @@ func TestBroadcastCooldownPersistsDespiteRapidReconnect(t *testing.T) {
 
 	// Second broadcast (simulating immediate reconnect) must be suppressed.
 	stdin.Reset()
-	supervisor.broadcastDecision(&stdin, "0", "Player", decision)
+	supervisor.broadcastDecision(&stdin, "0", "Player", decision, "connect")
 	if stdin.Len() != 0 {
 		t.Fatalf("expected second broadcast within cooldown to be suppressed, got: %q", stdin.String())
 	}
 
 	// Broadcast on a different slot must also be suppressed (IP-level cooldown).
 	stdin.Reset()
-	supervisor.broadcastDecision(&stdin, "1", "Player", decision)
+	supervisor.broadcastDecision(&stdin, "1", "Player", decision, "connect")
 	if stdin.Len() != 0 {
 		t.Fatalf("expected broadcast for different slot within cooldown to be suppressed, got: %q", stdin.String())
 	}

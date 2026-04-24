@@ -30,6 +30,15 @@ var (
 	clientUserinfoChangedPattern = regexp.MustCompile(
 		`^(?:\s*` + logTimestampPrefixPattern + `\s+)?ClientUserinfoChanged:\s+(\d+)\s+(.*)$`,
 	)
+	// initGameBurstPattern matches log lines that signal the start of a
+	// fresh game init / map restart on the dedicated server. When the
+	// engine emits one of these, it follows up by re-issuing
+	// ClientUserinfoChanged for every connected client. We use this signal
+	// to suppress duplicate "VPN PASS" broadcasts during the burst that
+	// follows.
+	initGameBurstPattern = regexp.MustCompile(
+		`^(?:\s*` + logTimestampPrefixPattern + `\s+)?(InitGame:|ShutdownGame|------ Server Initialization ------|exec\s+server\.cfg)`,
+	)
 )
 
 type slotConnectionState struct {
@@ -39,21 +48,38 @@ type slotConnectionState struct {
 }
 
 type Supervisor struct {
-	cfg             Config
-	logger          *slog.Logger
-	auditLogger     *slog.Logger
-	auditCloser     io.Closer
-	engine          *Engine
-	commandMu       sync.Mutex
-	seenMu          sync.Mutex
-	seenEvents      map[string]time.Time
-	broadcastMu     sync.Mutex
-	broadcastSeen   map[string]time.Time
-	connectionMu    sync.Mutex
-	connectionState map[string]slotConnectionState
-	checkSlots      chan struct{}
-	liveFeed        *liveFeedWriter
-	liveFeedErrOnce sync.Once
+	cfg              Config
+	logger           *slog.Logger
+	auditLogger      *slog.Logger
+	auditCloser      io.Closer
+	engine           *Engine
+	commandMu        sync.Mutex
+	seenMu           sync.Mutex
+	seenEvents       map[string]time.Time
+	broadcastMu      sync.Mutex
+	broadcastSeen    map[string]time.Time
+	connectionMu     sync.Mutex
+	connectionState  map[string]slotConnectionState
+	checkSlots       chan struct{}
+	liveFeed         *liveFeedWriter
+	liveFeedErrOnce  sync.Once
+	reinitMu         sync.Mutex
+	reinitBurstUntil time.Time
+	broadcastQueue   chan broadcastJob
+	broadcastWorker  sync.Once
+}
+
+// broadcastJob is the unit of work pushed onto the supervisor's serialised
+// broadcast emission queue. The queue worker drains jobs one at a time and
+// sleeps cfg.BroadcastEmissionSpacing between them so that JKA's per-frame
+// command buffer cannot truncate `say` payloads when multiple broadcasts are
+// produced in the same tick.
+type broadcastJob struct {
+	stdin   io.Writer
+	command string
+	slot    string
+	player  string
+	summary string
 }
 
 type synchronizedWriter struct {
@@ -73,12 +99,22 @@ func NewSupervisor(cfg Config, logger *slog.Logger) (*Supervisor, error) {
 		return nil, err
 	}
 
-	auditLogger, auditCloser, auditErr := openAuditLogger(cfg)
+	auditLogger, auditCloser, auditErr := openAuditLogger(cfg, logger)
 	if auditErr != nil && logger != nil {
 		logger.Warn("anti-vpn audit log unavailable, continuing without file audit output", "path", cfg.AuditLogPath, "error", auditErr)
 	}
 
-	liveFeed, liveFeedErr := newLiveFeedWriter(cfg.LiveOutputPath, cfg.LiveOutputMaxBytes)
+	liveFeed, liveFeedErr := newLiveFeedWriter(
+		cfg.LiveOutputPath,
+		cfg.LiveOutputMaxBytes,
+		cfg.LiveOutputKeepArchives,
+		cfg.RotateLogsOnStart,
+		func(err error) {
+			if logger != nil {
+				logger.Warn("anti-vpn live output rotation issue", "path", cfg.LiveOutputPath, "error", err)
+			}
+		},
+	)
 	if liveFeedErr != nil && logger != nil {
 		logger.Warn("anti-vpn live output mirror unavailable, continuing without addon live feed", "path", cfg.LiveOutputPath, "error", liveFeedErr)
 	}
@@ -94,6 +130,7 @@ func NewSupervisor(cfg Config, logger *slog.Logger) (*Supervisor, error) {
 		connectionState: make(map[string]slotConnectionState),
 		checkSlots:      make(chan struct{}, 8),
 		liveFeed:        liveFeed,
+		broadcastQueue:  make(chan broadcastJob, 64),
 	}, nil
 }
 
@@ -174,31 +211,37 @@ func (s *Supervisor) Run(ctx context.Context, serverCommand []string) error {
 	go s.scanOutput(runCtx, stderr, os.Stderr, "stderr", true, serverInput)
 	go s.forwardConsoleInput(runCtx, serverInput)
 	go s.monitorLogFile(runCtx, serverInput)
+	go s.runBroadcastWorker(runCtx)
 
 	err = command.Wait()
 	cancel()
 	return err
 }
 
-func openAuditLogger(cfg Config) (*slog.Logger, io.Closer, error) {
+func openAuditLogger(cfg Config, logger *slog.Logger) (*slog.Logger, io.Closer, error) {
 	path := strings.TrimSpace(cfg.AuditLogPath)
 	if path == "" {
 		return nil, nil, nil
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, nil, err
+	onError := func(err error) {
+		if logger != nil {
+			logger.Warn("anti-vpn audit log rotation issue", "path", path, "error", err)
+		}
 	}
 
-	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	rf, err := newRotatingFile(path, cfg.AuditLogMaxBytes, cfg.AuditLogKeepArchives, cfg.RotateLogsOnStart, onError)
 	if err != nil {
 		return nil, nil, err
 	}
+	if rf == nil {
+		return nil, nil, nil
+	}
 
-	logger := slog.New(slog.NewJSONHandler(file, &slog.HandlerOptions{
+	auditLogger := slog.New(slog.NewJSONHandler(rf, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
-	return logger, file, nil
+	return auditLogger, rf, nil
 }
 
 func (s *Supervisor) scanOutput(ctx context.Context, stream io.Reader, destination io.Writer, source string, inspect bool, stdin io.Writer) {
@@ -388,6 +431,13 @@ func (s *Supervisor) handleLogLine(ctx context.Context, stdin io.Writer, line st
 		return
 	}
 
+	if initGameBurstPattern.MatchString(line) {
+		s.markReinitBurst()
+		// Continue processing the line in case it also matches one of the
+		// client-event patterns below (defensive; current patterns are
+		// disjoint).
+	}
+
 	if slot, ok := parseClientDisconnect(line); ok {
 		s.clearConnectionState(slot)
 		return
@@ -396,7 +446,7 @@ func (s *Supervisor) handleLogLine(ctx context.Context, stdin io.Writer, line st
 	slot, addr, playerName, ok := parseClientConnect(line)
 	if ok {
 		s.storeConnectionState(slot, addr, playerName)
-		s.processConnectionEvent(ctx, stdin, source, slot, addr, playerName)
+		s.processConnectionEvent(ctx, stdin, source, slot, addr, playerName, "connect")
 		return
 	}
 
@@ -424,10 +474,43 @@ func (s *Supervisor) handleLogLine(ctx context.Context, stdin io.Writer, line st
 		return
 	}
 
-	s.processConnectionEvent(ctx, stdin, source, slot, addr, playerName)
+	s.processConnectionEvent(ctx, stdin, source, slot, addr, playerName, "userinfo")
 }
 
-func (s *Supervisor) processConnectionEvent(ctx context.Context, stdin io.Writer, source, slot string, addr netip.Addr, playerName string) {
+// markReinitBurst extends the suppression window during which broadcasts
+// triggered by cached re-checks (i.e. ClientUserinfoChanged events that hit
+// the cache) are suppressed. The engine emits ClientUserinfoChanged for
+// every connected client immediately after `InitGame:` / `ShutdownGame` /
+// `exec server.cfg`; without this guard we would re-broadcast a "VPN PASS"
+// line for every existing player every time the map cycles, which floods the
+// game console (observed in real game logs as 7+ broadcasts within a single
+// second, several truncated mid-string by JKA's per-frame command buffer).
+func (s *Supervisor) markReinitBurst() {
+	window := s.cfg.BroadcastEmissionSpacing * 8
+	if window < 5*time.Second {
+		window = 5 * time.Second
+	}
+	if window > 30*time.Second {
+		window = 30 * time.Second
+	}
+	deadline := time.Now().UTC().Add(window)
+
+	s.reinitMu.Lock()
+	if deadline.After(s.reinitBurstUntil) {
+		s.reinitBurstUntil = deadline
+	}
+	s.reinitMu.Unlock()
+}
+
+// inReinitBurst reports whether the supervisor is currently inside a
+// post-reinit burst suppression window.
+func (s *Supervisor) inReinitBurst() bool {
+	s.reinitMu.Lock()
+	defer s.reinitMu.Unlock()
+	return time.Now().UTC().Before(s.reinitBurstUntil)
+}
+
+func (s *Supervisor) processConnectionEvent(ctx context.Context, stdin io.Writer, source, slot string, addr netip.Addr, playerName, triggerKind string) {
 	eventKey := slot + "|" + addr.String()
 	if !s.markEvent(eventKey) {
 		return
@@ -454,11 +537,11 @@ func (s *Supervisor) processConnectionEvent(ctx context.Context, stdin io.Writer
 			if decision.Blocked || decision.WouldBlock || decision.Degraded {
 				level = slog.LevelWarn
 			}
-			fields := append([]any{"event_source", source, "slot", slot, "player", playerName}, DecisionLogFields(decision)...)
+			fields := append([]any{"event_source", source, "slot", slot, "player", playerName, "trigger", triggerKind}, DecisionLogFields(decision)...)
 			s.logger.Log(ctx, level, "anti-vpn decision", fields...)
 		}
 
-		s.broadcastDecision(stdin, slot, playerName, decision)
+		s.broadcastDecision(stdin, slot, playerName, decision, triggerKind)
 
 		if decision.Blocked {
 			s.enforceDecision(stdin, slot, addr, decision)
@@ -595,7 +678,15 @@ func (s *Supervisor) auditDecision(source, slot string, addr netip.Addr, decisio
 	s.auditLogger.Info("anti-vpn audit", fields...)
 }
 
-func (s *Supervisor) broadcastDecision(stdin io.Writer, slot, playerName string, decision Decision) {
+func (s *Supervisor) broadcastDecision(stdin io.Writer, slot, playerName string, decision Decision, triggerKind string) {
+	// Suppress redundant cached "VPN PASS" broadcasts triggered by the engine
+	// re-emitting ClientUserinfoChanged for every existing client during a map
+	// restart / cfg reload. Genuine ClientConnect events (triggerKind ==
+	// "connect") and any blocked / would-block decision still go through.
+	if triggerKind == "userinfo" && decision.FromCache && !decision.Blocked && !decision.WouldBlock && s.inReinitBurst() {
+		return
+	}
+
 	if !s.shouldBroadcast(decision) {
 		return
 	}
@@ -621,18 +712,83 @@ func (s *Supervisor) broadcastDecision(stdin io.Writer, slot, playerName string,
 		return
 	}
 
-	if _, err := fmt.Fprintln(stdin, command); err != nil {
-		s.logger.Warn("anti-vpn broadcast command failed", "slot", slot, "player", playerName, "command", command, "error", err)
+	s.enqueueBroadcast(broadcastJob{
+		stdin:   stdin,
+		command: command,
+		slot:    slot,
+		player:  playerName,
+		summary: publicSummary,
+	})
+}
+
+// enqueueBroadcast hands a broadcast command off to the serialised emission
+// queue. If the queue is full (rare; would require >64 broadcasts pending at
+// once) the broadcast is dropped with a warning rather than blocking the
+// caller. If the queue is uninitialised (e.g. in unit tests that exercise
+// broadcastDecision in isolation), the command is written inline.
+func (s *Supervisor) enqueueBroadcast(job broadcastJob) {
+	if s.broadcastQueue == nil {
+		s.emitBroadcastJob(job)
+		return
+	}
+	select {
+	case s.broadcastQueue <- job:
+	default:
+		if s.logger != nil {
+			s.logger.Warn("anti-vpn broadcast queue saturated; dropping broadcast", "slot", job.slot, "player", job.player, "summary", job.summary)
+		}
+	}
+}
+
+// emitBroadcastJob writes a single queued broadcast to the engine and records
+// the audit trail. Used both by the worker (one job per spaced tick) and by
+// the inline fallback when no worker is running.
+func (s *Supervisor) emitBroadcastJob(job broadcastJob) {
+	if _, err := fmt.Fprintln(job.stdin, job.command); err != nil {
+		if s.logger != nil {
+			s.logger.Warn("anti-vpn broadcast command failed", "slot", job.slot, "player", job.player, "command", job.command, "error", err)
+		}
 		if s.auditLogger != nil {
-			s.auditLogger.Warn("anti-vpn audit", "event", "broadcast", "status", "failed", "slot", slot, "player", sanitizePlayerName(playerName), "command", command, "summary", publicSummary, "error", err)
+			s.auditLogger.Warn("anti-vpn audit", "event", "broadcast", "status", "failed", "slot", job.slot, "player", sanitizePlayerName(job.player), "command", job.command, "summary", job.summary, "error", err)
 		}
 		return
 	}
-
-	s.logger.Info("anti-vpn broadcast command sent", "slot", slot, "player", playerName, "command", command, "summary", publicSummary)
-	if s.auditLogger != nil {
-		s.auditLogger.Info("anti-vpn audit", "event", "broadcast", "status", "sent", "slot", slot, "player", sanitizePlayerName(playerName), "command", command, "summary", publicSummary)
+	if s.logger != nil {
+		s.logger.Info("anti-vpn broadcast command sent", "slot", job.slot, "player", job.player, "command", job.command, "summary", job.summary)
 	}
+	if s.auditLogger != nil {
+		s.auditLogger.Info("anti-vpn audit", "event", "broadcast", "status", "sent", "slot", job.slot, "player", sanitizePlayerName(job.player), "command", job.command, "summary", job.summary)
+	}
+}
+
+// runBroadcastWorker drains the broadcast queue, emitting one command at a
+// time with cfg.BroadcastEmissionSpacing between successive sends. Spacing
+// the writes guarantees the JKA engine processes one `say` per simulation
+// frame, eliminating the per-frame command buffer truncation that previously
+// produced cut-off broadcasts (e.g. "VPN PASS: ... cleared checks (10/").
+func (s *Supervisor) runBroadcastWorker(ctx context.Context) {
+	s.broadcastWorker.Do(func() {
+		spacing := s.cfg.BroadcastEmissionSpacing
+		var lastEmit time.Time
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case job := <-s.broadcastQueue:
+				if spacing > 0 {
+					if since := time.Since(lastEmit); since < spacing {
+						select {
+						case <-ctx.Done():
+							return
+						case <-time.After(spacing - since):
+						}
+					}
+				}
+				s.emitBroadcastJob(job)
+				lastEmit = time.Now()
+			}
+		}
+	})
 }
 
 func (s *Supervisor) auditEnforcement(ipText, slot, command string, decision Decision, commandErr error) {

@@ -33,6 +33,7 @@ To activate, copy these files into ``/home/container/addons``:
 from __future__ import annotations
 
 import atexit
+import fcntl
 import json
 import os
 import re
@@ -51,6 +52,7 @@ CONFIG_PATH = SCRIPT_PATH.with_suffix(".config.json")
 LOGS_DIR = HOME_DIR / "logs"
 DEFAULT_LOG_PATH = LOGS_DIR / "bundled-live-team-announcer.log"
 PID_PATH = LOGS_DIR / "bundled-live-team-announcer.pid"
+LOCK_PATH = LOGS_DIR / "bundled-live-team-announcer.lock"
 RUNTIME_ENV_PATH = HOME_DIR / ".runtime" / "taystjk-effective.env"
 RUNTIME_STATE_PATH = HOME_DIR / ".runtime" / "taystjk-effective.json"
 
@@ -275,8 +277,38 @@ def parse_change_team(line: str) -> tuple[str, str, str] | None:
 
 
 # ---------------------------------------------------------------------------
-# PID handling
+# PID + lockfile handling
 # ---------------------------------------------------------------------------
+#
+# Earlier revisions relied on `os.kill(pid, 0)` to detect whether the previous
+# worker was still alive. That approach is racy: after a server restart the OS
+# may have recycled the previous PID for an unrelated process, in which case
+# the PID check returns "alive" forever and the announcer never starts.
+#
+# We instead hold an exclusive `fcntl.flock` on a dedicated lockfile for the
+# lifetime of the worker process. The lock is released automatically when the
+# worker exits (graceful or crash), so a fresh launch can always tell whether
+# a real worker is currently running.
+
+
+def acquire_worker_lock() -> Any | None:
+    """Take an exclusive lock so only one worker runs at a time.
+
+    Returns the open file handle on success (kept alive for the worker's
+    lifetime) or None if another worker is already running.
+    """
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    handle = open(LOCK_PATH, "a+", encoding="utf-8")  # noqa: SIM115 - lifetime managed
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    handle.seek(0)
+    handle.truncate()
+    handle.write(f"{os.getpid()}\n")
+    handle.flush()
+    return handle
 
 
 def read_existing_pid() -> int | None:
@@ -288,16 +320,6 @@ def read_existing_pid() -> int | None:
         return None
 
 
-def process_is_running(pid: int) -> bool:
-    if pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        return False
-    return True
-
-
 def remove_pid_if_owned() -> None:
     existing_pid = read_existing_pid()
     if existing_pid == os.getpid():
@@ -305,6 +327,32 @@ def remove_pid_if_owned() -> None:
             PID_PATH.unlink(missing_ok=True)
         except OSError:
             pass
+
+
+def previous_worker_alive() -> bool:
+    """Best-effort check using the lockfile.
+
+    Tries to acquire the lock briefly; if it fails another process owns it
+    (i.e. a previous worker is still running). This is race-free across PID
+    reuse because the lock is bound to the open file description, not the
+    PID.
+    """
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        handle = open(LOCK_PATH, "a+", encoding="utf-8")  # noqa: SIM115
+    except OSError:
+        return False
+    try:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return True
+        # We acquired it momentarily; release immediately so the actual
+        # worker can take it.
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        return False
+    finally:
+        handle.close()
 
 
 # ---------------------------------------------------------------------------
@@ -320,6 +368,12 @@ def worker_log(handle, message: str) -> None:
 def run_worker() -> int:
     config = load_config()
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+    lock_handle = acquire_worker_lock()
+    if lock_handle is None:
+        log("Another worker already holds the lockfile; exiting")
+        return 0
+
     PID_PATH.write_text(f"{os.getpid()}\n", encoding="utf-8")
     atexit.register(remove_pid_if_owned)
 
@@ -336,6 +390,26 @@ def run_worker() -> int:
         if not config["enabled"]:
             worker_log(handle, "announcer is disabled in config; worker will exit")
             return 0
+
+        # One-time startup diagnostic so operators can tell at a glance how
+        # the worker resolved its inputs (helps when an earlier release
+        # silently failed to announce because RCON was unset, the live
+        # mirror was disabled, etc).
+        runtime = load_runtime_env()
+        password = effective_rcon_password()
+        worker_log(
+            handle,
+            "startup diagnostic: "
+            f"announce_command={config['announce_command']} "
+            f"rcon_host={config['rcon_host']} "
+            f"rcon_port={current_server_port()} "
+            f"rcon_password_resolved={'yes' if password else 'no'} "
+            f"live_output_enabled={runtime.get('TAYSTJK_LIVE_OUTPUT_ENABLED', '<unset>')} "
+            f"live_output_path={runtime.get('TAYSTJK_LIVE_OUTPUT_PATH', '<unset>')} "
+            f"server_log_path={runtime.get('TAYSTJK_ACTIVE_SERVER_LOG_PATH', '<unset>')} "
+            f"fallback_to_server_log={config['fallback_to_server_log']} "
+            f"min_seconds_between_announcements={config['min_seconds_between_announcements']}",
+        )
 
         last_announced: dict[tuple[str, str], float] = {}
         backoff = 1
@@ -391,7 +465,7 @@ def run_worker() -> int:
 
                     password = effective_rcon_password()
                     if not password:
-                        worker_log(handle, "no effective RCON password resolved; skipping announcement")
+                        worker_log(handle, f"no effective RCON password resolved; skipping announcement for {message!r}")
                         continue
                     command = f'{config["announce_command"]} "{escape_command_argument(message)}"'
                     try:
@@ -424,6 +498,12 @@ def run_worker() -> int:
             handle.close()
         except OSError:
             pass
+        # Keep lock_handle alive for the worker's lifetime; the OS releases
+        # the flock automatically when the process exits, even on crash.
+        try:
+            lock_handle.close()
+        except OSError:
+            pass
 
 
 def launch_background_worker() -> int:
@@ -432,9 +512,12 @@ def launch_background_worker() -> int:
         log("Announcer is disabled in config; skipping background launch")
         return 0
 
-    existing_pid = read_existing_pid()
-    if existing_pid and process_is_running(existing_pid):
-        log(f"Announcer is already running with PID {existing_pid}")
+    if previous_worker_alive():
+        existing_pid = read_existing_pid()
+        if existing_pid:
+            log(f"Announcer is already running (lockfile held, PID {existing_pid}); skipping launch")
+        else:
+            log("Announcer is already running (lockfile held); skipping launch")
         return 0
 
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
