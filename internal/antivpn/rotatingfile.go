@@ -220,13 +220,9 @@ func (rf *rotatingFile) uniqueArchivePath(now time.Time) string {
 
 // pruneOldArchives removes the oldest gzipped archives beyond keepCount.
 // Archive filenames are matched by prefix "<basename>." and suffix ".gz".
-// Sort order is by file modification time, oldest first.
+// Sort order is by file modification time, oldest first. When keepCount is 0
+// every gzipped sibling archive is removed.
 func (rf *rotatingFile) pruneOldArchives() {
-	if rf.keepCount <= 0 {
-		// keepCount == 0 means "do not retain any archives"; remove every
-		// gzipped sibling.
-	}
-
 	dir := filepath.Dir(rf.path)
 	base := filepath.Base(rf.path)
 	prefix := base + "."
