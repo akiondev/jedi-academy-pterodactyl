@@ -58,7 +58,10 @@ PID_PATH = LOGS_DIR / "live-rcon-guard.pid"
 LOCK_PATH = LOGS_DIR / "live-rcon-guard.lock"
 RUNTIME_ENV_PATH = HOME_DIR / ".runtime" / "taystjk-effective.env"
 
-ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+# Full ANSI CSI escape sequences (ESC [ <param-bytes> <intermediate-bytes>
+# <final-byte>), matching the same comprehensive pattern used in the
+# chatlogger and the anti-VPN supervisor.
+ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 QUAKE_COLOR_RE = re.compile(r"\^(?:[0-9A-Za-z])")
 
 # Default RCON detection patterns.
@@ -520,8 +523,9 @@ def acquire_worker_lock() -> Any | None:
     """Acquire an exclusive lockfile.  Returns the open handle on success or
     ``None`` if another worker already holds the lock."""
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
-    # Context manager intentionally avoided: the handle must remain open for
-    # the entire lifetime of the worker process so the OS flock is held.
+    # SIM115 (use context manager for open()) is suppressed here because the
+    # handle must remain open for the entire lifetime of the worker process to
+    # keep the OS flock alive — a context manager would release it immediately.
     handle = open(LOCK_PATH, "a+", encoding="utf-8")  # noqa: SIM115
     try:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -538,8 +542,9 @@ def acquire_worker_lock() -> Any | None:
 def previous_worker_alive() -> bool:
     """Return True if a previous worker is still holding the lockfile."""
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
-    # Context manager intentionally avoided: we test the lock and release it
-    # immediately; closing the handle releases the flock automatically.
+    # SIM115 (use context manager for open()) is suppressed here because the
+    # handle is opened solely to probe the flock and is closed immediately
+    # after the probe — a try/finally already ensures proper cleanup.
     try:
         handle = open(LOCK_PATH, "a+", encoding="utf-8")  # noqa: SIM115
     except OSError:

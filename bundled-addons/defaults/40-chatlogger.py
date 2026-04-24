@@ -71,9 +71,11 @@ CLEANUP_INTERVAL_SECONDS = 3600
 TIMESTAMP_RE = re.compile(r"^(?P<stamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+(?P<body>.*)$")
 MATCH_TIME_RE = re.compile(r"^(?:\d{1,3}:\d{2}(?::\d{2})?)\s+(?P<body>.*)$")
 QUAKE_COLOR_RE = re.compile(r"\^(?:[0-9A-Za-z])")
-# Full ANSI CSI escape sequences (ESC [ ... final-byte).  The live-output
-# mirror written by the anti-VPN supervisor preserves raw engine stdout,
-# which can include terminal colour sequences wrapping chat/broadcast lines.
+# Full ANSI CSI escape sequences (ESC [ <param-bytes> <intermediate-bytes>
+# <final-byte>), i.e. the entire ESC[...m family of terminal colour/control
+# codes.  The live-output mirror written by the anti-VPN supervisor preserves
+# raw engine stdout, which can include terminal colour sequences wrapping
+# chat/broadcast lines.
 ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 # Chat verb groups. Order matters: more specific verbs first so a generic
