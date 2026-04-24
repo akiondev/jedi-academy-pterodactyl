@@ -433,13 +433,12 @@ func (s *Supervisor) processConnectionEvent(ctx context.Context, stdin io.Writer
 		return
 	}
 
-	select {
-	case s.checkSlots <- struct{}{}:
-	case <-ctx.Done():
-		return
-	}
-
 	go func() {
+		select {
+		case s.checkSlots <- struct{}{}:
+		case <-ctx.Done():
+			return
+		}
 		defer func() { <-s.checkSlots }()
 
 		decision, err := s.engine.CheckIP(ctx, addr)
