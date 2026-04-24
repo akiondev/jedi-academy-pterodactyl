@@ -520,6 +520,8 @@ def acquire_worker_lock() -> Any | None:
     """Acquire an exclusive lockfile.  Returns the open handle on success or
     ``None`` if another worker already holds the lock."""
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    # Context manager intentionally avoided: the handle must remain open for
+    # the entire lifetime of the worker process so the OS flock is held.
     handle = open(LOCK_PATH, "a+", encoding="utf-8")  # noqa: SIM115
     try:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -536,6 +538,8 @@ def acquire_worker_lock() -> Any | None:
 def previous_worker_alive() -> bool:
     """Return True if a previous worker is still holding the lockfile."""
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    # Context manager intentionally avoided: we test the lock and release it
+    # immediately; closing the handle releases the flock automatically.
     try:
         handle = open(LOCK_PATH, "a+", encoding="utf-8")  # noqa: SIM115
     except OSError:
@@ -685,7 +689,10 @@ def run_worker() -> int:
                     try:
                         enforce_rcon_attempt(source_address, attempted_command, config, handle)
                     except Exception as exc:  # noqa: BLE001
-                        worker_log(handle, f"enforcement error for {source_address}: {exc}")
+                        worker_log(
+                            handle,
+                            f"enforcement error [{type(exc).__name__}] for {source_address}: {exc}",
+                        )
 
             finally:
                 if proc.poll() is None:
