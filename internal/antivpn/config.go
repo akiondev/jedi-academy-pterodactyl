@@ -45,10 +45,35 @@ type Config struct {
 	// engine-written server.log. An empty value disables the mirror.
 	LiveOutputPath string
 	// LiveOutputMaxBytes is the soft size cap for the live mirror file.
-	// When the file grows past this size the supervisor renames the
-	// current file to "<path>.1" (replacing any previous rotation) and
-	// reopens a fresh file. Zero or negative disables rotation.
+	// When the file grows past this size the supervisor archives the
+	// current file (gzip + timestamped suffix) and reopens a fresh one.
+	// Zero or negative disables size-based rotation.
 	LiveOutputMaxBytes int64
+	// LiveOutputKeepArchives is the maximum number of gzipped archives
+	// retained for the live mirror file. Older archives are pruned in
+	// modification-time order.
+	LiveOutputKeepArchives int
+	// AuditLogMaxBytes is the soft size cap for anti-vpn-audit.log.
+	// When the file grows past this size the supervisor archives the
+	// current file (gzip + timestamped suffix) and reopens a fresh one.
+	// Zero or negative disables size-based rotation.
+	AuditLogMaxBytes int64
+	// AuditLogKeepArchives is the maximum number of gzipped archives
+	// retained for anti-vpn-audit.log. Older archives are pruned in
+	// modification-time order.
+	AuditLogKeepArchives int
+	// RotateLogsOnStart, when true, archives any pre-existing non-empty
+	// audit log and live mirror file at supervisor startup so each run
+	// gets its own retrievable history file. Default true.
+	RotateLogsOnStart bool
+	// BroadcastEmissionSpacing is the minimum delay between successive
+	// broadcast (`say`) commands written to the engine. JKA's per-frame
+	// command buffer can truncate `say` payloads when several broadcasts
+	// arrive in the same tick (observed in real game logs as
+	// "VPN PASS: ... cleared checks (10/" with the rest cut off). Spacing
+	// the emissions guarantees the engine processes one `say` per frame.
+	// Zero disables spacing.
+	BroadcastEmissionSpacing time.Duration
 }
 
 func LoadConfigFromEnv() (Config, error) {
@@ -77,8 +102,13 @@ func LoadConfigFromEnv() (Config, error) {
 		KickCommand:          envString("ANTI_VPN_KICK_COMMAND", "clientkick %SLOT%"),
 		BroadcastPassCommand: envString("ANTI_VPN_BROADCAST_PASS_TEMPLATE", `say [Anti-VPN] VPN PASS: %PLAYER% cleared checks (%SCORE%/%THRESHOLD%). %SUMMARY%`),
 		BroadcastBlockCommand: envString("ANTI_VPN_BROADCAST_BLOCK_TEMPLATE", `say [Anti-VPN] VPN BLOCKED: %PLAYER% triggered anti-VPN (%SCORE%/%THRESHOLD%). %SUMMARY%`),
-		LiveOutputPath:       envString("TAYSTJK_LIVE_OUTPUT_PATH", "/home/container/.runtime/live/server-output.log"),
-		LiveOutputMaxBytes:   int64(envInt("TAYSTJK_LIVE_OUTPUT_MAX_BYTES", 10*1024*1024)),
+		LiveOutputPath:         envString("TAYSTJK_LIVE_OUTPUT_PATH", "/home/container/.runtime/live/server-output.log"),
+		LiveOutputMaxBytes:     int64(envInt("TAYSTJK_LIVE_OUTPUT_MAX_BYTES", 10*1024*1024)),
+		LiveOutputKeepArchives: envInt("TAYSTJK_LIVE_OUTPUT_KEEP_ARCHIVES", 5),
+		AuditLogMaxBytes:       int64(envInt("ANTI_VPN_AUDIT_LOG_MAX_BYTES", 10*1024*1024)),
+		AuditLogKeepArchives:   envInt("ANTI_VPN_AUDIT_LOG_KEEP_ARCHIVES", 7),
+		RotateLogsOnStart:      envBool("ANTI_VPN_ROTATE_LOGS_ON_START", true),
+		BroadcastEmissionSpacing: envDuration("ANTI_VPN_BROADCAST_EMISSION_SPACING", 350*time.Millisecond),
 	}
 
 	mode, err := parseMode(envString("ANTI_VPN_MODE", string(ModeBlock)))
@@ -135,6 +165,18 @@ func LoadConfigFromEnv() (Config, error) {
 	}
 	if cfg.LiveOutputMaxBytes < 0 {
 		cfg.LiveOutputMaxBytes = 0
+	}
+	if cfg.LiveOutputKeepArchives < 0 {
+		cfg.LiveOutputKeepArchives = 0
+	}
+	if cfg.AuditLogMaxBytes < 0 {
+		cfg.AuditLogMaxBytes = 0
+	}
+	if cfg.AuditLogKeepArchives < 0 {
+		cfg.AuditLogKeepArchives = 0
+	}
+	if cfg.BroadcastEmissionSpacing < 0 {
+		cfg.BroadcastEmissionSpacing = 0
 	}
 
 	return cfg, nil

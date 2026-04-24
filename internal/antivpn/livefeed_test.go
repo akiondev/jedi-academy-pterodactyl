@@ -1,6 +1,8 @@
 package antivpn
 
 import (
+	"compress/gzip"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,7 +13,7 @@ func TestLiveFeedWriterAppendsLines(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "live", "server-output.log")
 
-	feed, err := newLiveFeedWriter(path, 0)
+	feed, err := newLiveFeedWriter(path, 0, 3, false, nil)
 	if err != nil {
 		t.Fatalf("newLiveFeedWriter: %v", err)
 	}
@@ -41,26 +43,23 @@ func TestLiveFeedWriterAppendsLines(t *testing.T) {
 	}
 }
 
-func TestLiveFeedWriterRotatesAtMaxBytes(t *testing.T) {
+func TestLiveFeedWriterRotatesAtMaxBytesAndGzipsArchive(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "server-output.log")
 
-	feed, err := newLiveFeedWriter(path, 32)
+	feed, err := newLiveFeedWriter(path, 32, 5, false, nil)
 	if err != nil {
 		t.Fatalf("newLiveFeedWriter: %v", err)
 	}
 	t.Cleanup(func() { _ = feed.Close() })
 
-	// First long-ish line crosses the 32 byte threshold and triggers rotation.
+	// First long-ish line crosses the 32 byte threshold; the next write triggers
+	// rotation before appending so the live file holds only post-rotation data.
 	if err := feed.WriteLine("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"); err != nil {
 		t.Fatalf("WriteLine first: %v", err)
 	}
 	if err := feed.WriteLine("post-rotation-line"); err != nil {
 		t.Fatalf("WriteLine second: %v", err)
-	}
-
-	if _, err := os.Stat(path + ".1"); err != nil {
-		t.Fatalf("expected rotation archive %s.1 to exist: %v", path, err)
 	}
 
 	current, err := os.ReadFile(path)
@@ -74,17 +73,47 @@ func TestLiveFeedWriterRotatesAtMaxBytes(t *testing.T) {
 		t.Fatalf("rotated current file unexpectedly contains pre-rotation payload: %q", string(current))
 	}
 
-	archive, err := os.ReadFile(path + ".1")
-	if err != nil {
-		t.Fatalf("read rotation archive: %v", err)
+	archive := findSingleGzArchive(t, dir, filepath.Base(path))
+	contents := readGzip(t, archive)
+	if !strings.Contains(contents, "AAAA") {
+		t.Fatalf("rotation archive missing pre-rotation payload: %q", contents)
 	}
-	if !strings.Contains(string(archive), "AAAA") {
-		t.Fatalf("rotation archive missing pre-rotation payload: %q", string(archive))
+}
+
+func TestLiveFeedWriterRotateOnOpenArchivesPreviousRun(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "server-output.log")
+
+	if err := os.WriteFile(path, []byte("previous-run-payload\n"), 0o644); err != nil {
+		t.Fatalf("seed previous file: %v", err)
+	}
+
+	feed, err := newLiveFeedWriter(path, 0, 3, true, nil)
+	if err != nil {
+		t.Fatalf("newLiveFeedWriter rotate-on-open: %v", err)
+	}
+	t.Cleanup(func() { _ = feed.Close() })
+
+	if err := feed.WriteLine("fresh-run-line"); err != nil {
+		t.Fatalf("WriteLine post-archive: %v", err)
+	}
+
+	current, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read fresh file: %v", err)
+	}
+	if string(current) != "fresh-run-line\n" {
+		t.Fatalf("expected fresh file to contain only post-startup data, got %q", string(current))
+	}
+
+	archive := findSingleGzArchive(t, dir, filepath.Base(path))
+	if !strings.Contains(readGzip(t, archive), "previous-run-payload") {
+		t.Fatalf("expected previous-run payload in archive %s", archive)
 	}
 }
 
 func TestLiveFeedWriterEmptyPathDisabled(t *testing.T) {
-	feed, err := newLiveFeedWriter("", 0)
+	feed, err := newLiveFeedWriter("", 0, 0, false, nil)
 	if err != nil {
 		t.Fatalf("newLiveFeedWriter empty path: %v", err)
 	}
@@ -99,4 +128,43 @@ func TestLiveFeedWriterEmptyPathDisabled(t *testing.T) {
 	if err := feed.Close(); err != nil {
 		t.Fatalf("Close on nil feed should be no-op, got %v", err)
 	}
+}
+
+func findSingleGzArchive(t *testing.T, dir, baseName string) string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read archive dir: %v", err)
+	}
+	prefix := baseName + "."
+	matches := make([]string, 0, 1)
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.HasPrefix(name, prefix) && strings.HasSuffix(name, ".gz") {
+			matches = append(matches, filepath.Join(dir, name))
+		}
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected exactly one gzipped archive for %s, got %v", baseName, matches)
+	}
+	return matches[0]
+}
+
+func readGzip(t *testing.T, path string) string {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open archive: %v", err)
+	}
+	defer f.Close()
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatalf("open gzip: %v", err)
+	}
+	defer gz.Close()
+	data, err := io.ReadAll(gz)
+	if err != nil {
+		t.Fatalf("read gzip: %v", err)
+	}
+	return string(data)
 }

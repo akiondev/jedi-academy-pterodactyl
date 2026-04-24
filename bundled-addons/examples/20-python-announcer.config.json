@@ -6,5 +6,7 @@
   "rcon_timeout_seconds": 3,
   "announce_command": "svsay",
   "messages_file": "20-python-announcer.messages.txt",
-  "log_file": "/home/container/logs/bundled-python-announcer.log"
+  "log_file": "/home/container/logs/bundled-python-announcer.log",
+  "timezone": "local",
+  "schedule": []
 }

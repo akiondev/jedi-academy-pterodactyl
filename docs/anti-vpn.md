@@ -176,14 +176,19 @@ Allowlisted addresses always bypass anti-VPN scoring.
 - `ANTI_VPN_TIMEOUT_MS`
 - `ANTI_VPN_LOG_DECISIONS`
 - `ANTI_VPN_AUDIT_LOG_PATH`
+- `ANTI_VPN_AUDIT_LOG_MAX_BYTES` — soft size cap (in bytes) before the audit log is gzip-rotated; default `10485760` (10 MiB). `0` disables size-based rotation.
+- `ANTI_VPN_AUDIT_LOG_KEEP_ARCHIVES` — number of gzipped audit-log archives to retain; default `7`.
+- `ANTI_VPN_ROTATE_LOGS_ON_START` — when `true` (default), the audit log and live mirror are gzip-archived at supervisor startup so each run gets its own retrievable history.
 - `ANTI_VPN_BROADCAST_MODE`
 - `ANTI_VPN_ENFORCEMENT_MODE`
 - `ANTI_VPN_BROADCAST_COOLDOWN`
+- `ANTI_VPN_BROADCAST_EMISSION_SPACING` — minimum delay between successive `say` broadcasts written to the engine; default `350ms`. Spacing prevents JKA's per-frame command buffer from truncating broadcasts when several decisions resolve in the same tick.
 - `ANTI_VPN_BROADCAST_PASS_TEMPLATE`
 - `ANTI_VPN_BROADCAST_BLOCK_TEMPLATE`
 - `ANTI_VPN_BAN_COMMAND`
 - `ANTI_VPN_KICK_COMMAND`
 - `ANTI_VPN_EVENT_DEDUPE_INTERVAL`
+- `TAYSTJK_LIVE_OUTPUT_KEEP_ARCHIVES` — number of gzipped live-mirror archives to retain; default `5`. The previous behaviour kept only a single uncompressed `.1` archive.
 
 ## Enforcement notes
 
@@ -212,6 +217,8 @@ Recommended enforcement mode defaults:
 - Provider failures degrade the decision quality, but they do not fail server startup and they do not force a block by themselves.
 - The dedicated audit log is the best place to review why a player was allowed, would have been blocked, or was actively blocked.
 - Public broadcasts are rate-limited with a cooldown per slot and action to avoid repetitive spam from duplicate join events.
+- During an `InitGame:` / `ShutdownGame` / `exec server.cfg` burst the engine re-emits `ClientUserinfoChanged` for every connected client. The supervisor detects this and suppresses redundant cached "VPN PASS" broadcasts for those events; genuine `ClientConnect` broadcasts and any blocked decisions still go through. This prevents the multi-broadcast burst (and resulting JKA command-buffer truncation) that previously appeared in console after a map cycle.
+- Both the anti-VPN audit log and the live output mirror are size-rotated with gzip compression (`ANTI_VPN_AUDIT_LOG_MAX_BYTES`, `TAYSTJK_LIVE_OUTPUT_MAX_BYTES`) and pruned to a bounded archive history (`ANTI_VPN_AUDIT_LOG_KEEP_ARCHIVES`, `TAYSTJK_LIVE_OUTPUT_KEEP_ARCHIVES`). With `ANTI_VPN_ROTATE_LOGS_ON_START=true` (default), each supervisor restart also archives the previous run's files so they cannot grow unbounded across restarts.
 
 ## Recommended defaults
 
