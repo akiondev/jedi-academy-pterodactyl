@@ -71,6 +71,12 @@ CLEANUP_INTERVAL_SECONDS = 3600
 TIMESTAMP_RE = re.compile(r"^(?P<stamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+(?P<body>.*)$")
 MATCH_TIME_RE = re.compile(r"^(?:\d{1,3}:\d{2}(?::\d{2})?)\s+(?P<body>.*)$")
 QUAKE_COLOR_RE = re.compile(r"\^(?:[0-9A-Za-z])")
+# Full ANSI CSI escape sequences (ESC [ <param-bytes> <intermediate-bytes>
+# <final-byte>), i.e. the entire ESC[...m family of terminal colour/control
+# codes.  The live-output mirror written by the anti-VPN supervisor preserves
+# raw engine stdout, which can include terminal colour sequences wrapping
+# chat/broadcast lines.
+ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 # Chat verb groups. Order matters: more specific verbs first so a generic
 # fallback does not steal a known channel classification.
@@ -148,6 +154,18 @@ GENERIC_VERB_BLOCKLIST = frozenset(
         "status",
     }
 )
+
+# Sender names that are never real players.
+# "server" is the name used when RCON issues a ``say`` command (e.g.
+# anti-VPN broadcasts appear as ``say: server: [Anti-VPN] ...``).
+# "taystjk" / "openjk" appear when the engine itself echoes internal
+# version/status lines through the ``say`` verb.
+SENDER_BLOCKLIST = frozenset({"server", "taystjk", "openjk"})
+
+# JKA engines and mods sometimes broadcast slot-score tables via the
+# ``say`` verb using the format ``<slot>  <team>: <value>``.  Real player
+# names never start with a bare digit followed by two or more spaces.
+SENDER_SLOT_RE = re.compile(r"^\d+\s{2,}")
 
 
 def log(message: str) -> None:
@@ -263,8 +281,12 @@ def strip_quake_colors(value: str) -> str:
     return QUAKE_COLOR_RE.sub("", value)
 
 
+def strip_ansi(value: str) -> str:
+    return ANSI_RE.sub("", value)
+
+
 def normalize_text(value: str) -> str:
-    return strip_quake_colors(value).strip()
+    return strip_quake_colors(strip_ansi(value)).strip()
 
 
 def current_local_timestamp() -> str:
@@ -289,7 +311,12 @@ def parse_chat_line(raw_line: str) -> tuple[str, str, str, str | None, str] | No
     if not raw_line or not raw_line.strip():
         return None
 
-    stamp, body = split_log_prefix(raw_line)
+    # Strip ANSI terminal escape sequences before timestamp/body extraction
+    # so that ANSI codes wrapping the verb (e.g. ESC[35msay:…ESC[0m) do not
+    # prevent the verb patterns from matching at position zero.
+    clean_line = strip_ansi(raw_line)
+
+    stamp, body = split_log_prefix(clean_line)
     if not body:
         return None
 
@@ -305,6 +332,14 @@ def parse_chat_line(raw_line: str) -> tuple[str, str, str, str | None, str] | No
         if not sender or not message:
             return None
 
+        # Reject known non-player senders (engine broadcasts, RCON say output).
+        if sender.lower() in SENDER_BLOCKLIST:
+            return None
+
+        # Reject slot-score lines emitted by JKA engines/mods (e.g. "0  blue: 0").
+        if SENDER_SLOT_RE.match(sender):
+            return None
+
         tz_name = datetime.now().astimezone().tzname() or "LOCAL"
         return (f"{stamp} {tz_name}", channel, sender, target, message)
 
@@ -317,8 +352,9 @@ def parse_chat_line(raw_line: str) -> tuple[str, str, str, str | None, str] | No
             message = normalize_text(generic.group("message"))
             # Reject obviously non-chat senders that snuck through.
             if sender and message and "@@@" not in sender and "@@@" not in message:
-                tz_name = datetime.now().astimezone().tzname() or "LOCAL"
-                return (f"{stamp} {tz_name}", "PUBLIC", sender, None, message)
+                if sender.lower() not in SENDER_BLOCKLIST and not SENDER_SLOT_RE.match(sender):
+                    tz_name = datetime.now().astimezone().tzname() or "LOCAL"
+                    return (f"{stamp} {tz_name}", "PUBLIC", sender, None, message)
 
     return None
 
@@ -873,6 +909,13 @@ SELFTEST_LINES: tuple[str, ...] = (
     "2026-04-18 19:32:39 say: js hart: hello with absolute timestamp",
     # Generic fallback: an unknown but chat-shaped verb should match.
     "5:00 modsay: Akion: future mod chat verb",
+    # Player name starting with a digit but no double-space (real name, must match).
+    "0:01 say: 1337h4x0r: hello",
+    # ANSI-wrapped chat: after stripping ESC sequences the verb/sender/message
+    # must be parsed correctly and the cleaned sender logged without ANSI noise.
+    "0:05 say: \x1b[35mUsop\x1b[0m: i boss",  # must match; sender → "Usop"
+    "0:06 say: \x1b[31mPadawan\x1b[0m: kk",   # must match; sender → "Padawan"
+    "0:07 say: Padawan: tete\x1b[0m",          # must match; message → "tete"
     "0:00 InitGame: \\version\\TaystJK",  # must NOT match
     "0:00 ClientConnect: 0 [1.2.3.4] (X) \"hart\"",  # must NOT match
     "0:00 @@@VOTEPASSED (g_gametype 6)",  # must NOT match
@@ -881,6 +924,14 @@ SELFTEST_LINES: tuple[str, ...] = (
     "0:00 status: server: up",  # must NOT match (status is blocklisted)
     "0:00 ClientDisconnect: 0 [1.2.3.4] (X) \"hart\"",  # must NOT match
     "",  # must NOT match
+    # Anti-VPN broadcast via RCON say appears as "say: server: …"
+    "0:00 say: server: [Anti-VPN] VPN PASS: Akion cleared checks (10/90). Score remained below the configured threshold.",  # must NOT match
+    # Engine version echo (TaystJK server name via say)
+    "0:00 say: TaystJK: latest-86f04849f",   # must NOT match
+    "0:00 say: TaystJK: latest-86f04849f\x1b[0m",  # must NOT match (ANSI suffix)
+    # Slot-score broadcast lines ("0  blue: 0", "2  blue: 7")
+    "0:00 say: 0  blue: 0",   # must NOT match
+    "0:00 say: 2  blue: 7",   # must NOT match
 )
 
 
@@ -905,6 +956,10 @@ def run_selftest() -> int:
         "4:00 vsay: Akion: hi",
         "2026-04-18 19:32:39 say: js hart: hello with absolute timestamp",
         "5:00 modsay: Akion: future mod chat verb",
+        "0:01 say: 1337h4x0r: hello",
+        "0:05 say: \x1b[35mUsop\x1b[0m: i boss",
+        "0:06 say: \x1b[31mPadawan\x1b[0m: kk",
+        "0:07 say: Padawan: tete\x1b[0m",
     ]
     must_not_match = [
         "0:00 InitGame: \\version\\TaystJK",
@@ -915,7 +970,35 @@ def run_selftest() -> int:
         "0:00 rcon: admin: status",
         "0:00 status: server: up",
         "",
+        # Server/engine sender blocklist
+        "0:00 say: server: [Anti-VPN] VPN PASS: Akion cleared checks (10/90). Score remained below the configured threshold.",
+        "0:00 say: TaystJK: latest-86f04849f",
+        "0:00 say: TaystJK: latest-86f04849f\x1b[0m",
+        # Slot-score lines
+        "0:00 say: 0  blue: 0",
+        "0:00 say: 2  blue: 7",
     ]
+
+    # Additionally verify that ANSI codes are cleaned from the output.
+    ansi_cases = [
+        ("0:05 say: \x1b[35mUsop\x1b[0m: i boss", "Usop", "i boss"),
+        ("0:06 say: \x1b[31mPadawan\x1b[0m: kk", "Padawan", "kk"),
+        ("0:07 say: Padawan: tete\x1b[0m", "Padawan", "tete"),
+    ]
+    for raw, exp_sender, exp_message in ansi_cases:
+        parsed = parse_chat_line(raw)
+        if parsed is None:
+            print(f"  FAIL: expected match for ANSI line {raw!r}")
+            failures += 1
+        else:
+            _, _, sender, _, message = parsed
+            if sender != exp_sender:
+                print(f"  FAIL: ANSI sender: expected {exp_sender!r}, got {sender!r}")
+                failures += 1
+            if message != exp_message:
+                print(f"  FAIL: ANSI message: expected {exp_message!r}, got {message!r}")
+                failures += 1
+
     for raw in must_match:
         if parse_chat_line(raw) is None:
             print(f"  FAIL: expected match for {raw!r}")

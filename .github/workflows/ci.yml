@@ -205,7 +205,7 @@ jobs:
 
       - name: Validate Python addon helpers
         if: steps.gate.outputs.run == 'true'
-        run: python3 -m py_compile bundled-addons/defaults/40-chatlogger.py bundled-addons/examples/20-python-announcer.py
+        run: python3 -m py_compile bundled-addons/defaults/40-chatlogger.py bundled-addons/defaults/50-rcon-live-guard.py bundled-addons/examples/20-python-announcer.py
 
       - name: Validate egg JSON
         if: steps.gate.outputs.run == 'true'

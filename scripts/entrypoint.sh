@@ -377,6 +377,7 @@ validate_selected_runtime_paths
 
 resolve_effective_server_settings "/home/container/${active_game_dir}/${SERVER_CONFIG}"
 install_managed_chatlogger_helper
+install_managed_rcon_live_guard_helper
 
 if [[ "$#" -gt 0 ]]; then
   startup_source="Pterodactyl panel sentinel"

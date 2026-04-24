@@ -120,11 +120,36 @@ install_managed_chatlogger_helper() {
   fi
 }
 
+install_managed_rcon_live_guard_helper() {
+  local helper_path="${ADDON_DEFAULTS_DIR}/50-rcon-live-guard.py"
+  local helper_exit=0
+
+  if [[ ! -f "$helper_path" ]]; then
+    warn "Managed RCON live guard helper was not found at ${helper_path}"
+    return 0
+  fi
+
+  if [[ "$ADDON_RCON_LIVE_GUARD_ENABLED" != "true" ]]; then
+    info "Managed RCON live guard is disabled"
+    return 0
+  fi
+
+  set +e
+  python3 "$helper_path"
+  helper_exit=$?
+  set -e
+
+  if [[ "$helper_exit" -ne 0 ]]; then
+    warn "Managed RCON live guard helper failed to start with exit code ${helper_exit}"
+  fi
+}
+
 configure_addons() {
   : "${ADDONS_ENABLED:=true}"
   : "${ADDONS_DIR:=/home/container/addons}"
   : "${ADDON_CHECKSERVERSTATUS_ENABLED:=false}"
   : "${ADDON_CHATLOGGER_ENABLED:=false}"
+  : "${ADDON_RCON_LIVE_GUARD_ENABLED:=true}"
   : "${ADDONS_STRICT:=false}"
   : "${ADDONS_TIMEOUT_SECONDS:=30}"
   : "${ADDONS_LOG_OUTPUT:=true}"
@@ -162,6 +187,16 @@ configure_addons() {
       ;;
   esac
   ADDON_CHATLOGGER_ENABLED="$ADDON_CHATLOGGER_ENABLED_NORMALIZED"
+
+  ADDON_RCON_LIVE_GUARD_ENABLED_NORMALIZED="$(printf '%s' "$ADDON_RCON_LIVE_GUARD_ENABLED" | tr '[:upper:]' '[:lower:]')"
+  case "$ADDON_RCON_LIVE_GUARD_ENABLED_NORMALIZED" in
+    true|false) ;;
+    *)
+      warn "ADDON_RCON_LIVE_GUARD_ENABLED=${ADDON_RCON_LIVE_GUARD_ENABLED} is invalid, falling back to true"
+      ADDON_RCON_LIVE_GUARD_ENABLED_NORMALIZED="true"
+      ;;
+  esac
+  ADDON_RCON_LIVE_GUARD_ENABLED="$ADDON_RCON_LIVE_GUARD_ENABLED_NORMALIZED"
 
   ADDONS_STRICT_NORMALIZED="$(printf '%s' "$ADDONS_STRICT" | tr '[:upper:]' '[:lower:]')"
   case "$ADDONS_STRICT_NORMALIZED" in
@@ -208,6 +243,7 @@ print_addon_summary() {
   kv "Defaults dir" "$ADDON_DEFAULTS_DIR"
   kv "Checkserverstatus" "$(printf '%s' "$(bool_state "$ADDON_CHECKSERVERSTATUS_ENABLED")" | tr '[:lower:]' '[:upper:]')"
   kv "Chatlogger" "$(printf '%s' "$(bool_state "$ADDON_CHATLOGGER_ENABLED")" | tr '[:lower:]' '[:upper:]')"
+  kv "RCON live guard" "$(printf '%s' "$(bool_state "$ADDON_RCON_LIVE_GUARD_ENABLED")" | tr '[:lower:]' '[:upper:]')"
   kv "Strict" "$(printf '%s' "$(bool_state "$ADDONS_STRICT")" | tr '[:lower:]' '[:upper:]')"
   kv "Timeout" "${ADDONS_TIMEOUT_SECONDS}s"
   kv "Log output" "$(printf '%s' "$(bool_state "$ADDONS_LOG_OUTPUT")" | tr '[:lower:]' '[:upper:]')"
