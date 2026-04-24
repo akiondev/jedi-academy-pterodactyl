@@ -88,6 +88,15 @@ RUNTIME_ENV_PATH = HOME_DIR / ".runtime" / "taystjk-effective.env"
 ALLOWED_ANNOUNCE_COMMANDS = ("svsay", "say")
 DEFAULT_ANNOUNCE_COMMAND = "svsay"
 
+# Minimum cadence for ``every_seconds`` schedule entries. Anything smaller
+# would risk RCON spam and is almost certainly a config typo.
+MIN_INTERVAL_SECONDS = 30
+
+# Maximum the scheduler ever sleeps between ticks, even when the next slot
+# is far away. Keeps response time to config edits, DST transitions and
+# clock-skew bounded without busy-looping.
+MAX_SLEEP_INTERVAL_SECONDS = 60
+
 DEFAULT_CONFIG: dict[str, Any] = {
     "enabled": True,
     "startup_delay_seconds": 60,
@@ -153,6 +162,11 @@ def resolve_sibling_path(value: str | None, fallback: Path) -> Path:
 
 
 def normalise_announce_command(value: Any) -> str:
+    # Whitelist on purpose: ``announce_command`` is interpolated into an
+    # RCON command string sent over UDP. Restricting it to a small allow-list
+    # of well-known JKA chat commands prevents config typos (or hostile
+    # config files) from turning the announcer into an arbitrary RCON
+    # executor.
     raw = str(value or "").strip().lower()
     if raw in ALLOWED_ANNOUNCE_COMMANDS:
         return raw
@@ -223,10 +237,10 @@ def normalise_schedule(raw: Any) -> list[dict[str, Any]]:
             item["time_of_day"] = tod
         elif every_raw is not None:
             seconds = safe_int(every_raw, -1, 1)
-            if seconds < 30:
+            if seconds < MIN_INTERVAL_SECONDS:
                 log(
                     f"schedule[{index}] every_seconds={every_raw!r} is below "
-                    f"the 30s minimum; skipping entry"
+                    f"the {MIN_INTERVAL_SECONDS}s minimum; skipping entry"
                 )
                 continue
             item["every_seconds"] = seconds
@@ -767,11 +781,12 @@ def run_scheduled_loop(
                 deadline = monotonic_deadlines.get(index, now_monotonic)
                 wakeups.append(max(0.0, deadline - now_monotonic))
 
-        # Sleep until the soonest entry. Cap at 60s so config edits and clock
-        # changes (DST) are picked up promptly without spinning. A 0.0 wakeup
-        # falls through immediately and the firing pass handles the slot.
-        sleep_for = min(wakeups) if wakeups else 60.0
-        sleep_for = min(60.0, max(0.0, sleep_for))
+        # Sleep until the soonest entry. Cap at MAX_SLEEP_INTERVAL_SECONDS
+        # so config edits and clock changes (DST) are picked up promptly
+        # without spinning. A 0.0 wakeup falls through immediately and the
+        # firing pass handles the slot.
+        sleep_for = min(wakeups) if wakeups else float(MAX_SLEEP_INTERVAL_SECONDS)
+        sleep_for = min(float(MAX_SLEEP_INTERVAL_SECONDS), max(0.0, sleep_for))
         if sleep_for > 0 and _interruptible_sleep(sleep_for):
             return 0
         if _shutdown_event.is_set():
