@@ -1,22 +1,60 @@
 #!/usr/bin/env python3
 """
-Bundled example addon template: periodic Python announcer.
+Bundled example addon template: scheduled Python announcer.
 
-This script is meant to be copied into /home/container/addons and then read
-and modified by server owners. When the addon loader executes it during
-startup, the script launches a detached background worker and exits quickly so
-the normal TaystJK startup can continue.
+This script is meant to be copied into ``/home/container/addons`` and then
+read and modified by server owners. When the addon loader executes it during
+startup, the script launches a detached background worker and exits quickly
+so the normal server startup can continue.
 
 The background worker reads:
-  - 20-python-announcer.config.json
-  - 20-python-announcer.messages.txt
 
-It then sends `svsay` announcements over local RCON at a configurable interval.
+* ``20-python-announcer.config.json`` -- runtime configuration
+* ``20-python-announcer.messages.txt`` -- rotated message list
+
+It then sends announcements over local RCON. The default RCON command is
+``svsay`` (server announcement, no name prefix). You can switch to ``say``
+(speaks as the dedicated server console) by setting ``announce_command`` in
+the config; any other value is rejected with a warning and ``svsay`` is used.
+
+Two scheduling modes are supported:
+
+1. **Simple interval** (default, back-compat): set ``interval_seconds`` and
+   the worker rotates through ``messages.txt`` every N seconds.
+
+2. **Explicit schedule**: provide a non-empty ``schedule`` list. Each entry
+   is one of:
+
+       {"time": "HH:MM"}                 # fires daily at this wall-clock time
+       {"time": "HH:MM:SS"}              # second-precision daily
+       {"every_seconds": 1800}           # periodic, independent cadence
+
+   Any entry may also carry a ``message`` literal to send at that slot
+   (otherwise the next message from ``messages.txt`` is used). Schedule
+   entries fire independently; the daily ``time`` form uses the configured
+   ``timezone`` (``"local"`` by default; IANA zone names like
+   ``"Europe/Stockholm"`` also work).
+
+Optimisation notes vs. earlier revisions:
+
+* PID liveness now uses an exclusive ``fcntl.flock`` on a dedicated lockfile
+  instead of ``os.kill(pid, 0)`` -- immune to PID reuse after a crash.
+* Sleeps go through a ``threading.Event`` so SIGTERM/SIGINT exits promptly.
+* The messages file is cached and only re-parsed when its mtime changes.
+* Wall-clock scheduling uses ``time.monotonic()`` for the sleep budget but
+  resolves daily ``HH:MM`` slots against the real clock so DST / clock skew
+  cannot drift the schedule.
+* A one-shot startup diagnostic line is written to the worker log so silent
+  misconfiguration (missing RCON password, empty messages, etc.) is visible
+  without enabling debug logging.
 """
 
 from __future__ import annotations
 
 import atexit
+import datetime as _dt
+import errno
+import fcntl
 import json
 import os
 import re
@@ -25,9 +63,16 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any
+
+try:  # zoneinfo is stdlib on Python 3.9+
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+except ImportError:  # pragma: no cover - very old runtimes only
+    ZoneInfo = None  # type: ignore[assignment]
+    ZoneInfoNotFoundError = Exception  # type: ignore[assignment,misc]
 
 HOME_DIR = Path("/home/container")
 SCRIPT_PATH = Path(__file__).resolve()
@@ -36,8 +81,12 @@ DEFAULT_MESSAGES_PATH = SCRIPT_PATH.with_suffix(".messages.txt")
 LOGS_DIR = HOME_DIR / "logs"
 DEFAULT_LOG_PATH = LOGS_DIR / "bundled-python-announcer.log"
 PID_PATH = LOGS_DIR / "bundled-python-announcer.pid"
+LOCK_PATH = LOGS_DIR / "bundled-python-announcer.lock"
 RUNTIME_STATE_PATH = HOME_DIR / ".runtime" / "taystjk-effective.json"
 RUNTIME_ENV_PATH = HOME_DIR / ".runtime" / "taystjk-effective.env"
+
+ALLOWED_ANNOUNCE_COMMANDS = ("svsay", "say")
+DEFAULT_ANNOUNCE_COMMAND = "svsay"
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "enabled": True,
@@ -45,14 +94,32 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "interval_seconds": 900,
     "rcon_host": "127.0.0.1",
     "rcon_timeout_seconds": 3,
-    "announce_command": "svsay",
+    "announce_command": DEFAULT_ANNOUNCE_COMMAND,
     "messages_file": DEFAULT_MESSAGES_PATH.name,
     "log_file": str(DEFAULT_LOG_PATH),
+    # Empty = use simple interval mode. Populate to use exact-time scheduling.
+    "schedule": [],
+    # "local" or any IANA zone name (e.g. "Europe/Stockholm").
+    "timezone": "local",
 }
+
+WORKER_FLAG = "--run-worker"
+
+_shutdown_event = threading.Event()
+
+
+# ---------------------------------------------------------------------------
+# Logging helpers
+# ---------------------------------------------------------------------------
 
 
 def log(message: str) -> None:
     print(f"[addon:python-announcer] {message}", flush=True)
+
+
+# ---------------------------------------------------------------------------
+# Config / message parsing
+# ---------------------------------------------------------------------------
 
 
 def safe_int(value: Any, default: int, minimum: int) -> int:
@@ -85,6 +152,117 @@ def resolve_sibling_path(value: str | None, fallback: Path) -> Path:
     return SCRIPT_PATH.parent / candidate
 
 
+def normalise_announce_command(value: Any) -> str:
+    raw = str(value or "").strip().lower()
+    if raw in ALLOWED_ANNOUNCE_COMMANDS:
+        return raw
+    if raw:
+        log(
+            f"announce_command={raw!r} is not allowed; "
+            f"falling back to {DEFAULT_ANNOUNCE_COMMAND!r} "
+            f"(allowed: {', '.join(ALLOWED_ANNOUNCE_COMMANDS)})"
+        )
+    return DEFAULT_ANNOUNCE_COMMAND
+
+
+_TIME_OF_DAY_RE = re.compile(r"^(?P<h>\d{1,2}):(?P<m>\d{2})(?::(?P<s>\d{2}))?$")
+
+
+def _parse_time_of_day(raw: str) -> _dt.time | None:
+    """Parse an "HH:MM" or "HH:MM:SS" string into a ``datetime.time``."""
+    match = _TIME_OF_DAY_RE.match(raw.strip())
+    if not match:
+        return None
+    hour = int(match.group("h"))
+    minute = int(match.group("m"))
+    second = int(match.group("s") or 0)
+    if not (0 <= hour <= 23 and 0 <= minute <= 59 and 0 <= second <= 59):
+        return None
+    return _dt.time(hour, minute, second)
+
+
+def normalise_schedule(raw: Any) -> list[dict[str, Any]]:
+    """Validate and normalise a ``schedule`` list from the config.
+
+    Returns a list of dicts each with EXACTLY one of the keys
+    ``time_of_day`` (a ``datetime.time``) or ``every_seconds`` (int >= 30),
+    plus optional ``message`` (str). Invalid entries are dropped with a
+    warning so a single typo never disables the whole worker.
+    """
+    if not isinstance(raw, list):
+        if raw not in (None, ""):
+            log(f"schedule must be a JSON list; got {type(raw).__name__!r}, ignoring")
+        return []
+
+    normalised: list[dict[str, Any]] = []
+    for index, entry in enumerate(raw):
+        if not isinstance(entry, dict):
+            log(f"schedule[{index}] is not an object; skipping")
+            continue
+
+        item: dict[str, Any] = {}
+        time_raw = entry.get("time")
+        every_raw = entry.get("every_seconds", entry.get("interval_seconds"))
+        message_raw = entry.get("message")
+
+        if time_raw is not None and every_raw is not None:
+            log(
+                f"schedule[{index}] sets both 'time' and 'every_seconds'; "
+                f"using 'time' and ignoring 'every_seconds'"
+            )
+            every_raw = None
+
+        if time_raw is not None:
+            tod = _parse_time_of_day(str(time_raw))
+            if tod is None:
+                log(
+                    f"schedule[{index}] time={time_raw!r} is not 'HH:MM' or "
+                    f"'HH:MM:SS'; skipping entry"
+                )
+                continue
+            item["time_of_day"] = tod
+        elif every_raw is not None:
+            seconds = safe_int(every_raw, -1, 1)
+            if seconds < 30:
+                log(
+                    f"schedule[{index}] every_seconds={every_raw!r} is below "
+                    f"the 30s minimum; skipping entry"
+                )
+                continue
+            item["every_seconds"] = seconds
+        else:
+            log(
+                f"schedule[{index}] must define either 'time' or "
+                f"'every_seconds'; skipping entry"
+            )
+            continue
+
+        if message_raw is not None:
+            text = str(message_raw).strip()
+            if text:
+                item["message"] = text
+
+        normalised.append(item)
+
+    return normalised
+
+
+def _resolve_timezone(raw: Any) -> _dt.tzinfo | None:
+    """Return a tzinfo for daily scheduling, or ``None`` for naive local time."""
+    name = str(raw or "").strip()
+    if not name or name.lower() == "local":
+        # Use the system's local timezone (DST-aware via /etc/localtime).
+        return _dt.datetime.now().astimezone().tzinfo
+    if ZoneInfo is None:
+        log(f"timezone={name!r} requested but zoneinfo is unavailable; using local")
+        return _dt.datetime.now().astimezone().tzinfo
+    try:
+        return ZoneInfo(name)
+    except ZoneInfoNotFoundError:
+        log(f"timezone={name!r} could not be resolved; falling back to local")
+        return _dt.datetime.now().astimezone().tzinfo
+
+
 def load_config() -> dict[str, Any]:
     config = dict(DEFAULT_CONFIG)
 
@@ -105,7 +283,7 @@ def load_config() -> dict[str, Any]:
     config["startup_delay_seconds"] = safe_int(config.get("startup_delay_seconds"), 60, 0)
     config["interval_seconds"] = safe_int(config.get("interval_seconds"), 900, 30)
     config["rcon_timeout_seconds"] = safe_int(config.get("rcon_timeout_seconds"), 3, 1)
-    config["announce_command"] = str(config.get("announce_command", "svsay")).strip() or "svsay"
+    config["announce_command"] = normalise_announce_command(config.get("announce_command"))
     config["messages_path"] = resolve_sibling_path(
         str(config.get("messages_file", DEFAULT_MESSAGES_PATH.name)),
         DEFAULT_MESSAGES_PATH,
@@ -115,22 +293,74 @@ def load_config() -> dict[str, Any]:
         DEFAULT_LOG_PATH,
     )
     config["rcon_host"] = str(config.get("rcon_host", "127.0.0.1")).strip() or "127.0.0.1"
+    config["schedule"] = normalise_schedule(config.get("schedule", []))
+    config["tzinfo"] = _resolve_timezone(config.get("timezone", "local"))
 
     return config
 
 
-def load_messages(messages_path: Path) -> list[str]:
-    if not messages_path.is_file():
-        log(f"Messages file not found at {messages_path}")
-        return []
+# ---------------------------------------------------------------------------
+# Cached message file
+# ---------------------------------------------------------------------------
 
-    messages: list[str] = []
-    for raw_line in messages_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        messages.append(line)
-    return messages
+
+class MessageCache:
+    """Reads ``messages.txt`` lazily and only re-parses when its mtime changes."""
+
+    def __init__(self) -> None:
+        self._path: Path | None = None
+        self._mtime_ns: int = -1
+        self._size: int = -1
+        self._messages: list[str] = []
+        self._missing_logged_for: Path | None = None
+
+    def get(self, path: Path) -> list[str]:
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            if self._missing_logged_for != path:
+                log(f"Messages file not found at {path}")
+                self._missing_logged_for = path
+            self._path = path
+            self._messages = []
+            self._mtime_ns = -1
+            self._size = -1
+            return []
+        except OSError as exc:
+            log(f"Failed to stat messages file {path}: {exc}")
+            return self._messages
+
+        self._missing_logged_for = None
+        if (
+            path == self._path
+            and stat.st_mtime_ns == self._mtime_ns
+            and stat.st_size == self._size
+        ):
+            return self._messages
+
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            log(f"Failed to read messages file {path}: {exc}")
+            return self._messages
+
+        messages: list[str] = []
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            messages.append(line)
+
+        self._path = path
+        self._mtime_ns = stat.st_mtime_ns
+        self._size = stat.st_size
+        self._messages = messages
+        return messages
+
+
+# ---------------------------------------------------------------------------
+# Runtime state (RCON port + password discovery)
+# ---------------------------------------------------------------------------
 
 
 def load_runtime_state() -> dict[str, Any]:
@@ -227,6 +457,11 @@ def effective_rcon_password(config_path: Path) -> str | None:
     return extract_rcon_password(config_path)
 
 
+# ---------------------------------------------------------------------------
+# RCON
+# ---------------------------------------------------------------------------
+
+
 def send_rcon_command(host: str, port: int, password: str, timeout_seconds: int, command: str) -> str:
     payload = b"\xff\xff\xff\xffrcon " + password.encode("utf-8") + b" " + command.encode("utf-8")
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -251,6 +486,77 @@ def escape_command_argument(value: str) -> str:
     return value.replace("\\", "\\\\").replace("\"", "\\\"")
 
 
+def dispatch_announcement(config: dict[str, Any], message: str) -> bool:
+    """Send a single announcement. Returns True on apparent success."""
+    config_path = active_server_config_path()
+    password = effective_rcon_password(config_path)
+    if not password:
+        log(f"No effective RCON password found for {config_path}; cannot send announcement yet")
+        return False
+
+    command = f'{config["announce_command"]} "{escape_command_argument(message)}"'
+    try:
+        response = send_rcon_command(
+            config["rcon_host"],
+            current_server_port(),
+            password,
+            int(config["rcon_timeout_seconds"]),
+            command,
+        )
+    except OSError as exc:
+        log(f"Announcement failed: {exc}")
+        return False
+
+    if response and "bad rconpassword" in response.lower():
+        log(f"Announcement rejected by server: {response}")
+        return False
+
+    if response:
+        log(f"Sent announcement: {message}")
+    else:
+        log(f"Dispatched announcement without an RCON reply: {message}")
+    return True
+
+
+# ---------------------------------------------------------------------------
+# PID + lockfile handling (PID-reuse-safe via fcntl.flock)
+# ---------------------------------------------------------------------------
+
+
+def acquire_worker_lock() -> Any | None:
+    """Take an exclusive lock so only one worker runs at a time."""
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    handle = open(LOCK_PATH, "a+", encoding="utf-8")  # noqa: SIM115 - lifetime managed
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    handle.seek(0)
+    handle.truncate()
+    handle.write(f"{os.getpid()}\n")
+    handle.flush()
+    return handle
+
+
+def previous_worker_alive() -> bool:
+    """Best-effort check using the lockfile (race-free across PID reuse)."""
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        handle = open(LOCK_PATH, "a+", encoding="utf-8")  # noqa: SIM115
+    except OSError:
+        return False
+    try:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return True
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        return False
+    finally:
+        handle.close()
+
+
 def read_existing_pid() -> int | None:
     if not PID_PATH.is_file():
         return None
@@ -258,14 +564,6 @@ def read_existing_pid() -> int | None:
         return int(PID_PATH.read_text(encoding="utf-8").strip())
     except (OSError, ValueError):
         return None
-
-
-def process_is_running(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        return False
-    return True
 
 
 def remove_pid_if_owned() -> None:
@@ -277,18 +575,229 @@ def remove_pid_if_owned() -> None:
             pass
 
 
+# ---------------------------------------------------------------------------
+# Scheduling
+# ---------------------------------------------------------------------------
+
+
+def _seconds_until_next_time_of_day(target: _dt.time, tz: _dt.tzinfo | None) -> float:
+    """Return seconds until the next occurrence of ``target`` in ``tz``."""
+    now = _dt.datetime.now(tz=tz)
+    today_target = now.replace(
+        hour=target.hour,
+        minute=target.minute,
+        second=target.second,
+        microsecond=0,
+    )
+    if today_target <= now:
+        today_target = today_target + _dt.timedelta(days=1)
+    delta = (today_target - now).total_seconds()
+    # Always sleep at least 1s so a fast-running tick never busy-loops.
+    return max(1.0, delta)
+
+
+def _interruptible_sleep(seconds: float) -> bool:
+    """Sleep for ``seconds`` or until shutdown is signalled. Returns True if shutdown."""
+    if seconds <= 0:
+        return _shutdown_event.is_set()
+    return _shutdown_event.wait(timeout=seconds)
+
+
+def _next_message(messages: list[str], cursor: list[int]) -> str | None:
+    """Return the next message in rotation, advancing the cursor list in-place."""
+    if not messages:
+        return None
+    index = cursor[0] % len(messages)
+    cursor[0] = (cursor[0] + 1) % max(1, len(messages))
+    return messages[index]
+
+
+def _format_schedule_for_log(schedule: list[dict[str, Any]]) -> str:
+    parts: list[str] = []
+    for entry in schedule:
+        if "time_of_day" in entry:
+            tod: _dt.time = entry["time_of_day"]
+            label = f"@{tod.strftime('%H:%M:%S')}"
+        else:
+            label = f"every {entry['every_seconds']}s"
+        if entry.get("message"):
+            label += " (literal)"
+        parts.append(label)
+    return ", ".join(parts) if parts else "<empty>"
+
+
+def _emit_startup_diagnostics(
+    config: dict[str, Any],
+    messages: list[str],
+) -> None:
+    config_path = active_server_config_path()
+    password = effective_rcon_password(config_path)
+    port = current_server_port()
+    mode = "schedule" if config["schedule"] else f"interval={config['interval_seconds']}s"
+    tz_label = str(config.get("timezone") or "local")
+    log("=== announcer startup ===")
+    log(f"  mode             : {mode}")
+    if config["schedule"]:
+        log(f"  schedule entries : {_format_schedule_for_log(config['schedule'])}")
+        log(f"  timezone         : {tz_label}")
+    log(f"  announce_command : {config['announce_command']}")
+    log(f"  rcon_host:port   : {config['rcon_host']}:{port}")
+    log(f"  rcon_password    : {'present' if password else 'MISSING'}")
+    log(f"  active_server_cfg: {config_path}")
+    log(f"  messages_file    : {config['messages_path']} ({len(messages)} entries)")
+    log(f"  log_file         : {config['log_path']}")
+    log("=========================")
+
+
+def run_simple_interval_loop(
+    initial_config: dict[str, Any],
+    messages_cache: MessageCache,
+) -> int:
+    cursor = [0]
+    while not _shutdown_event.is_set():
+        config = load_config()
+        if not config["enabled"]:
+            log("Announcer was disabled in config; worker will exit")
+            return 0
+        if config["schedule"]:
+            log("Schedule was added to config at runtime; switching to scheduled mode")
+            return run_scheduled_loop(config, messages_cache)
+
+        messages = messages_cache.get(config["messages_path"])
+        if not messages:
+            log("No announcer messages are configured; retrying later")
+        else:
+            message = _next_message(messages, cursor) or ""
+            if message:
+                dispatch_announcement(config, message)
+
+        if _interruptible_sleep(int(config["interval_seconds"])):
+            return 0
+    return 0
+
+
+def run_scheduled_loop(
+    initial_config: dict[str, Any],
+    messages_cache: MessageCache,
+) -> int:
+    """Dispatch announcements based on the ``schedule`` list."""
+    cursor = [0]
+    # Per-entry monotonic deadlines for ``every_seconds`` entries.
+    monotonic_deadlines: dict[int, float] = {}
+    base = time.monotonic()
+    for index, entry in enumerate(initial_config["schedule"]):
+        if "every_seconds" in entry:
+            monotonic_deadlines[index] = base + float(entry["every_seconds"])
+
+    while not _shutdown_event.is_set():
+        config = load_config()
+        if not config["enabled"]:
+            log("Announcer was disabled in config; worker will exit")
+            return 0
+        if not config["schedule"]:
+            log("Schedule was removed from config at runtime; switching to interval mode")
+            return run_simple_interval_loop(config, messages_cache)
+
+        # Reconcile per-entry deadlines if the schedule list shrunk/grew.
+        # We index by position; any new every_seconds entries get a fresh
+        # deadline relative to "now" so a config edit doesn't replay old slots.
+        now_monotonic = time.monotonic()
+        for index, entry in enumerate(config["schedule"]):
+            if "every_seconds" in entry and index not in monotonic_deadlines:
+                monotonic_deadlines[index] = now_monotonic + float(entry["every_seconds"])
+        # Drop deadlines for indices that no longer exist.
+        valid_indices = {
+            i for i, e in enumerate(config["schedule"]) if "every_seconds" in e
+        }
+        for stale in list(monotonic_deadlines.keys()):
+            if stale not in valid_indices:
+                monotonic_deadlines.pop(stale, None)
+
+        # Compute sleep horizon = min over all entries of their next-due time.
+        tz = config.get("tzinfo")
+        wakeups: list[float] = []
+        now_monotonic = time.monotonic()
+        for index, entry in enumerate(config["schedule"]):
+            if "time_of_day" in entry:
+                wakeups.append(_seconds_until_next_time_of_day(entry["time_of_day"], tz))
+            else:
+                deadline = monotonic_deadlines.get(index, now_monotonic)
+                wakeups.append(max(0.0, deadline - now_monotonic))
+
+        # Sleep until the soonest entry. Cap at 60s so config edits and clock
+        # changes (DST) are picked up promptly without spinning.
+        sleep_for = min(wakeups) if wakeups else 60.0
+        sleep_for = min(60.0, max(0.0, sleep_for))
+        if _interruptible_sleep(sleep_for):
+            return 0
+
+        # Fire any entries whose deadline has now passed (within a 1s grace).
+        now_monotonic = time.monotonic()
+        messages = messages_cache.get(config["messages_path"])
+        for index, entry in enumerate(config["schedule"]):
+            if "time_of_day" in entry:
+                remaining = _seconds_until_next_time_of_day(entry["time_of_day"], tz)
+                # If we're within a 2s window of (or just past) the slot, fire
+                # it. The next iteration's sleep will land us at the following
+                # day's occurrence.
+                if remaining > 2.0:
+                    continue
+            else:
+                deadline = monotonic_deadlines.get(index)
+                if deadline is None or now_monotonic < deadline:
+                    continue
+                monotonic_deadlines[index] = now_monotonic + float(entry["every_seconds"])
+
+            literal = entry.get("message")
+            message = literal if literal else _next_message(messages, cursor)
+            if not message:
+                # No literal AND messages.txt is empty => log once per tick and skip.
+                if "time_of_day" in entry:
+                    log("Schedule slot due but no literal message and messages.txt is empty")
+                continue
+            dispatch_announcement(config, message)
+
+            if "time_of_day" in entry:
+                # Make sure we don't immediately re-fire this slot in the next
+                # loop iteration: pause briefly so wall clock advances past the
+                # 2s grace window.
+                if _interruptible_sleep(2.0):
+                    return 0
+
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Worker entry point
+# ---------------------------------------------------------------------------
+
+
+def _install_signal_handlers() -> None:
+    def _stop(signum: int, _frame: Any) -> None:
+        log(f"Received signal {signum}; stopping announcer loop")
+        _shutdown_event.set()
+
+    signal.signal(signal.SIGTERM, _stop)
+    signal.signal(signal.SIGINT, _stop)
+
+
 def run_worker() -> int:
-    config = load_config()
+    lock_handle = acquire_worker_lock()
+    if lock_handle is None:
+        log("Another announcer worker already holds the lock; exiting")
+        return 0
+
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
     PID_PATH.write_text(f"{os.getpid()}\n", encoding="utf-8")
     atexit.register(remove_pid_if_owned)
 
-    def stop_worker(signum: int, _frame: Any) -> None:
-        log(f"Received signal {signum}; stopping announcer loop")
-        raise SystemExit(0)
+    _install_signal_handlers()
 
-    signal.signal(signal.SIGTERM, stop_worker)
-    signal.signal(signal.SIGINT, stop_worker)
+    config = load_config()
+    messages_cache = MessageCache()
+    messages = messages_cache.get(config["messages_path"])
+
+    _emit_startup_diagnostics(config, messages)
 
     if not config["enabled"]:
         log("Announcer is disabled in config; worker will exit")
@@ -297,48 +806,24 @@ def run_worker() -> int:
     startup_delay = int(config["startup_delay_seconds"])
     if startup_delay > 0:
         log(f"Initial startup delay: {startup_delay}s")
-        time.sleep(startup_delay)
-
-    message_index = 0
-
-    while True:
-        config = load_config()
-        if not config["enabled"]:
-            log("Announcer was disabled in config; worker will exit")
+        if _interruptible_sleep(startup_delay):
             return 0
 
-        messages = load_messages(config["messages_path"])
-        if not messages:
-            log("No announcer messages are configured; retrying later")
-        else:
-            config_path = active_server_config_path()
-            password = effective_rcon_password(config_path)
-            if not password:
-                log(f"No effective RCON password found for {config_path}; cannot send announcements yet")
-            else:
-                message = messages[message_index % len(messages)]
-                command = f'{config["announce_command"]} "{escape_command_argument(message)}"'
-                try:
-                    response = send_rcon_command(
-                        config["rcon_host"],
-                        current_server_port(),
-                        password,
-                        int(config["rcon_timeout_seconds"]),
-                        command,
-                    )
-                except OSError as exc:
-                    log(f"Announcement failed: {exc}")
-                else:
-                    if response and "bad rconpassword" in response.lower():
-                        log(f"Announcement rejected by server: {response}")
-                    else:
-                        if response:
-                            log(f"Sent announcement: {message}")
-                        else:
-                            log(f"Dispatched announcement without an RCON reply: {message}")
-                        message_index += 1
-
-        time.sleep(int(config["interval_seconds"]))
+    try:
+        if config["schedule"]:
+            return run_scheduled_loop(config, messages_cache)
+        return run_simple_interval_loop(config, messages_cache)
+    finally:
+        # Lock is released automatically on process exit, but be explicit for
+        # clarity in logs and tests.
+        try:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+        except OSError:
+            pass
+        try:
+            lock_handle.close()
+        except OSError:
+            pass
 
 
 def launch_background_worker() -> int:
@@ -347,23 +832,29 @@ def launch_background_worker() -> int:
         log("Announcer is disabled in config; skipping background launch")
         return 0
 
-    messages = load_messages(config["messages_path"])
-    if not messages:
-        log("No announcer messages found; skipping background launch")
+    messages_cache = MessageCache()
+    messages = messages_cache.get(config["messages_path"])
+    if not messages and not any(entry.get("message") for entry in config["schedule"]):
+        log("No announcer messages found and no literal schedule entries; skipping background launch")
         return 0
 
-    existing_pid = read_existing_pid()
-    if existing_pid and process_is_running(existing_pid):
-        log(f"Announcer is already running with PID {existing_pid}")
+    if previous_worker_alive():
+        log("Announcer is already running (lockfile held); skipping background launch")
         return 0
 
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
     log_path = Path(config["log_path"])
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with log_path.open("a", encoding="utf-8") as log_handle:
+    try:
+        log_handle = open(log_path, "a", encoding="utf-8")  # noqa: SIM115
+    except OSError as exc:
+        log(f"Failed to open announcer log file {log_path}: {exc}")
+        return 1
+
+    try:
         process = subprocess.Popen(
-            [sys.executable, str(SCRIPT_PATH), "--run-worker"],
+            [sys.executable, str(SCRIPT_PATH), WORKER_FLAG],
             cwd=str(HOME_DIR),
             stdin=subprocess.DEVNULL,
             stdout=log_handle,
@@ -371,18 +862,39 @@ def launch_background_worker() -> int:
             close_fds=True,
             start_new_session=True,
         )
+    except OSError as exc:
+        log_handle.close()
+        log(f"Failed to launch background announcer worker: {exc}")
+        return 1
+    finally:
+        # Parent doesn't need the FD; child inherited it via fork+exec.
+        try:
+            log_handle.close()
+        except OSError:
+            pass
 
-    PID_PATH.write_text(f"{process.pid}\n", encoding="utf-8")
+    try:
+        PID_PATH.write_text(f"{process.pid}\n", encoding="utf-8")
+    except OSError as exc:
+        log(f"Failed to record announcer PID file {PID_PATH}: {exc}")
+
     log(f"Bundled announcer started in the background with PID {process.pid}")
     log(f"Bundled announcer log file: {log_path}")
     return 0
 
 
 def main() -> int:
-    if "--run-worker" in sys.argv[1:]:
+    if WORKER_FLAG in sys.argv[1:]:
         return run_worker()
     return launch_background_worker()
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except KeyboardInterrupt:  # pragma: no cover - signal handled above
+        sys.exit(0)
+    except OSError as exc:
+        if exc.errno == errno.EPIPE:  # pragma: no cover - log pipe closed
+            sys.exit(0)
+        raise
