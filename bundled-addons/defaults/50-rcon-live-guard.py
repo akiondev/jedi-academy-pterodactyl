@@ -344,26 +344,70 @@ def current_server_port() -> int:
 # RCON helpers
 # ---------------------------------------------------------------------------
 
+# When reading a ``status`` response the JKA/OpenJK/TaystJK engine may send
+# the server-info block and the player-table block as separate UDP datagrams.
+# This timeout is applied between successive recvfrom calls when multi_packet
+# mode is requested, so we collect all of them before returning.
+_RCON_INTER_PACKET_TIMEOUT = 0.15  # seconds
 
-def send_rcon_command(host: str, port: int, password: str, timeout_seconds: int, command: str) -> str:
-    """Send an RCON UDP command and return the response text (stripped)."""
+
+def _decode_rcon_packet(raw: bytes) -> str:
+    """Strip the Quake OOB header (``\\xff\\xff\\xff\\xff``) and ``print\\n``
+    prefix from a single raw RCON response datagram and return the payload
+    as a string.
+
+    The stripping is done at the byte level *before* decoding so that the
+    four ``\\xff`` header bytes are removed correctly regardless of the
+    ``errors=`` setting used for UTF-8 decoding (with ``errors="replace"``
+    each ``\\xff`` byte decodes to ``\\ufffd``, not ``\\xff``, so a
+    post-decode ``lstrip("\\xff")`` would silently fail).
+    """
+    stripped = raw.lstrip(b"\xff").decode("utf-8", errors="replace")
+    if stripped.startswith("print\n"):
+        stripped = stripped[6:]
+    return stripped.strip()
+
+
+def send_rcon_command(
+    host: str,
+    port: int,
+    password: str,
+    timeout_seconds: int,
+    command: str,
+    *,
+    multi_packet: bool = False,
+) -> str:
+    """Send an RCON UDP command and return the response text (stripped).
+
+    When *multi_packet* is ``True`` the function keeps reading additional
+    datagrams after the first one until no new packet arrives within
+    ``_RCON_INTER_PACKET_TIMEOUT`` seconds.  Use this for commands like
+    ``status`` whose output the engine may split across several datagrams.
+    """
     payload = b"\xff\xff\xff\xffrcon " + password.encode("utf-8") + b" " + command.encode("utf-8")
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.settimeout(timeout_seconds)
+    parts: list[str] = []
     try:
         sock.sendto(payload, (host, port))
         try:
-            response, _ = sock.recvfrom(65535)
+            raw, _ = sock.recvfrom(65535)
+            parts.append(_decode_rcon_packet(raw))
         except socket.timeout:
             return ""
+        if multi_packet:
+            sock.settimeout(_RCON_INTER_PACKET_TIMEOUT)
+            while True:
+                try:
+                    raw, _ = sock.recvfrom(65535)
+                    parts.append(_decode_rcon_packet(raw))
+                except socket.timeout:
+                    break
     except OSError:
         return ""
     finally:
         sock.close()
-    decoded = response.decode("utf-8", errors="replace").lstrip("\xff")
-    if decoded.startswith("print\n"):
-        decoded = decoded[6:]
-    return decoded.strip()
+    return "\n".join(p for p in parts if p)
 
 
 def parse_status_players(status_text: str) -> list[tuple[int, str, str]]:
@@ -465,8 +509,10 @@ def enforce_rcon_attempt(
     host: str = config["rcon_host"]
     timeout: int = int(config["rcon_timeout_seconds"])
 
-    # Resolve connected player slot for the source IP.
-    status_text = send_rcon_command(host, port, password, timeout, "status")
+    # Resolve connected player slot for the source IP.  The engine may split
+    # the status output across multiple UDP datagrams (server-info block and
+    # player-table block are often separate prints), so read all of them.
+    status_text = send_rcon_command(host, port, password, timeout, "status", multi_packet=True)
     players = parse_status_players(status_text) if status_text else []
     found = find_player_slot_by_ip(players, source_address)
 
