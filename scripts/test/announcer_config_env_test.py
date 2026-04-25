@@ -36,7 +36,7 @@ ANNOUNCER_PATH = REPO_ROOT / "bundled-addons" / "defaults" / "announcer.py"
 # Compact JSON exactly as ``jq -c '.addons.announcer'`` would produce from
 # the default jka-addons.json template. This is the "shell loader format".
 _DEFAULT_MESSAGE = (
-    "jknexus.se - JK Web Based Client &gt; Real Live Time &amp; Search Master List Browser!"
+    "jknexus.se - JK Web Based Client > Real Live Time & Search Master List Browser!"
 )
 _SHELL_LOADER_SAMPLE: dict = {
     "enabled": True,

@@ -19,7 +19,7 @@ Announcer messages are read from the ``messages`` array inside the
     "announcer": {
         "enabled": true,
         "messages": [
-            "jknexus.se - JK Web Based Client &gt; Real Live Time &amp; Search Master List Browser!"
+            "jknexus.se - JK Web Based Client > Real Live Time & Search Master List Browser!"
         ]
     }
 
@@ -131,7 +131,7 @@ DEFAULT_ANNOUNCE_COMMAND = "svsay"
 # is absent, empty, or contains only blank/non-string entries.
 # Must contain exactly one entry.
 DEFAULT_FALLBACK_MESSAGES: list[str] = [
-    "jknexus.se - JK Web Based Client &gt; Real Live Time &amp; Search Master List Browser!",
+    "jknexus.se - JK Web Based Client > Real Live Time & Search Master List Browser!",
 ]
 
 # Minimum cadence for ``every_seconds`` schedule entries. Anything smaller

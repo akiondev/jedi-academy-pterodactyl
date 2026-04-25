@@ -169,7 +169,7 @@ default_addons_config_template() {
       "announce_command": "svsay",
       "interval_seconds": 300,
       "messages": [
-        "jknexus.se - JK Web Based Client &gt; Real Live Time &amp; Search Master List Browser!"
+        "jknexus.se - JK Web Based Client > Real Live Time & Search Master List Browser!"
       ]
     },
     "live_team_announcer": {

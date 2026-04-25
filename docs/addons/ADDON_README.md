@@ -109,7 +109,7 @@ is missing:
       "announce_command": "svsay",
       "interval_seconds": 300,
       "messages": [
-        "jknexus.se - JK Web Based Client &gt; Real Live Time &amp; Search Master List Browser!"
+        "jknexus.se - JK Web Based Client > Real Live Time & Search Master List Browser!"
       ]
     },
     "live_team_announcer": {
@@ -135,7 +135,7 @@ is missing:
 `addons.announcer.messages`. The default message is:
 
 ```
-jknexus.se - JK Web Based Client &gt; Real Live Time &amp; Search Master List Browser!
+jknexus.se - JK Web Based Client > Real Live Time & Search Master List Browser!
 ```
 
 To change what the announcer broadcasts, edit the `messages` array in
