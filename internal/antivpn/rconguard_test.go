@@ -86,7 +86,7 @@ func TestRconGuardIgnoresLocalhostByName(t *testing.T) {
 
 	var stdin bytes.Buffer
 	event, _ := parseBadRcon("Bad rcon from localhost: status")
-	s.handleBadRcon(&stdin, "stdout", event.Raw, event)
+	s.handleBadRcon(&stdin, "stdout", event)
 
 	if stdin.Len() != 0 {
 		t.Fatalf("expected no commands written for localhost RCON, got %q", stdin.String())
@@ -104,7 +104,7 @@ func TestRconGuardIgnoresLoopbackIP(t *testing.T) {
 
 	var stdin bytes.Buffer
 	event, _ := parseBadRcon("Bad rcon from 127.0.0.1:1234: status")
-	s.handleBadRcon(&stdin, "stdout", event.Raw, event)
+	s.handleBadRcon(&stdin, "stdout", event)
 
 	if stdin.Len() != 0 {
 		t.Fatalf("expected no commands written for loopback RCON, got %q", stdin.String())
@@ -123,7 +123,7 @@ func TestRconGuardLogsOnlyWhenSourceIPNotConnected(t *testing.T) {
 
 	var stdin bytes.Buffer
 	event, _ := parseBadRcon("Bad rcon from 90.144.88.223:29070: status")
-	s.handleBadRcon(&stdin, "stdout", event.Raw, event)
+	s.handleBadRcon(&stdin, "stdout", event)
 
 	if stdin.Len() != 0 {
 		t.Fatalf("expected no kick / broadcast for unmapped IP, got %q", stdin.String())
@@ -145,7 +145,7 @@ func TestRconGuardKicksConnectedSlotByIP(t *testing.T) {
 
 	var stdin bytes.Buffer
 	event, _ := parseBadRcon("Bad rcon from 90.144.88.223:29070: status")
-	s.handleBadRcon(&stdin, "stdout", event.Raw, event)
+	s.handleBadRcon(&stdin, "stdout", event)
 
 	got := stdin.String()
 	if !strings.Contains(got, "clientkick 3") {
@@ -165,7 +165,7 @@ func TestRconGuardDisabledIsNoOp(t *testing.T) {
 
 	var stdin bytes.Buffer
 	event, _ := parseBadRcon("Bad rcon from 90.144.88.223:29070: status")
-	s.handleBadRcon(&stdin, "stdout", event.Raw, event)
+	s.handleBadRcon(&stdin, "stdout", event)
 
 	if stdin.Len() != 0 {
 		t.Fatalf("expected disabled guard to be a no-op, got %q", stdin.String())

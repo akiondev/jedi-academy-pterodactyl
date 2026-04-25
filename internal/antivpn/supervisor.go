@@ -566,7 +566,7 @@ func (s *Supervisor) handleLogLine(ctx context.Context, stdin io.Writer, line st
 	}
 
 	if event, ok := parseBadRcon(line); ok {
-		s.handleBadRcon(stdin, source, line, event)
+		s.handleBadRcon(stdin, source, event)
 		return
 	}
 

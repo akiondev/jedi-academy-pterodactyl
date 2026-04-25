@@ -133,7 +133,7 @@ func splitBadRconHostPort(token string) (string, int) {
 // stdout/stderr, so a single bad RCON line produces at most one guard
 // decision, and the supervisor's own RCON write-back can never feed
 // itself.
-func (s *Supervisor) handleBadRcon(stdin io.Writer, source, _ string, event BadRconEvent) {
+func (s *Supervisor) handleBadRcon(stdin io.Writer, source string, event BadRconEvent) {
 	cfg := s.cfg.RconGuard
 	if !cfg.Enabled {
 		return
