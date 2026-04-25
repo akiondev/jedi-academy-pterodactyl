@@ -215,6 +215,19 @@ func LoadConfigFromEnv() (Config, error) {
 	}
 	cfg.Allowlist = allowlist
 
+	// Apply /home/container/config/jka-runtime.json on top of the
+	// env-derived configuration. The JSON file is the canonical
+	// source of truth in the manual-first egg model; env values
+	// remain as a fallback for backwards compatibility.
+	jsonCfg, err := loadRuntimeJSONConfig()
+	if err != nil {
+		return Config{}, err
+	}
+	cfg, err = applyJSONOverrides(cfg, jsonCfg)
+	if err != nil {
+		return Config{}, err
+	}
+
 	if cfg.ScoreThreshold < 1 || cfg.ScoreThreshold > 200 {
 		return Config{}, fmt.Errorf("ANTI_VPN_SCORE_THRESHOLD must be between 1 and 200")
 	}

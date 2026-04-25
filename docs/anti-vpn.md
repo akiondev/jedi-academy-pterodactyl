@@ -12,6 +12,12 @@ It is intentionally scoped to anti-VPN behavior only:
 - no giant offline blocklists
 - no startup hard-fail if providers are unavailable
 
+## Configuration source
+
+The anti-VPN supervisor is configured through `/home/container/config/jka-runtime.json`. The runtime creates this file from the shipped template on first start and refreshes `jka-runtime.example.json` next to it on every start; the user-owned file is never overwritten. Edit the `anti_vpn`, `rcon_guard`, `addons`, and `supervisor` sections in that file to change behavior. **Do not put provider API keys into the Pterodactyl egg** — write them into the `anti_vpn.providers.*` keys in `jka-runtime.json` so they stay on disk in the operator's volume and are never logged to the console.
+
+The legacy environment variables documented below (`ANTI_VPN_*`, `RCON_GUARD_*`, `ADDON_EVENT_BUS_*`, `JKA_LIVE_OUTPUT_MIRROR_ENABLED`, etc.) are still honored as a fallback and still describe the underlying runtime knobs. When both are present, JSON wins.
+
 ## Architecture
 
 The anti-VPN feature is implemented as a compiled Go binary inside the runtime image:

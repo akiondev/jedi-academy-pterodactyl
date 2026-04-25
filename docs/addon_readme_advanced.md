@@ -1,5 +1,14 @@
 # ADDON README ADVANCED
 
+> **Configuration source.** All runtime toggles referenced in this
+> document (`ADDONS_*`, `ADDON_*`, `RCON_GUARD_*`, `ANTI_VPN_*`,
+> `JKA_LIVE_OUTPUT_MIRROR_ENABLED`, etc.) are now configured in
+> `/home/container/config/jka-runtime.json`. The Pterodactyl egg only
+> exposes four panel variables (`COPYRIGHT_ACKNOWLEDGED`,
+> `EXTRA_STARTUP_ARGS`, `SERVER_BINARY`, `TAYSTJK_AUTO_UPDATE_BINARY`).
+> The legacy environment variable names below are still honored as a
+> fallback and still describe the underlying runtime knobs.
+>
 > **Architecture notice (process-output-only runtime).** The supervisor is now the single owner/reader of the dedicated server's stdout/stderr. Bundled addons no longer tail `server.log` or the runtime live-output mirror as the supported event source — the live mirror is OFF by default and the legacy `server.log` fallback for the anti-VPN supervisor is OFF by default.
 >
 > The long-term direction is for addons to receive parsed events (`client_connect`, `client_disconnect`, `client_userinfo_changed`, `bad_rcon`, `chat_message`, `init_game`, `shutdown_game`, etc.) from the supervisor's event bus rather than scraping log files. Bundled addons that still tail logs (`40-chatlogger.py`) are marked deprecated for that event source. The bundled `50-rcon-live-guard.py` addon is superseded entirely by the built-in supervisor RCON guard module (`RCON_GUARD_ENABLED`) and is disabled by default.

@@ -40,29 +40,42 @@ sync_runtime_files() {
   local payload_entry
   local payload_name
   local container_root="${JKA_CONTAINER_ROOT:-/home/container}"
+  local auto_update_binary="${TAYSTJK_AUTO_UPDATE_BINARY:-false}"
+  local sync_payload="${JKA_SYNC_MANAGED_TAYSTJK_PAYLOAD:-true}"
 
   if [[ -z "${JKA_PATH_ENGINE_DIST:-}" || -z "${JKA_PATH_ENGINE_BINARY_GLOB:-}" || -z "${JKA_PATH_ENGINE_PAYLOAD_ROOT:-}" ]]; then
     fail "sync_runtime_files requires JKA_PATH_ENGINE_DIST, JKA_PATH_ENGINE_BINARY_GLOB and JKA_PATH_ENGINE_PAYLOAD_ROOT to be set by the runtime manifest loader"
   fi
 
-  if compgen -G "${JKA_PATH_ENGINE_DIST}/${JKA_PATH_ENGINE_BINARY_GLOB}" >/dev/null; then
-    log "Syncing image-managed runtime binaries into container volume"
-    for runtime_binary in "${JKA_PATH_ENGINE_DIST}"/${JKA_PATH_ENGINE_BINARY_GLOB}; do
-      [[ -f "$runtime_binary" ]] || continue
-      install -m 0755 "$runtime_binary" "${container_root}/${runtime_binary##*/}"
-      found_runtime_binary=1
-    done
+  auto_update_binary="$(printf '%s' "$auto_update_binary" | tr '[:upper:]' '[:lower:]')"
+  sync_payload="$(printf '%s' "$sync_payload" | tr '[:upper:]' '[:lower:]')"
+
+  if [[ "$auto_update_binary" == "true" ]]; then
+    if compgen -G "${JKA_PATH_ENGINE_DIST}/${JKA_PATH_ENGINE_BINARY_GLOB}" >/dev/null; then
+      log "Image-managed binary auto-update enabled: syncing engine binaries from image into container volume"
+      for runtime_binary in "${JKA_PATH_ENGINE_DIST}"/${JKA_PATH_ENGINE_BINARY_GLOB}; do
+        [[ -f "$runtime_binary" ]] || continue
+        install -m 0755 "$runtime_binary" "${container_root}/${runtime_binary##*/}"
+        found_runtime_binary=1
+      done
+    fi
+  else
+    log "TAYSTJK_AUTO_UPDATE_BINARY=false: leaving operator-managed binaries under ${container_root} untouched"
   fi
 
-  if [[ -d "${JKA_PATH_ENGINE_PAYLOAD_ROOT}" ]]; then
-    while IFS= read -r -d '' payload_entry; do
-      payload_name="${payload_entry##*/}"
-      mkdir -p "${container_root}/${payload_name}"
-      cp -af "${payload_entry}/." "${container_root}/${payload_name}/"
-    done < <(find "${JKA_PATH_ENGINE_PAYLOAD_ROOT}" -mindepth 1 -maxdepth 1 -type d -print0)
+  if [[ "$sync_payload" == "true" ]]; then
+    if [[ -d "${JKA_PATH_ENGINE_PAYLOAD_ROOT}" ]]; then
+      while IFS= read -r -d '' payload_entry; do
+        payload_name="${payload_entry##*/}"
+        mkdir -p "${container_root}/${payload_name}"
+        cp -af "${payload_entry}/." "${container_root}/${payload_name}/"
+      done < <(find "${JKA_PATH_ENGINE_PAYLOAD_ROOT}" -mindepth 1 -maxdepth 1 -type d -print0)
+    fi
+  else
+    log "server.sync_managed_taystjk_payload=false: leaving operator-managed mod directories under ${container_root} untouched"
   fi
 
-  if [[ "$found_runtime_binary" -eq 0 ]]; then
+  if [[ "$auto_update_binary" == "true" && "$found_runtime_binary" -eq 0 ]]; then
     log "No image-provided dedicated binaries were found under ${JKA_PATH_ENGINE_DIST} matching ${JKA_PATH_ENGINE_BINARY_GLOB}"
   fi
 

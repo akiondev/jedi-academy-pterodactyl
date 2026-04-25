@@ -12,6 +12,7 @@ source "${JKA_COMMON_DIR}/jka_runtime_common.sh"
 source "${JKA_COMMON_DIR}/jka_runtime_manifest.sh"
 source "${JKA_COMMON_DIR}/jka_runtime_sync.sh"
 source "${JKA_COMMON_DIR}/jka_security.sh"
+source "${JKA_COMMON_DIR}/jka_runtime_config.sh"
 source "${JKA_COMMON_DIR}/jka_server_cfg.sh"
 source "${JKA_COMMON_DIR}/jka_addon_loader.sh"
 source "${JKA_COMMON_DIR}/jka_antivpn_bootstrap.sh"
@@ -78,18 +79,22 @@ image_ships_taystjk_payload() {
 }
 
 determine_runtime_ownership() {
-  if is_image_managed_server_binary "$server_binary_name"; then
+  if [[ "${TAYSTJK_AUTO_UPDATE_BINARY:-false}" == "true" ]]; then
     if image_ships_taystjk_payload; then
-      SERVER_BINARY_OWNERSHIP="image-managed TaystJK"
+      SERVER_BINARY_OWNERSHIP="image-managed TaystJK (auto-update enabled)"
     else
-      SERVER_BINARY_OWNERSHIP="image-managed"
+      SERVER_BINARY_OWNERSHIP="image-managed (auto-update enabled)"
     fi
   else
     SERVER_BINARY_OWNERSHIP="manual user-supplied"
   fi
 
   if is_taystjk_managed_mod_dir "$active_game_dir"; then
-    ACTIVE_MOD_OWNERSHIP="image-managed TaystJK"
+    if [[ "${JKA_SYNC_MANAGED_TAYSTJK_PAYLOAD:-true}" == "true" ]]; then
+      ACTIVE_MOD_OWNERSHIP="image-managed TaystJK"
+    else
+      ACTIVE_MOD_OWNERSHIP="manual user-owned (TaystJK payload sync disabled)"
+    fi
   elif is_base_mode "$active_game_dir"; then
     ACTIVE_MOD_OWNERSHIP="manual base assets"
   else
@@ -102,11 +107,11 @@ validate_server_binary_selection() {
     return 0
   fi
 
-  if is_image_managed_server_binary "$server_binary_name"; then
-    fail "Configured image-managed server binary ${server_binary_name} was not found in the image-managed runtime"
+  if [[ "${TAYSTJK_AUTO_UPDATE_BINARY:-false}" == "true" ]]; then
+    fail "Image-managed TaystJK binary ${server_binary_name} was not found in the runtime image. Confirm the runtime was rebuilt successfully."
   fi
 
-  fail "Configured manual server binary ${server_binary_name} was not found under /home/container. Only image-managed engine binaries are synced automatically; manual alternatives must be uploaded by the server owner"
+  fail "Configured manual server binary ${server_binary_name} was not found under /home/container. Set TAYSTJK_AUTO_UPDATE_BINARY=true to use the image-managed TaystJK binary, or upload your binary to /home/container before starting the server."
 }
 
 validate_selected_runtime_paths() {
@@ -114,7 +119,13 @@ validate_selected_runtime_paths() {
   local config_path="${mod_path}/${SERVER_CONFIG}"
 
   if is_taystjk_managed_mod_dir "$active_game_dir"; then
-    [[ -d "$mod_path" ]] || fail "Managed TaystJK mod directory ${active_game_dir} was not found in the image-managed runtime"
+    if [[ ! -d "$mod_path" ]]; then
+      if [[ "${JKA_SYNC_MANAGED_TAYSTJK_PAYLOAD:-true}" == "true" ]]; then
+        fail "Managed TaystJK mod directory ${active_game_dir} was not found in the image-managed runtime"
+      else
+        fail "Configured manual TaystJK mod directory ${active_game_dir} was not found under /home/container. Set server.sync_managed_taystjk_payload=true in jka-runtime.json or upload the mod folder yourself"
+      fi
+    fi
   elif is_base_mode "$active_game_dir"; then
     [[ -d "$mod_path" ]] || fail "Configured base assets directory was not found under /home/container/base"
   else
@@ -174,17 +185,15 @@ print_runtime_summary() {
   kv_highlight "Port" "$TAYSTJK_EFFECTIVE_SERVER_PORT"
   kv_highlight "Binary" "$server_binary_name"
   kv "Binary mode" "$SERVER_BINARY_OWNERSHIP"
-  if [[ "$SERVER_CFG_OVERRIDES_ENABLED" == "true" ]]; then
-    kv "Cfg mode" "managed"
-  else
-    kv "Cfg mode" "user-owned"
-  fi
+  kv "Auto-update" "$(bool_state "$TAYSTJK_AUTO_UPDATE_BINARY")"
+  kv "Cfg mode" "user-owned"
   if [[ -n "$TAYSTJK_EFFECTIVE_SERVER_RCON_PASSWORD" ]]; then
     kv "RCON" "set"
   else
     kv "RCON" "not set"
   fi
   kv "Copyright" "$COPYRIGHT_ACKNOWLEDGED"
+  kv "Runtime config" "$JKA_RUNTIME_CONFIG_PATH"
   if [[ "${#EXTRA_STARTUP_ARGV[@]}" -gt 0 ]]; then
     kv "Extra args" "set"
   else
@@ -321,16 +330,36 @@ cd /home/container
 setup_colors
 print_header
 
-: "${SERVER_BINARY:=taystjkded.x86_64}"
-: "${SERVER_PORT:=29070}"
-: "${SERVER_CONFIG:=server.cfg}"
-: "${SERVER_LOG_FILENAME:=server.log}"
-: "${EXTRA_STARTUP_ARGS:=}"
-: "${FS_GAME_MOD:=taystjk}"
+# Panel-supplied env vars (the only four egg variables that remain).
 : "${COPYRIGHT_ACKNOWLEDGED:=false}"
-: "${DEBUG_STARTUP:=false}"
+: "${EXTRA_STARTUP_ARGS:=}"
+: "${SERVER_BINARY:=taystjkded.x86_64}"
+: "${TAYSTJK_AUTO_UPDATE_BINARY:=false}"
 
 [[ "${COPYRIGHT_ACKNOWLEDGED}" == "true" ]] || fail "COPYRIGHT_ACKNOWLEDGED must be true. This image does not ship Jedi Academy base assets."
+
+TAYSTJK_AUTO_UPDATE_BINARY="$(printf '%s' "$TAYSTJK_AUTO_UPDATE_BINARY" | tr '[:upper:]' '[:lower:]')"
+case "$TAYSTJK_AUTO_UPDATE_BINARY" in
+  true|false) ;;
+  *)
+    warn "TAYSTJK_AUTO_UPDATE_BINARY=${TAYSTJK_AUTO_UPDATE_BINARY} is invalid, falling back to false"
+    TAYSTJK_AUTO_UPDATE_BINARY="false"
+    ;;
+esac
+export TAYSTJK_AUTO_UPDATE_BINARY
+
+# Load /home/container/config/jka-runtime.json (creating a default
+# template if missing) and export the legacy env names the rest of the
+# scripts already consume. The JSON file is the single source of truth
+# for runtime behavior; do NOT add panel variables here.
+load_runtime_json_config
+
+# When auto-update is on the runtime forces the image-managed binary.
+# When it is off the operator's SERVER_BINARY value is honoured as a
+# manual user-owned path under /home/container.
+if [[ "$TAYSTJK_AUTO_UPDATE_BINARY" == "true" ]]; then
+  SERVER_BINARY="taystjkded.x86_64"
+fi
 
 require_safe_component "$SERVER_CONFIG" "SERVER_CONFIG"
 server_binary_name="$(normalize_server_binary_name)"
@@ -367,7 +396,6 @@ if [[ "$#" -gt 0 && "$1" != "--panel-startup" ]]; then
   if [[ "$ANTI_VPN_EFFECTIVE_MODE" != "off" ]]; then
     warn "Anti-VPN supervision is bypassed for custom startup commands"
   fi
-  warn "Managed server.cfg overrides are bypassed for custom startup commands"
   info "Executing: $*"
   exec "$@"
 fi

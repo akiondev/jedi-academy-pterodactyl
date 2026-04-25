@@ -15,25 +15,9 @@ concurrency:
 
 jobs:
   publish-upstream:
-    name: Detect upstream master and publish ${{ matrix.target }}
+    name: Detect upstream master and publish taystjk-modern64
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: taystjk-modern64
-            dockerfile: docker/taystjk-modern64/Dockerfile
-            cache_scope: taystjk-modern64-image
-            egg_path: egg/egg-jka-taystjk-modern64-pterodactyl.json
-            expected_engine_binary: /opt/jka/engine/taystjkded.x86_64
-            expected_payload_dir: /opt/jka/engine-payload/taystjk
-          - target: taystjk-legacy32
-            dockerfile: docker/taystjk-legacy32/Dockerfile
-            cache_scope: taystjk-legacy32-image
-            egg_path: egg/egg-jka-taystjk-legacy32-pterodactyl.json
-            expected_engine_binary: /opt/jka/engine/taystjkded.i386
-            expected_payload_dir: /opt/jka/engine-payload/taystjk
 
     steps:
       - name: Check out repository
@@ -63,14 +47,13 @@ jobs:
         id: upstream
         run: |
           set -euo pipefail
-
           upstream_sha="$(git ls-remote https://github.com/taysta/TaystJK.git refs/heads/master | awk '{print $1}')"
           if [[ -z "$upstream_sha" ]]; then
             echo "Failed to resolve TaystJK master HEAD" >&2
             exit 1
           fi
-
           echo "sha=${upstream_sha}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${upstream_sha:0:12}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -92,28 +75,23 @@ jobs:
 
       - name: Check whether canonical runtime tag already contains upstream commit
         id: existing
-        env:
-          RUNTIME_TAG: ${{ matrix.target }}
         run: |
           set -euo pipefail
-
-          image_ref="${{ steps.image.outputs.ghcr }}:${RUNTIME_TAG}"
+          image_ref="${{ steps.image.outputs.ghcr }}:taystjk-modern64"
           if ! docker buildx imagetools inspect "$image_ref" >/dev/null 2>&1; then
             echo "exists=false" >> "$GITHUB_OUTPUT"
             echo "up_to_date=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-
           docker pull "$image_ref" >/dev/null
           published_sha="$(docker run --rm --entrypoint /bin/sh "$image_ref" -c 'cat /opt/jka/engine/.upstream-commit 2>/dev/null || true' | tr -d '\r\n')"
-
           echo "exists=true" >> "$GITHUB_OUTPUT"
           if [[ -n "$published_sha" && "$published_sha" == "${{ steps.upstream.outputs.sha }}" ]]; then
             echo "up_to_date=true" >> "$GITHUB_OUTPUT"
-            echo "Runtime tag ${RUNTIME_TAG} already points at upstream commit ${published_sha}"
+            echo "Runtime tag taystjk-modern64 already points at upstream commit ${published_sha}"
           else
             echo "up_to_date=false" >> "$GITHUB_OUTPUT"
-            echo "Runtime tag ${RUNTIME_TAG} points at ${published_sha:-<none>}, upstream is ${{ steps.upstream.outputs.sha }}"
+            echo "Runtime tag taystjk-modern64 points at ${published_sha:-<none>}, upstream is ${{ steps.upstream.outputs.sha }}"
           fi
 
       - name: Validate shell scripts
@@ -133,32 +111,31 @@ jobs:
 
       - name: Validate egg JSON
         if: steps.existing.outputs.up_to_date != 'true'
-        run: jq . "${{ matrix.egg_path }}" >/dev/null
+        run: jq . egg/egg-jka-taystjk-modern64-pterodactyl.json >/dev/null
 
       - name: Build local smoke-test image
         if: steps.existing.outputs.up_to_date != 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
+          file: docker/taystjk-modern64/Dockerfile
           load: true
           push: false
-          tags: local/taystjk-upstream-sync:${{ matrix.target }}
+          tags: local/taystjk-upstream-sync:taystjk-modern64
           build-args: |
             TAYSTJK_REF=${{ steps.upstream.outputs.sha }}
             TAYSTJK_COMMIT=${{ steps.upstream.outputs.sha }}
-          cache-from: type=gha,scope=${{ matrix.cache_scope }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.cache_scope }}
+          cache-from: type=gha,scope=taystjk-modern64-image
+          cache-to: type=gha,mode=max,scope=taystjk-modern64-image
           provenance: false
 
       - name: Smoke test image contents
         if: steps.existing.outputs.up_to_date != 'true'
         run: |
           set -euo pipefail
-
-          docker run --rm --entrypoint /bin/sh "local/taystjk-upstream-sync:${{ matrix.target }}" -c '
-            test -x "${{ matrix.expected_engine_binary }}" &&
-            test -d "${{ matrix.expected_payload_dir }}" &&
+          docker run --rm --entrypoint /bin/sh local/taystjk-upstream-sync:taystjk-modern64 -c '
+            test -x /opt/jka/engine/taystjkded.x86_64 &&
+            test -d /opt/jka/engine-payload/taystjk &&
             test -x /usr/local/bin/jka-antivpn &&
             test -f /opt/jka/engine/.upstream-commit &&
             test -f /opt/jka/runtime.json
@@ -168,7 +145,7 @@ jobs:
         if: steps.existing.outputs.up_to_date != 'true'
         id: tags
         env:
-          RUNTIME_TAG: ${{ matrix.target }}
+          UPSTREAM_SHORT_SHA: ${{ steps.upstream.outputs.short_sha }}
         run: |
           set -euo pipefail
           tags=()
@@ -176,7 +153,10 @@ jobs:
             if [[ "$registry" == "${{ steps.image.outputs.dockerhub }}" && "${{ steps.dockerhub_gate.outputs.publish }}" != "true" ]]; then
               continue
             fi
-            tags+=("${registry}:${RUNTIME_TAG}")
+            tags+=("${registry}:latest")
+            tags+=("${registry}:taystjk")
+            tags+=("${registry}:taystjk-modern64")
+            tags+=("${registry}:taystjk-modern64-master-${UPSTREAM_SHORT_SHA}")
           done
           {
             echo "list<<EOF"
@@ -189,7 +169,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
+          file: docker/taystjk-modern64/Dockerfile
           push: true
           tags: ${{ steps.tags.outputs.list }}
           labels: |
@@ -200,6 +180,6 @@ jobs:
           build-args: |
             TAYSTJK_REF=${{ steps.upstream.outputs.sha }}
             TAYSTJK_COMMIT=${{ steps.upstream.outputs.sha }}
-          cache-from: type=gha,scope=${{ matrix.cache_scope }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.cache_scope }}
+          cache-from: type=gha,scope=taystjk-modern64-image
+          cache-to: type=gha,mode=max,scope=taystjk-modern64-image
           provenance: false
