@@ -9,11 +9,21 @@ It monitors the live server output stream for RCON access attempts —
 both authorized (correct password) and unauthorized (bad password) —
 originating from non-local IP addresses.
 
-When an attempt is detected the guard:
-  1. Resolves the player's slot number via a local RCON status query.
-  2. Issues the configured kick command (default: clientkick {slot}).
-  3. Broadcasts a warning message to all connected players.
-  4. Writes a timestamped incident entry to the guard log file.
+The guard's sole job is to punish *in-game* players who use RCON: if the
+source IP of an RCON attempt matches a currently connected player slot
+(as reported by the local ``status`` RCON query), that player is kicked
+and a warning is broadcast.  RCON attempts from sources that are NOT
+connected as game clients (external admin tools, port scanners, etc.)
+are left completely alone — no kick, no ban, no broadcast.
+
+When a connected player is detected as the source the guard:
+  1. Issues the configured kick command (default: clientkick {slot}).
+  2. Broadcasts a warning message to all connected players.
+  3. Writes a timestamped incident entry to the guard log file.
+
+Non-connected RCON attempts are recorded only in the guard log (as
+``RCON attempt detected ... slot=not_connected``) for visibility, with
+no enforcement action taken.
 
 The guard is active by default. To disable it set
 ``ADDON_RCON_LIVE_GUARD_ENABLED=false`` in the Pterodactyl startup
@@ -450,16 +460,23 @@ def enforce_rcon_attempt(
     attempted_command: str | None,
     config: dict[str, Any],
     handle: Any,
-) -> None:
-    """Kick the player and broadcast a warning when an RCON attempt is detected."""
+) -> bool:
+    """Kick the in-game player and broadcast a warning when an RCON attempt
+    originates from a currently connected player slot.
+
+    Returns ``True`` when an enforcement action (kick + broadcast) was
+    actually issued, ``False`` when the source was not a connected player
+    (in which case no kick, ban, or broadcast is performed — only a log
+    line is written).
+    """
     password = effective_rcon_password()
     if not password:
         worker_log(
             handle,
             f"RCON attempt from {source_address}: no effective RCON password resolved; "
-            "logging only (cannot kick or broadcast)",
+            "logging only (cannot resolve player slot)",
         )
-        return
+        return False
 
     port = current_server_port()
     host: str = config["rcon_host"]
@@ -470,37 +487,43 @@ def enforce_rcon_attempt(
     players = parse_status_players(status_text) if status_text else []
     found = find_player_slot_by_ip(players, source_address)
 
-    slot: int | None = None
-    player_display: str = bare_ip(source_address)
-
-    if found is not None:
-        slot, player_name = found
-        if player_name:
-            player_display = player_name
-
     cmd_log = f"attempted_command={safe_display(attempted_command)!r}" if attempted_command else ""
+
+    if found is None:
+        # External RCON (not from a connected game client) is allowed.
+        # Record it for visibility but take no enforcement action.
+        worker_log(
+            handle,
+            f"RCON attempt detected: source={source_address} "
+            f"slot=not_connected player={bare_ip(source_address)!r} "
+            + cmd_log
+            + " (external RCON; no action taken)",
+        )
+        return False
+
+    slot, player_name = found
+    player_display = player_name if player_name else bare_ip(source_address)
+
     worker_log(
         handle,
         f"RCON attempt detected: source={source_address} "
-        f"slot={slot if slot is not None else 'not_connected'} "
-        f"player={player_display!r} "
+        f"slot={slot} player={player_display!r} "
         + cmd_log,
     )
 
-    # Kick if we found a connected slot.
-    if slot is not None:
-        kick_cmd = config["kick_command_template"].format(slot=slot)
-        try:
-            send_rcon_command(host, port, password, timeout, kick_cmd)
-        except OSError as exc:
-            worker_log(handle, f"Kick failed for slot {slot}: {exc}")
-        else:
-            worker_log(handle, f"Kicked slot {slot} ({player_display!r})")
+    # Kick the connected player.
+    kick_cmd = config["kick_command_template"].format(slot=slot)
+    try:
+        send_rcon_command(host, port, password, timeout, kick_cmd)
+    except OSError as exc:
+        worker_log(handle, f"Kick failed for slot {slot}: {exc}")
+    else:
+        worker_log(handle, f"Kicked slot {slot} ({player_display!r})")
 
     # Broadcast warning to the server.
     broadcast_msg = config["broadcast_template"].format(
         player=escape_command_argument(player_display),
-        slot=slot if slot is not None else "",
+        slot=slot,
         ip=bare_ip(source_address),
     )
     broadcast_command = (
@@ -512,6 +535,8 @@ def enforce_rcon_attempt(
         worker_log(handle, f"Broadcast failed: {exc}")
     else:
         worker_log(handle, f"Broadcast sent: {broadcast_msg!r}")
+
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -683,7 +708,11 @@ def run_worker() -> int:
                     if is_ignored_ip(source_address, config["ignore_ip_hosts"]):
                         continue
 
-                    # Apply per-source-IP cooldown.
+                    # Apply per-source-IP cooldown so a burst of detection
+                    # lines for the same IP doesn't trigger repeated status
+                    # queries.  Cooldown is keyed on detection (not on
+                    # enforcement) because external RCON sources can flood
+                    # the log just like in-game ones.
                     now = time.monotonic()
                     last = last_action_for_ip.get(bare_ip(source_address), 0.0)
                     min_interval = int(config["min_seconds_between_actions"])
