@@ -57,7 +57,6 @@ fi
 
 for expected in \
   bundled-addons/defaults/announcer.py \
-  bundled-addons/defaults/announcer.messages.txt \
   bundled-addons/defaults/live-team-announcer.py \
   bundled-addons/defaults/chatlogger.py; do
   if [[ -f "$expected" ]]; then
@@ -66,6 +65,13 @@ for expected in \
     fail "expected default file missing: $expected"
   fi
 done
+
+# announcer.messages.txt was removed; verify it no longer exists in the image
+if [[ -f "bundled-addons/defaults/announcer.messages.txt" ]]; then
+  fail "announcer.messages.txt must not exist in bundled-addons/defaults/ (messages live in jka-addons.json)"
+else
+  pass "bundled-addons/defaults/announcer.messages.txt does not exist (correct)"
+fi
 
 # ---- docs layout ----------------------------------------------------------
 

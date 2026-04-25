@@ -38,7 +38,6 @@ docs in the image.
   20-my-addon.py
   defaults/                ← image-managed bundled default addons
     announcer.py
-    announcer.messages.txt
     live-team-announcer.py
     chatlogger.py
   docs/
@@ -64,7 +63,7 @@ The image ships three default addons, all disabled by default:
 
 | Name                  | Type        | Script (under `defaults/`) | Purpose                                                |
 | --------------------- | ----------- | -------------------------- | ------------------------------------------------------ |
-| `announcer`           | `scheduled` | `announcer.py`             | Periodic `svsay` announcements driven by a message file |
+| `announcer`           | `scheduled` | `announcer.py`             | Periodic `svsay` announcements driven by a messages array in `jka-addons.json` |
 | `live_team_announcer` | `event`     | `live-team-announcer.py`   | Announces team changes from `team_change` NDJSON events |
 | `chatlogger`          | `event`     | `chatlogger.py`            | Writes daily chat logs from `chat_message` NDJSON events |
 
@@ -109,7 +108,9 @@ is missing:
       "script": "announcer.py",
       "announce_command": "svsay",
       "interval_seconds": 300,
-      "messages_file": "announcer.messages.txt"
+      "messages": [
+        "jknexus.se - JK Web Based Client > Real Live Time & Search Master List Browser!"
+      ]
     },
     "live_team_announcer": {
       "enabled": false,
@@ -128,6 +129,19 @@ is missing:
   }
 }
 ```
+
+**Announcer messages** are edited directly in
+`/home/container/config/jka-addons.json` under the key
+`addons.announcer.messages`. The default message is:
+
+```
+jknexus.se - JK Web Based Client > Real Live Time & Search Master List Browser!
+```
+
+To change what the announcer broadcasts, edit the `messages` array in
+`jka-addons.json`. There is no separate `announcer.messages.txt` file.
+Do **not** edit `/home/container/addons/defaults/*` directly — that
+directory is image-managed and is refreshed on every start.
 
 Common keys for every addon entry:
 
@@ -304,15 +318,15 @@ production-quality examples.
 * Image-managed (refreshed on every start, do not edit in place):
   * `/home/container/addons/docs/ADDON_README.md`
   * `/home/container/addons/defaults/*.py`
-  * `/home/container/addons/defaults/*.txt`, `*.md`
 * User-owned (never overwritten by the runtime):
   * `/home/container/config/jka-runtime.json`
   * `/home/container/config/jka-addons.json`
   * Top-level `/home/container/addons/*.sh|*.py|*.disable`
 * On every start the runtime safely removes legacy paths from
   earlier image revisions: `/home/container/addons/events`,
-  `/home/container/addons/defaults/events`, and the old numeric
-  default files (`20-python-announcer.*`, `30-live-team-announcer.*`,
+  `/home/container/addons/defaults/events`,
+  `/home/container/addons/defaults/announcer.messages.txt`, and the old
+  numeric default files (`20-python-announcer.*`, `30-live-team-announcer.*`,
   `40-chatlogger.*`). User-owned files outside those known legacy
   paths are not touched.
 
