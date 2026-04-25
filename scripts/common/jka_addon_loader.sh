@@ -68,7 +68,7 @@ sync_managed_addon_defaults() {
 
   rsync -a \
     --include='*/' \
-    --include='*.py' --include='*.sh' --include='*.txt' --include='*.md' \
+    --include='*.py' --include='*.sh' --include='*.md' \
     --exclude='*' \
     "${JKA_PATH_BUNDLED_ADDONS}/defaults/" "${ADDON_DEFAULTS_DIR}/"
   find "$ADDON_DEFAULTS_DIR" -type f \( -name '*.sh' -o -name '*.py' \) -exec chmod 0755 {} +
@@ -105,6 +105,7 @@ cleanup_legacy_addon_paths() {
   fi
 
   for target in \
+    "${ADDON_DEFAULTS_DIR}/announcer.messages.txt" \
     "${ADDON_DEFAULTS_DIR}/20-python-announcer.py" \
     "${ADDON_DEFAULTS_DIR}/20-python-announcer.messages.txt" \
     "${ADDON_DEFAULTS_DIR}/20-python-announcer.config.json" \
@@ -167,7 +168,9 @@ default_addons_config_template() {
       "script": "announcer.py",
       "announce_command": "svsay",
       "interval_seconds": 300,
-      "messages_file": "announcer.messages.txt"
+      "messages": [
+        "jknexus.se - JK Web Based Client &gt; Real Live Time &amp; Search Master List Browser!"
+      ]
     },
     "live_team_announcer": {
       "enabled": false,

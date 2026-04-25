@@ -35,6 +35,9 @@ ANNOUNCER_PATH = REPO_ROOT / "bundled-addons" / "defaults" / "announcer.py"
 
 # Compact JSON exactly as ``jq -c '.addons.announcer'`` would produce from
 # the default jka-addons.json template. This is the "shell loader format".
+_DEFAULT_MESSAGE = (
+    "jknexus.se - JK Web Based Client &gt; Real Live Time &amp; Search Master List Browser!"
+)
 _SHELL_LOADER_SAMPLE: dict = {
     "enabled": True,
     "order": 20,
@@ -42,7 +45,7 @@ _SHELL_LOADER_SAMPLE: dict = {
     "script": "announcer.py",
     "announce_command": "svsay",
     "interval_seconds": 300,
-    "messages_file": "announcer.messages.txt",
+    "messages": [_DEFAULT_MESSAGE],
 }
 SHELL_LOADER_SAMPLE_JSON = json.dumps(_SHELL_LOADER_SAMPLE, separators=(",", ":"))
 
@@ -158,6 +161,111 @@ class AnnouncerConfigEnvTest(unittest.TestCase):
         self.assertTrue(
             len(fallbacks) > 0,
             "Expected load_config() to fall back when given a plain string",
+        )
+
+    # ------------------------------------------------------------------
+    # messages array: read from JKA_ADDON_CONFIG_JSON
+    # ------------------------------------------------------------------
+
+    def test_messages_read_from_config_json(self) -> None:
+        """messages array in the env var JSON is returned in config['messages']."""
+        sample = dict(_SHELL_LOADER_SAMPLE)
+        sample["messages"] = ["Hello world", "Second message"]
+        config, _ = self._load_config(json.dumps(sample, separators=(",", ":")))
+        self.assertEqual(config["messages"], ["Hello world", "Second message"])
+
+    def test_blank_message_strings_are_ignored(self) -> None:
+        """Empty and whitespace-only strings in messages are filtered out."""
+        sample = dict(_SHELL_LOADER_SAMPLE)
+        sample["messages"] = ["", "  ", "Valid message", "\t"]
+        config, _ = self._load_config(json.dumps(sample, separators=(",", ":")))
+        self.assertEqual(config["messages"], ["Valid message"])
+
+    def test_non_string_message_entries_are_ignored(self) -> None:
+        """Non-string entries (numbers, booleans, null) are filtered out."""
+        sample = dict(_SHELL_LOADER_SAMPLE)
+        sample["messages"] = [42, True, None, "Real message", 3.14]
+        config, _ = self._load_config(json.dumps(sample, separators=(",", ":")))
+        self.assertEqual(config["messages"], ["Real message"])
+
+    def test_missing_messages_key_uses_fallback(self) -> None:
+        """When messages key is absent the hardcoded fallback list is used."""
+        sample = {k: v for k, v in _SHELL_LOADER_SAMPLE.items() if k != "messages"}
+        config, _ = self._load_config(json.dumps(sample, separators=(",", ":")))
+        announcer = _import_announcer()
+        self.assertEqual(config["messages"], list(announcer.DEFAULT_FALLBACK_MESSAGES))
+
+    def test_empty_messages_array_uses_fallback(self) -> None:
+        """When messages is an empty array the hardcoded fallback list is used."""
+        sample = dict(_SHELL_LOADER_SAMPLE)
+        sample["messages"] = []
+        config, _ = self._load_config(json.dumps(sample, separators=(",", ":")))
+        announcer = _import_announcer()
+        self.assertEqual(config["messages"], list(announcer.DEFAULT_FALLBACK_MESSAGES))
+
+    def test_all_blank_messages_uses_fallback(self) -> None:
+        """When all messages are blank strings the fallback is used."""
+        sample = dict(_SHELL_LOADER_SAMPLE)
+        sample["messages"] = ["", "   "]
+        config, _ = self._load_config(json.dumps(sample, separators=(",", ":")))
+        announcer = _import_announcer()
+        self.assertEqual(config["messages"], list(announcer.DEFAULT_FALLBACK_MESSAGES))
+
+    def test_hardcoded_fallback_has_exactly_one_message(self) -> None:
+        """DEFAULT_FALLBACK_MESSAGES must contain exactly one entry."""
+        announcer = _import_announcer()
+        self.assertEqual(
+            len(announcer.DEFAULT_FALLBACK_MESSAGES),
+            1,
+            f"Expected exactly 1 fallback message, got {len(announcer.DEFAULT_FALLBACK_MESSAGES)}",
+        )
+
+    def test_hardcoded_fallback_message_content(self) -> None:
+        """The single hardcoded fallback message must equal the canonical string."""
+        announcer = _import_announcer()
+        self.assertEqual(
+            announcer.DEFAULT_FALLBACK_MESSAGES[0],
+            _DEFAULT_MESSAGE,
+        )
+
+    def test_default_template_messages_file_key_absent(self) -> None:
+        """The default shell-loader sample must not contain 'messages_file'."""
+        self.assertNotIn(
+            "messages_file",
+            _SHELL_LOADER_SAMPLE,
+            "messages_file must not appear in the default template",
+        )
+
+    # ------------------------------------------------------------------
+    # Default jka-addons.json template: exactly one announcer message
+    # ------------------------------------------------------------------
+
+    def test_default_template_has_exactly_one_announcer_message(self) -> None:
+        """The default jka-addons.json template must have exactly one messages entry."""
+        self.assertEqual(
+            len(_SHELL_LOADER_SAMPLE.get("messages", [])),
+            1,
+            "Default template must have exactly one announcer message",
+        )
+
+    def test_default_template_announcer_message_content(self) -> None:
+        """The default template's single message must equal the canonical string."""
+        messages = _SHELL_LOADER_SAMPLE.get("messages", [])
+        self.assertEqual(
+            messages[0] if messages else None,
+            _DEFAULT_MESSAGE,
+        )
+
+    # ------------------------------------------------------------------
+    # No bundled announcer.messages.txt
+    # ------------------------------------------------------------------
+
+    def test_no_bundled_messages_txt_file(self) -> None:
+        """bundled-addons/defaults/announcer.messages.txt must not exist."""
+        path = REPO_ROOT / "bundled-addons" / "defaults" / "announcer.messages.txt"
+        self.assertFalse(
+            path.exists(),
+            f"announcer.messages.txt must not exist in bundled-addons/defaults/: {path}",
         )
 
 

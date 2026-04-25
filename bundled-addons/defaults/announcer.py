@@ -11,14 +11,29 @@ environment variable so the addon does not need its own
 startup, the script launches a detached background worker and exits
 quickly so the normal server startup can continue.
 
+**Message configuration.**
+Announcer messages are read from the ``messages`` array inside the
+``addons.announcer`` object in
+``/home/container/config/jka-addons.json``::
+
+    "announcer": {
+        "enabled": true,
+        "messages": [
+            "jknexus.se - JK Web Based Client &gt; Real Live Time &amp; Search Master List Browser!"
+        ]
+    }
+
+Edit that file to change what the announcer broadcasts.  There is no
+separate ``announcer.messages.txt`` file.  If ``messages`` is absent,
+empty, or contains only blank/non-string entries the worker falls back
+to the hardcoded default list defined in this script.
+
 The background worker reads:
 
 * ``JKA_ADDON_CONFIG_JSON`` -- runtime configuration JSON (passed by
   the runtime layer). When absent the script falls back to the
   ``addons.announcer`` section in ``jka-addons.json`` directly so
   ``python3 announcer.py`` keeps working from a shell.
-* ``announcer.messages.txt`` -- rotated message list living next to
-  this script.
 
 It then sends announcements over local RCON. The default RCON command is
 ``svsay`` (server announcement, no name prefix). You can switch to ``say``
@@ -28,7 +43,7 @@ the config; any other value is rejected with a warning and ``svsay`` is used.
 Two scheduling modes are supported:
 
 1. **Simple interval** (default, back-compat): set ``interval_seconds`` and
-   the worker rotates through ``messages.txt`` every N seconds.
+   the worker rotates through the ``messages`` list every N seconds.
 
 2. **Explicit schedule**: provide a non-empty ``schedule`` list. Each entry
    is one of:
@@ -38,7 +53,7 @@ Two scheduling modes are supported:
        {"every_seconds": 1800}           # periodic, independent cadence
 
    Any entry may also carry a ``message`` literal to send at that slot
-   (otherwise the next message from ``messages.txt`` is used). Schedule
+   (otherwise the next message from the ``messages`` array is used). Schedule
    entries fire independently; the daily ``time`` form uses the configured
    ``timezone`` (``"local"`` by default; IANA zone names like
    ``"Europe/Stockholm"`` also work).
@@ -48,7 +63,8 @@ Optimisation notes vs. earlier revisions:
 * PID liveness now uses an exclusive ``fcntl.flock`` on a dedicated lockfile
   instead of ``os.kill(pid, 0)`` -- immune to PID reuse after a crash.
 * Sleeps go through a ``threading.Event`` so SIGTERM/SIGINT exits promptly.
-* The messages file is cached and only re-parsed when its mtime changes.
+* Messages are re-read from ``jka-addons.json`` on every loop iteration so
+  edits are picked up without restarting the worker.
 * Wall-clock scheduling uses ``time.monotonic()`` for the sleep budget but
   resolves daily ``HH:MM`` slots against the real clock so DST / clock skew
   cannot drift the schedule.
@@ -101,7 +117,6 @@ ADDONS_CONFIG_PATH = Path(
     )
 )
 DEFAULT_ADDON_NAME = "announcer"
-DEFAULT_MESSAGES_PATH = SCRIPT_PATH.with_name("announcer.messages.txt")
 LOGS_DIR = HOME_DIR / "logs"
 DEFAULT_LOG_PATH = LOGS_DIR / "bundled-python-announcer.log"
 PID_PATH = LOGS_DIR / "bundled-python-announcer.pid"
@@ -111,6 +126,13 @@ RUNTIME_ENV_PATH = HOME_DIR / ".runtime" / "taystjk-effective.env"
 
 ALLOWED_ANNOUNCE_COMMANDS = ("svsay", "say")
 DEFAULT_ANNOUNCE_COMMAND = "svsay"
+
+# Hardcoded fallback message list used when ``addons.announcer.messages``
+# is absent, empty, or contains only blank/non-string entries.
+# Must contain exactly one entry.
+DEFAULT_FALLBACK_MESSAGES: list[str] = [
+    "jknexus.se - JK Web Based Client &gt; Real Live Time &amp; Search Master List Browser!",
+]
 
 # Minimum cadence for ``every_seconds`` schedule entries. Anything smaller
 # would risk RCON spam and is almost certainly a config typo.
@@ -128,7 +150,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "rcon_host": "127.0.0.1",
     "rcon_timeout_seconds": 3,
     "announce_command": DEFAULT_ANNOUNCE_COMMAND,
-    "messages_file": DEFAULT_MESSAGES_PATH.name,
+    "messages": DEFAULT_FALLBACK_MESSAGES,
     "log_file": str(DEFAULT_LOG_PATH),
     # Empty = use simple interval mode. Populate to use exact-time scheduling.
     "schedule": [],
@@ -360,10 +382,6 @@ def load_config() -> dict[str, Any]:
     config["interval_seconds"] = safe_int(config.get("interval_seconds"), 900, 30)
     config["rcon_timeout_seconds"] = safe_int(config.get("rcon_timeout_seconds"), 3, 1)
     config["announce_command"] = normalise_announce_command(config.get("announce_command"))
-    config["messages_path"] = resolve_sibling_path(
-        str(config.get("messages_file", DEFAULT_MESSAGES_PATH.name)),
-        DEFAULT_MESSAGES_PATH,
-    )
     config["log_path"] = resolve_sibling_path(
         str(config.get("log_file", DEFAULT_LOG_PATH)),
         DEFAULT_LOG_PATH,
@@ -372,66 +390,15 @@ def load_config() -> dict[str, Any]:
     config["schedule"] = normalise_schedule(config.get("schedule", []))
     config["tzinfo"] = _resolve_timezone(config.get("timezone", "local"))
 
+    # Validate the ``messages`` array: keep only non-empty strings.
+    raw_messages = config.get("messages")
+    if isinstance(raw_messages, list):
+        valid = [m for m in raw_messages if isinstance(m, str) and m.strip()]
+    else:
+        valid = []
+    config["messages"] = valid if valid else list(DEFAULT_FALLBACK_MESSAGES)
+
     return config
-
-
-# ---------------------------------------------------------------------------
-# Cached message file
-# ---------------------------------------------------------------------------
-
-
-class MessageCache:
-    """Reads ``messages.txt`` lazily and only re-parses when its mtime changes."""
-
-    def __init__(self) -> None:
-        self._path: Path | None = None
-        self._mtime_ns: int = -1
-        self._size: int = -1
-        self._messages: list[str] = []
-        self._missing_logged_for: Path | None = None
-
-    def get(self, path: Path) -> list[str]:
-        try:
-            stat = path.stat()
-        except FileNotFoundError:
-            if self._missing_logged_for != path:
-                log(f"Messages file not found at {path}")
-                self._missing_logged_for = path
-            self._path = path
-            self._messages = []
-            self._mtime_ns = -1
-            self._size = -1
-            return []
-        except OSError as exc:
-            log(f"Failed to stat messages file {path}: {exc}")
-            return self._messages
-
-        self._missing_logged_for = None
-        if (
-            path == self._path
-            and stat.st_mtime_ns == self._mtime_ns
-            and stat.st_size == self._size
-        ):
-            return self._messages
-
-        try:
-            text = path.read_text(encoding="utf-8")
-        except OSError as exc:
-            log(f"Failed to read messages file {path}: {exc}")
-            return self._messages
-
-        messages: list[str] = []
-        for raw_line in text.splitlines():
-            line = raw_line.strip()
-            if not line or line.startswith("#"):
-                continue
-            messages.append(line)
-
-        self._path = path
-        self._mtime_ns = stat.st_mtime_ns
-        self._size = stat.st_size
-        self._messages = messages
-        return messages
 
 
 # ---------------------------------------------------------------------------
@@ -750,14 +717,13 @@ def _emit_startup_diagnostics(
     log(f"  rcon_host:port   : {config['rcon_host']}:{port}")
     log(f"  rcon_password    : {'present' if password else 'MISSING'}")
     log(f"  active_server_cfg: {config_path}")
-    log(f"  messages_file    : {config['messages_path']} ({len(messages)} entries)")
+    log(f"  messages         : {len(messages)} entries (from jka-addons.json)")
     log(f"  log_file         : {config['log_path']}")
     log("=========================")
 
 
 def run_simple_interval_loop(
     initial_config: dict[str, Any],
-    messages_cache: MessageCache,
 ) -> int:
     cursor = [0]
     while not _shutdown_event.is_set():
@@ -767,9 +733,9 @@ def run_simple_interval_loop(
             return 0
         if config["schedule"]:
             log("Schedule was added to config at runtime; switching to scheduled mode")
-            return run_scheduled_loop(config, messages_cache)
+            return run_scheduled_loop(config)
 
-        messages = messages_cache.get(config["messages_path"])
+        messages = config["messages"]
         if not messages:
             log("No announcer messages are configured; retrying later")
         else:
@@ -784,7 +750,6 @@ def run_simple_interval_loop(
 
 def run_scheduled_loop(
     initial_config: dict[str, Any],
-    messages_cache: MessageCache,
 ) -> int:
     """Dispatch announcements based on the ``schedule`` list."""
     cursor = [0]
@@ -810,7 +775,7 @@ def run_scheduled_loop(
             return 0
         if not config["schedule"]:
             log("Schedule was removed from config at runtime; switching to interval mode")
-            return run_simple_interval_loop(config, messages_cache)
+            return run_simple_interval_loop(config)
 
         # Reconcile per-entry deadlines if the schedule list shrunk/grew.
         now_monotonic = time.monotonic()
@@ -856,7 +821,7 @@ def run_scheduled_loop(
 
         # Fire any entries whose deadline has now passed.
         now_monotonic = time.monotonic()
-        messages = messages_cache.get(config["messages_path"])
+        messages = config["messages"]
         for index, entry in enumerate(config["schedule"]):
             if "time_of_day" in entry:
                 fired_today = last_fired_date.get(index) == today
@@ -873,7 +838,7 @@ def run_scheduled_loop(
             message = literal if literal else _next_message(messages, cursor)
             if not message:
                 if "time_of_day" in entry:
-                    log("Schedule slot due but no literal message and messages.txt is empty")
+                    log("Schedule slot due but no literal message and messages list is empty")
                 continue
             ok = dispatch_announcement(config, message)
 
@@ -912,8 +877,7 @@ def run_worker() -> int:
     _install_signal_handlers()
 
     config = load_config()
-    messages_cache = MessageCache()
-    messages = messages_cache.get(config["messages_path"])
+    messages = config["messages"]
 
     _emit_startup_diagnostics(config, messages)
 
@@ -929,8 +893,8 @@ def run_worker() -> int:
 
     try:
         if config["schedule"]:
-            return run_scheduled_loop(config, messages_cache)
-        return run_simple_interval_loop(config, messages_cache)
+            return run_scheduled_loop(config)
+        return run_simple_interval_loop(config)
     finally:
         # Lock is released automatically on process exit, but be explicit for
         # clarity in logs and tests.
@@ -950,8 +914,7 @@ def launch_background_worker() -> int:
         log("Announcer is disabled in config; skipping background launch")
         return 0
 
-    messages_cache = MessageCache()
-    messages = messages_cache.get(config["messages_path"])
+    messages = config["messages"]
     if not messages and not any(entry.get("message") for entry in config["schedule"]):
         log("No announcer messages found and no literal schedule entries; skipping background launch")
         return 0
