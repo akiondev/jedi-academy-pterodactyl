@@ -65,7 +65,6 @@ type jsonRuntimeConfig struct {
 		Enabled                  *bool  `json:"enabled"`
 		Directory                string `json:"directory"`
 		EventAddonsDir           string `json:"event_addons_dir"`
-		CheckserverstatusEnabled *bool  `json:"checkserverstatus_enabled"`
 		ChatloggerEnabled        *bool  `json:"chatlogger_enabled"`
 		Strict                   *bool  `json:"strict"`
 		TimeoutSeconds           *int   `json:"timeout_seconds"`

@@ -1,0 +1,5 @@
+{
+  "enabled": false,
+  "log_file": "/home/container/logs/bundled-chatlogger.log",
+  "keep_plain_days": 30
+}

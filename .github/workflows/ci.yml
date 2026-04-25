@@ -113,7 +113,6 @@ jobs:
           shell_files=(
             scripts/entrypoint.sh
             scripts/install_taystjk.sh
-            bundled-addons/defaults/30-checkserverstatus.sh
           )
           while IFS= read -r common_file; do
             shell_files+=("$common_file")

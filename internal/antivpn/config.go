@@ -90,10 +90,10 @@ type Config struct {
 	// TAYSTJK_LIVE_OUTPUT_ENABLED).
 	LiveOutputEnabled bool
 	// AuditAllow controls whether plain `allow` decisions are written
-	// to the audit log. Default false: only block / would-block /
-	// degraded / error decisions are audited so a normal busy server
-	// does not produce thousands of allow rows. Set
-	// ANTI_VPN_AUDIT_ALLOW=true for forensic / debug runs.
+	// to the audit log. Default true so a normal allow decision is
+	// verifiable in /home/container/logs/anti-vpn-audit.log without
+	// having to flip a flag. Block / would-block / degraded / error
+	// decisions are always audited.
 	AuditAllow bool
 	// RconGuard holds the configuration for the built-in RCON guard
 	// module. The guard consumes `Bad rcon from ...` events parsed
@@ -163,7 +163,7 @@ func LoadConfigFromEnv() (Config, error) {
 		// them, but the supervisor never reads server.log nor mirrors
 		// to a file unless explicitly told to.
 		LogMonitorEnabled: envBool("ANTI_VPN_LOG_MONITOR_ENABLED", false),
-		AuditAllow:        envBool("ANTI_VPN_AUDIT_ALLOW", false),
+		AuditAllow:        envBool("ANTI_VPN_AUDIT_ALLOW", true),
 	}
 
 	// JKA_LIVE_OUTPUT_MIRROR_ENABLED is the canonical env var for the
@@ -203,7 +203,7 @@ func LoadConfigFromEnv() (Config, error) {
 	}
 	cfg.EnforcementMode = enforcementMode
 
-	broadcastMode, err := parseBroadcastMode(envString("ANTI_VPN_BROADCAST_MODE", string(BroadcastBlockOnly)))
+	broadcastMode, err := parseBroadcastMode(envString("ANTI_VPN_BROADCAST_MODE", string(BroadcastPassAndBlock)))
 	if err != nil {
 		return Config{}, err
 	}

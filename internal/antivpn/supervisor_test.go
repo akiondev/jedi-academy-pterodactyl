@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/netip"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -502,4 +503,78 @@ func TestHandleLogLineParsesANSIWrappedClientConnect(t *testing.T) {
 	if state.PlayerName != "Akion" {
 		t.Fatalf("unexpected tracked player name after ANSI-wrapped connect: %q", state.PlayerName)
 	}
+}
+
+func TestAuditDecisionLogsAllowWhenAuditAllowEnabled(t *testing.T) {
+dir := t.TempDir()
+auditPath := filepath.Join(dir, "audit.log")
+t.Setenv("JKA_RUNTIME_CONFIG_PATH", "/nonexistent/jka-runtime.json")
+t.Setenv("ANTI_VPN_AUDIT_LOG_PATH", auditPath)
+t.Setenv("ANTI_VPN_AUDIT_ALLOW", "true")
+t.Setenv("ANTI_VPN_PROXYCHECK_API_KEY", "SUPER-SECRET-KEY-7777")
+
+cfg, err := LoadConfigFromEnv()
+if err != nil {
+t.Fatalf("LoadConfigFromEnv: %v", err)
+}
+if !cfg.AuditAllow {
+t.Fatalf("expected default AuditAllow=true")
+}
+
+supervisor, err := NewSupervisor(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+if err != nil {
+t.Fatalf("NewSupervisor: %v", err)
+}
+t.Cleanup(func() { _ = supervisor.Close() })
+
+supervisor.auditDecision("test", "0", netip.MustParseAddr("203.0.113.5"), Decision{
+Allowed: true,
+Score:   10,
+Summary: "ok",
+})
+
+contents, err := os.ReadFile(auditPath)
+if err != nil {
+t.Fatalf("read audit log: %v", err)
+}
+body := string(contents)
+if !strings.Contains(body, `"action":"allow"`) {
+t.Fatalf("expected allow row in audit log, got: %s", body)
+}
+if !strings.Contains(body, `"ip":"203.0.113.5"`) {
+t.Fatalf("expected ip in audit log, got: %s", body)
+}
+if strings.Contains(body, "SUPER-SECRET-KEY-7777") {
+t.Fatalf("audit log must never contain provider API keys, got: %s", body)
+}
+}
+
+func TestAuditDecisionSkipsAllowWhenAuditAllowDisabled(t *testing.T) {
+dir := t.TempDir()
+auditPath := filepath.Join(dir, "audit.log")
+t.Setenv("JKA_RUNTIME_CONFIG_PATH", "/nonexistent/jka-runtime.json")
+t.Setenv("ANTI_VPN_AUDIT_LOG_PATH", auditPath)
+t.Setenv("ANTI_VPN_AUDIT_ALLOW", "false")
+
+cfg, err := LoadConfigFromEnv()
+if err != nil {
+t.Fatalf("LoadConfigFromEnv: %v", err)
+}
+
+supervisor, err := NewSupervisor(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+if err != nil {
+t.Fatalf("NewSupervisor: %v", err)
+}
+t.Cleanup(func() { _ = supervisor.Close() })
+
+supervisor.auditDecision("test", "0", netip.MustParseAddr("203.0.113.6"), Decision{
+Allowed: true,
+Score:   5,
+Summary: "ok",
+})
+
+contents, _ := os.ReadFile(auditPath)
+if strings.Contains(string(contents), `"action":"allow"`) {
+t.Fatalf("expected no allow row when AuditAllow=false, got: %s", string(contents))
+}
 }

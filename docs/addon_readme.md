@@ -8,32 +8,32 @@ This guide is synced into:
 
 > **Configuration source**
 > All addon-related toggles below (`addons.enabled`, `addons.strict`,
-> `addons.checkserverstatus_enabled`, `addons.chatlogger_enabled`,
-> `addons.event_bus.*`, etc.) are configured in
-> `/home/container/config/jka-runtime.json`. The legacy environment
-> variable names referenced in this document (`ADDONS_ENABLED`,
-> `ADDON_CHATLOGGER_ENABLED`, `ADDON_CHECKSERVERSTATUS_ENABLED`, etc.)
-> are still honored as a fallback and still describe the underlying
-> runtime knobs. The Pterodactyl egg no longer exposes these as panel
-> variables.
+> `addons.chatlogger_enabled`, `addons.event_bus.*`, etc.) are
+> configured in `/home/container/config/jka-runtime.json`. Per-addon
+> behaviour for the managed default addons is controlled by each
+> addon's own `*.config.json` file under
+> `/home/container/addons/defaults/`. The Pterodactyl egg only
+> exposes four panel variables; everything else lives in JSON.
 
 ## 1. What you need to know
 
 - Addons are simple startup scripts.
-- Only top-level `.sh` and `.py` files in `/home/container/addons` are executed.
+- Only top-level `.sh` and `.py` files in `/home/container/addons` are executed by the user-addon loader.
 - Rename a top-level addon file to end with `.disable` if you want to keep it without running it.
-- Files inside `docs/`, `examples/`, and `defaults/` are **not** executed.
-- The built-in `checkserverstatus` helper is controlled by `ADDON_CHECKSERVERSTATUS_ENABLED`.
-- The built-in `chatlogger` helper is controlled by `ADDON_CHATLOGGER_ENABLED`. It writes daily player chat logs into `/home/container/chatlogs`. It is now an **event-driven addon**: the supervisor launches it and feeds it parsed events as newline-delimited JSON on stdin. It does **not** tail `server.log` or any mirror file. See `docs/addon_readme_advanced.md` for the protocol.
-- The legacy `rcon-live-guard` Python addon (`ADDON_RCON_LIVE_GUARD_ENABLED`, default **false**) has been **removed from bundled defaults** and superseded by the built-in supervisor RCON guard module (`RCON_GUARD_ENABLED`, default `true`), which receives parsed `bad_rcon` events directly from the dedicated server's stdout/stderr and never tails any file. The reference copy is preserved under `bundled-addons/examples/deprecated/` for historical use only. See `docs/anti-vpn.md` for the full RCON guard configuration.
-- The runtime live-output mirror file (`/home/container/.runtime/live/server-output.log`) is **disabled by default** and is no longer a supported addon event source. Operators that explicitly want a tailable file for debugging or external tooling can enable it with `JKA_LIVE_OUTPUT_MIRROR_ENABLED=true` (legacy alias `TAYSTJK_LIVE_OUTPUT_ENABLED=true`).
+- Files inside `docs/` and `defaults/` are **not** executed by the user-addon loader; the managed default addons under `defaults/` follow their own lifecycle (see below).
+- **Managed default addons** are shipped with the image under `bundled-addons/defaults/` and synced into `/home/container/addons/defaults/`. They are **disabled by default** through their own `*.config.json` file. Enable an addon by editing its config file and setting `"enabled": true`. The runtime never overwrites edited config files.
+  - Python announcer: `defaults/20-python-announcer.py` + `defaults/20-python-announcer.config.json`
+  - Live team announcer (event-driven): `defaults/events/30-live-team-announcer.py` + `defaults/events/30-live-team-announcer.config.json`
+  - Chatlogger (event-driven): `defaults/events/40-chatlogger.py` + `defaults/events/40-chatlogger.config.json`
+- The legacy `rcon-live-guard` Python addon has been **removed from bundled defaults** and superseded by the built-in supervisor RCON guard module (`RCON_GUARD_ENABLED`, default `true`), which receives parsed `bad_rcon` events directly from the dedicated server's stdout/stderr and never tails any file. The reference copy is preserved under `bundled-addons/examples/deprecated/` for historical use only. See `docs/anti-vpn.md` for the full RCON guard configuration.
+- The runtime live-output mirror file (`/home/container/.runtime/live/server-output.log`) is **disabled by default** and is no longer a supported addon event source. When the mirror is disabled the runtime also removes any stale `server-output.log*` files it left behind from earlier runs.
 - Scripts run in alphabetical order before normal managed startup.
 - If `ADDONS_STRICT=false`, failed addons are logged and startup continues.
 - If `ADDONS_STRICT=true`, a failed addon stops startup.
 - Useful runtime state is available in:
   - `/home/container/.runtime/taystjk-effective.env`
   - `/home/container/.runtime/taystjk-effective.json`
-- **Event-driven addons** subscribe to a stable NDJSON event stream produced by the supervisor. The supervisor is the only reader of the dedicated server's stdout/stderr; addons no longer need to tail `server.log` or any mirror file. Drop a `.sh` or `.py` script into `/home/container/addons/events/` (path configurable via `ADDON_EVENT_ADDONS_DIR`) and the supervisor will spawn it and pipe events to its stdin. Tailing `server.log` from an addon is no longer supported as a runtime input.
+- **Event-driven addons** subscribe to a stable NDJSON event stream produced by the supervisor. The supervisor is the only reader of the dedicated server's stdout/stderr; addons no longer need to tail `server.log` or any mirror file. Drop a `.sh` or `.py` script into `/home/container/addons/events/` (path configurable via `ADDON_EVENT_ADDONS_DIR`) and the supervisor will spawn it and pipe events to its stdin. Tailing `server.log` or `server-output.log` from an addon is no longer supported as a runtime input.
 
 ## 2. How to use addons
 
@@ -66,26 +66,31 @@ Recommended naming:
 90-finish.sh
 ```
 
-If you want to use the bundled announcer example, copy these files from `examples/` into the top-level addon folder:
+To enable the bundled Python announcer, edit its managed config file in place:
 
 ```text
-/home/container/addons/examples/20-python-announcer.py
-/home/container/addons/examples/20-python-announcer.config.json
-/home/container/addons/examples/20-python-announcer.messages.txt
+/home/container/addons/defaults/20-python-announcer.config.json
 ```
 
-If you want to use the bundled live-event team announcer example (recommended pattern for new event-driven addons), copy these instead:
+Set `"enabled": true` and adjust `interval_seconds`, `messages_file`, and the optional `schedule` array as needed. The image refreshes the addon source files (`20-python-announcer.py`, `20-python-announcer.messages.txt`) on every start, but it never overwrites your edited config file.
+
+To enable the event-driven live team announcer, edit:
 
 ```text
-/home/container/addons/examples/20-live-team-announcer.py
-/home/container/addons/examples/20-live-team-announcer.config.json
+/home/container/addons/defaults/events/30-live-team-announcer.config.json
 ```
 
-If you later want to keep that copied announcer without running it, rename the copied script to:
+Set `"enabled": true`. The supervisor will spawn `30-live-team-announcer.py` and pipe `team_change` NDJSON events to its stdin; the addon turns each one into a short `svsay` announcement using the runtime-managed RCON port and password.
+
+To enable the event-driven chatlogger, edit:
 
 ```text
-/home/container/addons/20-python-announcer.py.disable
+/home/container/addons/defaults/events/40-chatlogger.config.json
 ```
+
+Set `"enabled": true`. The chatlogger consumes `chat_message` NDJSON events and writes daily logs into `/home/container/chatlogs`.
+
+You should not copy any addon out of `defaults/` into the top-level `/home/container/addons/` directory; the managed lifecycle expects the addon files to live where the image puts them. If you want to disable an addon again, just set `"enabled": false` in its config file.
 
 ## 3. Short examples
 
@@ -157,4 +162,4 @@ for line in proc.stdout:
         print(f"[addon:python-live] {line.rstrip()}")
 ```
 
-To send a message back to the server while reacting to a live line, use the same RCON path as the bundled `examples/20-python-announcer.py` (`say` or `svsay` over UDP using `TAYSTJK_EFFECTIVE_SERVER_PORT` and `TAYSTJK_EFFECTIVE_SERVER_RCON_PASSWORD`). See `examples/20-live-team-announcer.py` for a complete worked example.
+To send a message back to the server while reacting to a live line, use the same RCON path as the bundled `defaults/20-python-announcer.py` (`say` or `svsay` over UDP using `TAYSTJK_EFFECTIVE_SERVER_PORT` and `TAYSTJK_EFFECTIVE_SERVER_RCON_PASSWORD`). See `defaults/events/30-live-team-announcer.py` for a complete worked event-driven example.

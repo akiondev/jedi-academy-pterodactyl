@@ -58,6 +58,32 @@ func TestParseEnforcementModeRejectsInvalidInput(t *testing.T) {
 	}
 }
 
+func TestLoadConfigDefaultsToBroadcastPassAndBlock(t *testing.T) {
+	t.Setenv("JKA_RUNTIME_CONFIG_PATH", "/nonexistent/jka-runtime.json")
+	t.Setenv("ANTI_VPN_BROADCAST_MODE", "")
+
+	cfg, err := LoadConfigFromEnv()
+	if err != nil {
+		t.Fatalf("LoadConfigFromEnv returned error: %v", err)
+	}
+	if cfg.BroadcastMode != BroadcastPassAndBlock {
+		t.Fatalf("expected default broadcast mode %q, got %q", BroadcastPassAndBlock, cfg.BroadcastMode)
+	}
+}
+
+func TestLoadConfigDefaultsToAuditAllowTrue(t *testing.T) {
+	t.Setenv("JKA_RUNTIME_CONFIG_PATH", "/nonexistent/jka-runtime.json")
+	t.Setenv("ANTI_VPN_AUDIT_ALLOW", "")
+
+	cfg, err := LoadConfigFromEnv()
+	if err != nil {
+		t.Fatalf("LoadConfigFromEnv returned error: %v", err)
+	}
+	if !cfg.AuditAllow {
+		t.Fatalf("expected default AuditAllow=true, got false")
+	}
+}
+
 func TestBuildProvidersOnlyAddsKeyedPremiumProviders(t *testing.T) {
 	providers := buildProviders(Config{}, nil)
 	if len(providers) != 2 {

@@ -96,7 +96,7 @@ jobs:
 
       - name: Validate shell scripts
         if: steps.existing.outputs.up_to_date != 'true'
-        run: bash -n scripts/entrypoint.sh scripts/install_taystjk.sh bundled-addons/defaults/30-checkserverstatus.sh
+        run: bash -n scripts/entrypoint.sh scripts/install_taystjk.sh
 
       - name: Validate Python addon helpers
         if: steps.existing.outputs.up_to_date != 'true'

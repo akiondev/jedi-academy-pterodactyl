@@ -269,15 +269,23 @@ print_paths() {
   kv "Mod path" "/home/container/${active_game_dir}"
   kv "Addons dir" "$ADDONS_DIR"
   kv "Addon docs" "$ADDON_DOCS_DIR"
-  kv "Addon examples" "$ADDON_EXAMPLES_DIR"
   kv "Addon defaults" "$ADDON_DEFAULTS_DIR"
+  kv "Event addons dir" "$ADDON_EVENT_ADDONS_DIR"
   kv "Runtime env" "/home/container/.runtime/taystjk-effective.env"
   kv "Runtime json" "/home/container/.runtime/taystjk-effective.json"
   kv "Server log" "$TAYSTJK_ACTIVE_SERVER_LOG_PATH"
-  kv "Live output" "$TAYSTJK_LIVE_OUTPUT_PATH"
-  kv "Anti-VPN log" "$ANTI_VPN_LOG_PATH"
+  if [[ "${ANTI_VPN_LOG_MONITOR_ENABLED:-false}" == "true" ]]; then
+    kv "Legacy log monitor" "ENABLED (${ANTI_VPN_LOG_PATH})"
+  else
+    kv "Legacy log monitor" "DISABLED"
+  fi
+  if [[ "${TAYSTJK_LIVE_OUTPUT_ENABLED:-false}" == "true" ]]; then
+    kv "Live output mirror" "ENABLED (${TAYSTJK_LIVE_OUTPUT_PATH})"
+  else
+    kv "Live output mirror" "DISABLED"
+  fi
+  kv "Anti-VPN audit log" "$ANTI_VPN_AUDIT_LOG_PATH"
   kv "Chatlogs dir" "/home/container/chatlogs"
-  kv "Audit log" "$ANTI_VPN_AUDIT_LOG_PATH"
   kv "Cache path" "$ANTI_VPN_CACHE_PATH"
 }
 
@@ -299,8 +307,8 @@ print_debug_inventory() {
   kv "Mod files" "$(list_dir_files "/home/container/${active_game_dir}")"
   kv "Addon files" "$(list_dir_files "$ADDONS_DIR")"
   kv "Addon docs" "$(list_dir_files "$ADDON_DOCS_DIR")"
-  kv "Addon examples" "$(list_dir_files "$ADDON_EXAMPLES_DIR")"
   kv "Addon defaults" "$(list_dir_files "$ADDON_DEFAULTS_DIR")"
+  kv "Event addons" "$(list_dir_files "$ADDON_EVENT_ADDONS_DIR")"
 }
 
 print_launch_decision() {
@@ -377,9 +385,9 @@ if is_taystjk_managed_mod_dir "$active_game_dir"; then
 fi
 sync_runtime_files
 sync_addon_docs
-sync_managed_addon_examples
 sync_managed_addon_defaults
-install_managed_status_helper
+sync_managed_addon_default_configs
+cleanup_stale_live_output_files
 determine_runtime_ownership
 
 validate_server_binary_selection
@@ -404,6 +412,8 @@ ensure_managed_taystjk_server_config
 validate_selected_runtime_paths
 
 resolve_effective_server_settings "/home/container/${active_game_dir}/${SERVER_CONFIG}"
+install_managed_python_announcer_helper
+install_managed_live_team_announcer_helper
 install_managed_chatlogger_helper
 install_managed_rcon_live_guard_helper
 

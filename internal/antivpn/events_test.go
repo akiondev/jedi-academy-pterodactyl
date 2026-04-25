@@ -293,3 +293,45 @@ type funcHandler struct {
 
 func (h *funcHandler) Name() string                            { return h.name }
 func (h *funcHandler) HandleEvent(ctx context.Context, ev Event) { h.fn(ctx, ev) }
+
+func TestParseTeamChangeMatchesTaystJKLine(t *testing.T) {
+line := `2026-04-25 15:12:32 ChangeTeam: 0 [90.144.88.223] (324A7B4259866E7A4960FEC1F6BE407A) "akiondev" BLUE -> RED`
+got, ok := parseTeamChange(line)
+if !ok {
+t.Fatalf("expected parseTeamChange to match line: %q", line)
+}
+want := teamChangeMatch{Slot: "0", IP: "90.144.88.223", Name: "akiondev", OldTeam: "BLUE", NewTeam: "RED"}
+if got != want {
+t.Fatalf("parseTeamChange mismatch: got %+v want %+v", got, want)
+}
+}
+
+func TestParseTeamChangeMatchesStockJKAShape(t *testing.T) {
+// Older / stock JKA shape without IP bracket and without GUID parens.
+line := `ChangeTeam: 3 "Tester" SPECTATOR -> RED`
+got, ok := parseTeamChange(line)
+if !ok {
+t.Fatalf("expected parseTeamChange to match line: %q", line)
+}
+if got.Slot != "3" || got.Name != "Tester" || got.OldTeam != "SPECTATOR" || got.NewTeam != "RED" {
+t.Fatalf("parseTeamChange unexpected fields: %+v", got)
+}
+}
+
+func TestParseTeamChangeIgnoresUnrelatedLine(t *testing.T) {
+if _, ok := parseTeamChange(`ClientConnect: 0 [127.0.0.1]`); ok {
+t.Fatalf("expected parseTeamChange to ignore non-ChangeTeam line")
+}
+}
+
+func TestNewTeamChangeEventCarriesAllFields(t *testing.T) {
+now := time.Now()
+m := teamChangeMatch{Slot: "0", IP: "10.0.0.1", Name: "p1", OldTeam: "BLUE", NewTeam: "RED"}
+ev := newTeamChangeEvent("raw", EventSourceStdout, now, m)
+if ev.Type != EventTypeTeamChange {
+t.Fatalf("unexpected event type %q", ev.Type)
+}
+if ev.Slot != "0" || ev.IP != "10.0.0.1" || ev.Name != "p1" || ev.OldTeam != "BLUE" || ev.NewTeam != "RED" {
+t.Fatalf("event fields mismatch: %+v", ev)
+}
+}

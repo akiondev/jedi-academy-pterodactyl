@@ -128,9 +128,8 @@ Auto-updating upstream TaystJK engine: yes (rebuilt and republished when upstrea
 - Allows switching to a manually uploaded alternative dedicated server binary through `SERVER_BINARY` (with `TAYSTJK_AUTO_UPDATE_BINARY=false`)
 - Supports lightweight runtime addons from `/home/container/addons` using top-level `.sh` and `.py` scripts executed alphabetically before normal startup
 - Syncs `ADDON_README.md` and `ADDON_README_ADVANCED.md` automatically into `/home/container/addons/docs`
-- Ships a managed `checkserverstatus` helper (toggle via `addons.checkserverstatus_enabled` in `jka-runtime.json`) that is refreshed from the image and can be run from the Pterodactyl console
-- Ships addon examples in `/home/container/addons/examples`, including a Python RCON announcer template that server owners can copy into `/home/container/addons` when they want to enable it
-- Optional anti-VPN supervision using online API checks with cache, allowlist, structured logging and weighted decisions
+- Ships managed default addons (Python announcer, event-driven live team announcer, event-driven chatlogger) in `/home/container/addons/defaults`, all disabled by default — enable an addon by editing its own `*.config.json` file
+- Optional anti-VPN supervision using online API checks with cache, allowlist, structured logging and weighted decisions; PASS and BLOCKED announcements are broadcast to chat by default
 
 ## Managed vs manual paths
 
@@ -160,7 +159,7 @@ The anti-VPN feature is designed specifically for VPN / hosting / non-residentia
 
 - Runtime component: compiled Go binary inside the Docker image
 - Detection inputs: `proxycheck.io`, `ipapi.is`, `IPQualityScore`, `IPLocate`, `IPHub`, and optionally `vpnapi.io`
-- Runtime behavior: captures join events from live server stdout while also watching the resolved active server log path, caches decisions locally, writes a dedicated audit trail, and can log, broadcast, or block based on score
+- Runtime behavior: captures join events from live server stdout/stderr, caches decisions locally, writes a dedicated audit trail (allow rows included by default via `anti_vpn.audit_allow=true`), and broadcasts both PASS and BLOCKED chat announcements by default (`anti_vpn.broadcast.mode = "pass-and-block"`)
 - Safety defaults: external API failures do not stop server startup and do not hard-block players by themselves
 
 Read [docs/anti-vpn.md](docs/anti-vpn.md) for the full operating guide.
@@ -176,10 +175,10 @@ This repository also includes a lightweight addon loader for self-hosted Pteroda
 - Runtime behavior: each top-level user addon runs before normal managed server startup and is wrapped in the configured addon timeout
 - Safety model: best-effort by default, with optional strict mode and per-addon timeouts
 - Built-in addon docs: synced into `/home/container/addons/docs`
-- Bundled examples: synced into `/home/container/addons/examples`, kept up to date by the image, and not executed until copied into the top-level addon directory
-- Managed defaults: synced into `/home/container/addons/defaults` and handled by dedicated runtime logic rather than the top-level user addon loader
-- Managed `checkserverstatus`: refreshed from `/home/container/addons/defaults`, installed into `/home/container/bin`, available from the Pterodactyl console through the runtime bridge, and controlled by `addons.checkserverstatus_enabled` in `jka-runtime.json`
-- Managed `chatlogger`: refreshed from `/home/container/addons/defaults`, controlled by `addons.chatlogger_enabled` in `jka-runtime.json`, follows the resolved active server log path, and writes clean daily player chat logs into `/home/container/chatlogs`
+- Managed default addons: synced into `/home/container/addons/defaults` (and `/home/container/addons/defaults/events`), refreshed by the image, and disabled by default. Each addon has its own `*.config.json` with `"enabled": false`; flip the flag to `true` to enable it. The addon loader never overwrites operator edits to those config files.
+- Default Python announcer: `defaults/20-python-announcer.py` (+ `20-python-announcer.config.json`)
+- Default event-driven live team announcer: `defaults/events/30-live-team-announcer.py` (consumes `team_change` NDJSON events from the supervisor; never tails `server.log` or live-output)
+- Default event-driven chatlogger: `defaults/events/40-chatlogger.py` (consumes `chat_message` NDJSON events; writes daily logs into `/home/container/chatlogs`)
 - Managed server settings: the runtime publishes effective values into `/home/container/.runtime/taystjk-effective.env` and selected non-sensitive values into `.json` for addons and admin utilities
 - server.cfg ownership: the runtime never writes managed cvars (hostname, MOTD, maxclients, gametype, rconpassword) into your `server.cfg` from panel variables. Edit your own `server.cfg` to set them.
 - Runtime image addon baseline: the official image ships `python3`, `pip`, `venv`, `sqlite3`, `curl`, `wget`, `jq`, `git`, `rsync`, `procps`, `tar`, and `unzip`

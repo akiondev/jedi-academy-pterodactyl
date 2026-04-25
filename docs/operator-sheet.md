@@ -45,9 +45,12 @@ A start is **godkänd** when the console reaches
   file from the shipped template on first start and refreshes
   `jka-runtime.example.json` next to it on every start. The
   user-owned file is never overwritten. Edit it to enable the anti-VPN
-  supervisor, the RCON guard, addons, the `chatlogger`/`checkserverstatus`
-  helpers, the live-output mirror, debug startup, and the optional
+  supervisor, the RCON guard, addons, the live-output mirror, debug
+  startup, and the optional
   `server.fs_game`/`server.config`/`server.log_filename` overrides.
+  Per-addon defaults (Python announcer, event-driven live team
+  announcer, event-driven chatlogger) are configured by editing each
+  addon's own `*.config.json` file under `/home/container/addons/defaults/`.
 - **server.cfg ownership:** the runtime never writes managed cvars
   (`sv_hostname`, `g_motd`, `sv_maxclients`, `g_gametype`, `rconpassword`)
   into `server.cfg` from panel variables. Set them in your own

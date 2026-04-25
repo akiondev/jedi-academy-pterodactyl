@@ -1,5 +1,5 @@
 {
-  "enabled": true,
+  "enabled": false,
   "startup_delay_seconds": 60,
   "interval_seconds": 900,
   "rcon_host": "127.0.0.1",
