@@ -84,7 +84,7 @@ The egg exposes only four panel variables. Everything else is configured through
 
 Behavior switches that used to live in the egg (anti-VPN, RCON guard, addons, event bus, hostname/MOTD/maxclients/gametype/rconpassword, debug, live-output mirror, FS_GAME_MOD, SERVER_CONFIG, SERVER_LOG_FILENAME, server.cfg overrides, addon enable flags, etc.) now live in `/home/container/config/jka-runtime.json`. Provider API keys must be written into that file by the server owner; they are no longer accepted as panel variables.
 
-The runtime never overwrites an existing `jka-runtime.json`; an `jka-runtime.example.json` template is refreshed alongside it on every start so you can compare against the latest shipped defaults.
+The runtime never overwrites an existing `jka-runtime.json`; the canonical schema is documented in `docs/addons/ADDON_README.md`.
 
 ## Manual alternatives
 
@@ -175,10 +175,10 @@ This repository also includes a lightweight addon loader for self-hosted Pteroda
 - Runtime behavior: each top-level user addon runs before normal managed server startup and is wrapped in the configured addon timeout
 - Safety model: best-effort by default, with optional strict mode and per-addon timeouts
 - Built-in addon docs: synced into `/home/container/addons/docs`
-- Managed default addons: synced into `/home/container/addons/defaults` (and `/home/container/addons/defaults/events`), refreshed by the image, and disabled by default. Each addon has its own `*.config.json` with `"enabled": false`; flip the flag to `true` to enable it. The addon loader never overwrites operator edits to those config files.
-- Default Python announcer: `defaults/20-python-announcer.py` (+ `20-python-announcer.config.json`)
-- Default event-driven live team announcer: `defaults/events/30-live-team-announcer.py` (consumes `team_change` NDJSON events from the supervisor; never tails `server.log` or live-output)
-- Default event-driven chatlogger: `defaults/events/40-chatlogger.py` (consumes `chat_message` NDJSON events; writes daily logs into `/home/container/chatlogs`)
+- Managed default addons: synced into `/home/container/addons/defaults`, refreshed by the image, and disabled by default. Per-addon enable/disable lives in the central `/home/container/config/jka-addons.json` file (see `docs/addons/ADDON_README.md`); flip a `"enabled": true` flag there to enable an addon. The runtime never overwrites this file once it exists.
+- Default Python announcer: `defaults/announcer.py` (`announcer` entry in `jka-addons.json`)
+- Default event-driven live team announcer: `defaults/live-team-announcer.py` (consumes `team_change` NDJSON events from the supervisor; never tails `server.log` or live-output)
+- Default event-driven chatlogger: `defaults/chatlogger.py` (consumes `chat_message` NDJSON events; writes daily logs into `/home/container/chatlogs`)
 - Managed server settings: the runtime publishes effective values into `/home/container/.runtime/taystjk-effective.env` and selected non-sensitive values into `.json` for addons and admin utilities
 - server.cfg ownership: the runtime never writes managed cvars (hostname, MOTD, maxclients, gametype, rconpassword) into your `server.cfg` from panel variables. Edit your own `server.cfg` to set them.
 - Runtime image addon baseline: the official image ships `python3`, `pip`, `venv`, `sqlite3`, `curl`, `wget`, `jq`, `git`, `rsync`, `procps`, `tar`, and `unzip`

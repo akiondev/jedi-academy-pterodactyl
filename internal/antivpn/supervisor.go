@@ -244,7 +244,8 @@ func (s *Supervisor) Run(ctx context.Context, serverCommand []string) error {
 		"live_output_enabled", s.liveFeed != nil,
 		"rcon_guard_enabled", s.cfg.RconGuard.Enabled,
 		"event_bus_enabled", s.cfg.AddonRunner.Enabled,
-		"event_bus_addons_dir", s.cfg.AddonRunner.AddonsDir,
+		"event_bus_defaults_dir", s.cfg.AddonRunner.DefaultsDir,
+		"event_bus_config_path", s.cfg.AddonRunner.ConfigPath,
 		"event_bus_buffer_size", s.cfg.AddonRunner.BufferSize,
 	)
 

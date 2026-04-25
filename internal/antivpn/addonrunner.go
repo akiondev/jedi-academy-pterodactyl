@@ -3,6 +3,7 @@ package antivpn
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -26,12 +27,18 @@ type AddonRunnerConfig struct {
 	// built-in modules but never spawns external addon child
 	// processes.
 	Enabled bool
-	// AddonsDir is the directory scanned for executable event-driven
-	// addons. Each top-level `.sh` / `.py` file is launched once at
-	// supervisor startup and receives parsed events as NDJSON on
-	// stdin. The legacy run-once startup helpers in /home/container/
-	// addons are NOT scanned here.
-	AddonsDir string
+	// DefaultsDir is the directory containing bundled default addon
+	// scripts (typically /home/container/addons/defaults). The
+	// supervisor never scans this directory blindly; it iterates the
+	// "addons" map in ConfigPath and resolves each enabled addon's
+	// "script" field relative to this directory.
+	DefaultsDir string
+	// ConfigPath is the absolute path to /home/container/config/
+	// jka-addons.json. The runner reads the file at Start() time;
+	// missing or invalid files result in zero addons being launched
+	// (and a warning being logged) rather than a fatal error so the
+	// supervisor still starts.
+	ConfigPath string
 	// BufferSize is the per-handler event-bus channel capacity. When
 	// an addon stops reading its stdin, events queued for that addon
 	// are bounded by this value.
@@ -73,6 +80,15 @@ type runningAddon struct {
 	exited      chan struct{}
 }
 
+// addonSpec is a single entry resolved from jka-addons.json. Only
+// enabled addons whose "type" is "event" are launched by the
+// supervisor; scheduled-type addons are owned by the shell layer.
+type addonSpec struct {
+	Name       string
+	Path       string
+	ConfigJSON []byte
+}
+
 // NewAddonRunner constructs an addon runner. It does not yet spawn any
 // child processes; call Start with a dispatcher to begin.
 func NewAddonRunner(cfg AddonRunnerConfig, logger *slog.Logger) *AddonRunner {
@@ -82,10 +98,11 @@ func NewAddonRunner(cfg AddonRunnerConfig, logger *slog.Logger) *AddonRunner {
 	}
 }
 
-// Start scans the configured addons directory and launches every
-// matching addon as a child process subscribed to the dispatcher. It
-// returns nil if event-driven addons are disabled or the directory
-// does not exist; this is intentional so the supervisor still starts
+// Start reads the jka-addons.json file at ConfigPath, picks every
+// enabled addon whose "type" is "event", and launches each one as a
+// child process subscribed to the dispatcher. It returns nil if event-
+// driven addons are disabled or no enabled event addons are
+// configured; this is intentional so the supervisor still starts
 // cleanly on installs that do not use addons.
 func (r *AddonRunner) Start(ctx context.Context, dispatcher *EventDispatcher) error {
 	if !r.cfg.Enabled {
@@ -97,82 +114,146 @@ func (r *AddonRunner) Start(ctx context.Context, dispatcher *EventDispatcher) er
 	if dispatcher == nil {
 		return errors.New("addon runner requires a non-nil dispatcher")
 	}
-	if strings.TrimSpace(r.cfg.AddonsDir) == "" {
-		return nil
-	}
 
-	entries, err := listAddonScripts(r.cfg.AddonsDir)
+	specs, err := loadEnabledEventAddons(r.cfg.ConfigPath, r.cfg.DefaultsDir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			if r.logger != nil {
-				r.logger.Info("event addon directory not present; nothing to launch", "dir", r.cfg.AddonsDir)
+				r.logger.Info("jka-addons.json not present; nothing to launch", "path", r.cfg.ConfigPath)
 			}
 			return nil
 		}
-		return fmt.Errorf("scan event addon directory %q: %w", r.cfg.AddonsDir, err)
+		if r.logger != nil {
+			r.logger.Warn("failed to load jka-addons.json; skipping event addons", "path", r.cfg.ConfigPath, "error", err)
+		}
+		return nil
 	}
 
 	r.mu.Lock()
 	r.dispatcher = dispatcher
 	r.mu.Unlock()
 
-	if len(entries) == 0 {
+	if len(specs) == 0 {
 		if r.logger != nil {
-			r.logger.Info("no event addons present", "dir", r.cfg.AddonsDir)
+			r.logger.Info("no enabled event addons in config", "path", r.cfg.ConfigPath)
 		}
 		return nil
 	}
 
-	for _, path := range entries {
-		if err := r.launch(ctx, path); err != nil {
+	for _, spec := range specs {
+		if err := r.launch(ctx, spec); err != nil {
 			if r.logger != nil {
-				r.logger.Warn("event addon failed to launch", "path", path, "error", err)
+				r.logger.Warn("event addon failed to launch", "name", spec.Name, "path", spec.Path, "error", err)
 			}
 		}
 	}
 	return nil
 }
 
-// listAddonScripts returns the absolute paths of every executable
-// addon script in dir, sorted lexicographically. The set of supported
-// suffixes is intentionally narrow (`.sh`, `.py`) and matches the
-// existing run-once addon loader convention so operators only have to
-// learn one rule.
-func listAddonScripts(dir string) ([]string, error) {
-	entries, err := os.ReadDir(dir)
+// loadEnabledEventAddons parses the central jka-addons.json file and
+// returns one addonSpec per enabled "event"-type addon. The script
+// field of each entry is resolved relative to defaultsDir. A safety
+// check rejects scripts that escape the defaults directory.
+func loadEnabledEventAddons(configPath, defaultsDir string) ([]addonSpec, error) {
+	if strings.TrimSpace(configPath) == "" {
+		return nil, nil
+	}
+	raw, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		if strings.HasPrefix(name, ".") {
-			continue
-		}
-		switch strings.ToLower(filepath.Ext(name)) {
-		case ".sh", ".py":
-		default:
-			continue
-		}
-		if strings.HasSuffix(name, ".disable") {
-			continue
-		}
-		out = append(out, filepath.Join(dir, name))
+	var doc struct {
+		Addons map[string]json.RawMessage `json:"addons"`
 	}
-	sort.Strings(out)
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", configPath, err)
+	}
+
+	type addonOrder struct {
+		name  string
+		order int
+	}
+	ordering := make([]addonOrder, 0, len(doc.Addons))
+	specs := make(map[string]addonSpec, len(doc.Addons))
+
+	defaultsAbs, err := filepath.Abs(strings.TrimSpace(defaultsDir))
+	if err != nil {
+		return nil, fmt.Errorf("resolve defaults dir: %w", err)
+	}
+
+	for name, rawSection := range doc.Addons {
+		var section struct {
+			Enabled *bool  `json:"enabled"`
+			Type    string `json:"type"`
+			Script  string `json:"script"`
+			Order   *int   `json:"order"`
+		}
+		if err := json.Unmarshal(rawSection, &section); err != nil {
+			return nil, fmt.Errorf("parse addon %q: %w", name, err)
+		}
+		if section.Enabled == nil || !*section.Enabled {
+			continue
+		}
+		if strings.ToLower(strings.TrimSpace(section.Type)) != "event" {
+			continue
+		}
+		script := strings.TrimSpace(section.Script)
+		if script == "" {
+			return nil, fmt.Errorf("addon %q is enabled but has no script", name)
+		}
+		// Reject any traversal: scripts must be a simple relative
+		// name inside DefaultsDir.
+		if filepath.IsAbs(script) || strings.Contains(script, "..") {
+			return nil, fmt.Errorf("addon %q script %q must be a relative name inside the defaults directory", name, script)
+		}
+		full := filepath.Join(defaultsAbs, script)
+		// Ensure the resolved path is still inside DefaultsDir.
+		if rel, err := filepath.Rel(defaultsAbs, full); err != nil || strings.HasPrefix(rel, "..") {
+			return nil, fmt.Errorf("addon %q script %q escapes defaults dir", name, script)
+		}
+		ord := 0
+		if section.Order != nil {
+			ord = *section.Order
+		}
+		ordering = append(ordering, addonOrder{name: name, order: ord})
+		specs[name] = addonSpec{
+			Name:       name,
+			Path:       full,
+			ConfigJSON: append([]byte(nil), rawSection...),
+		}
+	}
+
+	sort.SliceStable(ordering, func(i, j int) bool {
+		if ordering[i].order != ordering[j].order {
+			return ordering[i].order < ordering[j].order
+		}
+		return ordering[i].name < ordering[j].name
+	})
+
+	out := make([]addonSpec, 0, len(ordering))
+	for _, e := range ordering {
+		out = append(out, specs[e.name])
+	}
 	return out, nil
 }
 
-func (r *AddonRunner) launch(ctx context.Context, path string) error {
+func (r *AddonRunner) launch(ctx context.Context, spec addonSpec) error {
+	if _, err := os.Stat(spec.Path); err != nil {
+		return fmt.Errorf("addon script not found: %w", err)
+	}
 	addonCtx, cancel := context.WithCancel(ctx)
 
-	args := addonInvocation(path)
+	args := addonInvocation(spec.Path)
 	cmd := exec.CommandContext(addonCtx, args[0], args[1:]...)
 	cmd.Dir = "/home/container"
-	cmd.Env = append(os.Environ(), "JKA_ADDON_EVENT_BUS=stdin-ndjson")
+	cmd.Env = append(os.Environ(),
+		"JKA_ADDON_EVENT_BUS=stdin-ndjson",
+		"JKA_ADDON_NAME="+spec.Name,
+		"JKA_ADDON_CONFIG_JSON="+string(spec.ConfigJSON),
+	)
+	if strings.TrimSpace(r.cfg.ConfigPath) != "" {
+		cmd.Env = append(cmd.Env, "JKA_ADDONS_CONFIG_PATH="+r.cfg.ConfigPath)
+	}
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -199,10 +280,9 @@ func (r *AddonRunner) launch(ctx context.Context, path string) error {
 		return fmt.Errorf("start addon: %w", err)
 	}
 
-	name := filepath.Base(path)
 	addon := &runningAddon{
-		name:   name,
-		path:   path,
+		name:   spec.Name,
+		path:   spec.Path,
 		cmd:    cmd,
 		stdin:  stdin,
 		logger: r.logger,
@@ -224,7 +304,7 @@ func (r *AddonRunner) launch(ctx context.Context, path string) error {
 	}
 
 	if r.logger != nil {
-		r.logger.Info("event addon started", "name", name, "pid", cmd.Process.Pid)
+		r.logger.Info("event addon started", "name", spec.Name, "path", spec.Path, "pid", cmd.Process.Pid)
 	}
 	return nil
 }

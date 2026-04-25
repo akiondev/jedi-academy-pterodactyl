@@ -42,15 +42,16 @@ A start is **godkänd** when the console reaches
     overwrite `/home/container/taystjkded.x86_64` on every start)
 - **Behavior config:** all other behavior lives in
   `/home/container/config/jka-runtime.json`. The runtime creates this
-  file from the shipped template on first start and refreshes
-  `jka-runtime.example.json` next to it on every start. The
-  user-owned file is never overwritten. Edit it to enable the anti-VPN
-  supervisor, the RCON guard, addons, the live-output mirror, debug
-  startup, and the optional
-  `server.fs_game`/`server.config`/`server.log_filename` overrides.
-  Per-addon defaults (Python announcer, event-driven live team
-  announcer, event-driven chatlogger) are configured by editing each
-  addon's own `*.config.json` file under `/home/container/addons/defaults/`.
+  file from the shipped template on first start; the user-owned file
+  is never overwritten. Edit it to enable the anti-VPN supervisor,
+  the RCON guard, addons, the live-output mirror, debug startup, and
+  the optional `server.fs_game`/`server.config`/`server.log_filename`
+  overrides.
+- **Addons config:** per-addon enable/disable and addon-specific
+  options live in `/home/container/config/jka-addons.json`. The
+  runtime creates this file on first start and never overwrites it.
+  See `docs/addons/ADDON_README.md` (synced to
+  `/home/container/addons/docs/ADDON_README.md`) for the full schema.
 - **server.cfg ownership:** the runtime never writes managed cvars
   (`sv_hostname`, `g_motd`, `sv_maxclients`, `g_gametype`, `rconpassword`)
   into `server.cfg` from panel variables. Set them in your own

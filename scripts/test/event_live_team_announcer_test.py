@@ -23,7 +23,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-ADDON_PATH = REPO_ROOT / "bundled-addons" / "defaults" / "events" / "30-live-team-announcer.py"
+ADDON_PATH = REPO_ROOT / "bundled-addons" / "defaults" / "live-team-announcer.py"
 
 
 class _UDPServer:
@@ -61,18 +61,18 @@ class LiveTeamAnnouncerTest(unittest.TestCase):
             (home_dir / "logs").mkdir(parents=True)
             (home_dir / ".runtime").mkdir(parents=True)
 
-            # Copy the addon and its config into the test sandbox so the
-            # addon's relative-path lookup for *.config.json finds the
-            # test-supplied config file.
-            sandbox_addon = tmp_path / "30-live-team-announcer.py"
+            # Copy the addon into the test sandbox; the addon now
+            # reads its config from the JKA_ADDON_CONFIG_JSON env var
+            # so no config file needs to be staged on disk.
+            sandbox_addon = tmp_path / "live-team-announcer.py"
             sandbox_addon.write_text(ADDON_PATH.read_text(encoding="utf-8"), encoding="utf-8")
-            cfg_path = sandbox_addon.with_suffix(".config.json")
-            cfg_path.write_text(json.dumps(config), encoding="utf-8")
 
             env = os.environ.copy()
             env.update({
                 "HOME": str(home_dir),
                 "JKA_LIVE_TEAM_ANNOUNCER_HOME": str(home_dir),
+                "JKA_ADDON_NAME": "live_team_announcer",
+                "JKA_ADDON_CONFIG_JSON": json.dumps(config),
             })
             env.update(env_overrides)
 

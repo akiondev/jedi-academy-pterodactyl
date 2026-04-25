@@ -12,13 +12,11 @@
 #
 # Behavior:
 #   * Ensures /home/container/config exists.
-#   * Writes a readable example template at
-#     /home/container/config/jka-runtime.example.json on every boot so
-#     operators can compare the current shipped defaults against their
-#     own copy.
 #   * Creates /home/container/config/jka-runtime.json from the template
 #     ONLY when the file is missing. An existing user-owned file is
-#     never overwritten.
+#     never overwritten. No example file is created next to it: the
+#     canonical schema/defaults are documented in
+#     /home/container/addons/docs/ADDON_README.md.
 #   * Reads values through `jq` and exports legacy env names so the
 #     rest of the runtime layer keeps working without per-script
 #     rewrites.
@@ -30,10 +28,9 @@
 
 JKA_RUNTIME_CONFIG_DIR="${JKA_RUNTIME_CONFIG_DIR:-/home/container/config}"
 JKA_RUNTIME_CONFIG_PATH="${JKA_RUNTIME_CONFIG_PATH:-${JKA_RUNTIME_CONFIG_DIR}/jka-runtime.json}"
-JKA_RUNTIME_CONFIG_EXAMPLE_PATH="${JKA_RUNTIME_CONFIG_EXAMPLE_PATH:-${JKA_RUNTIME_CONFIG_DIR}/jka-runtime.example.json}"
 
 # jka_runtime_config_template emits the canonical default JSON config.
-# Keep this in sync with docs/operator-sheet.md.
+# Keep this in sync with docs/addons/ADDON_README.md.
 jka_runtime_config_template() {
   cat <<'JSON'
 {
@@ -89,8 +86,6 @@ jka_runtime_config_template() {
   "addons": {
     "enabled": true,
     "directory": "/home/container/addons",
-    "event_addons_dir": "/home/container/addons/events",
-    "chatlogger_enabled": false,
     "strict": false,
     "timeout_seconds": 30,
     "log_output": true,
@@ -149,14 +144,10 @@ load_runtime_json_config() {
 
   mkdir -p "$JKA_RUNTIME_CONFIG_DIR"
 
-  # Always refresh the example file so operators can diff against the
-  # latest shipped defaults. The example file is image-managed and
-  # safe to overwrite.
-  jka_runtime_config_template > "${JKA_RUNTIME_CONFIG_EXAMPLE_PATH}.tmp"
-  mv -f "${JKA_RUNTIME_CONFIG_EXAMPLE_PATH}.tmp" "$JKA_RUNTIME_CONFIG_EXAMPLE_PATH"
-
   # Materialise the user file from the template only when missing so
-  # the operator's edits are preserved across container restarts.
+  # the operator's edits are preserved across container restarts. No
+  # ``jka-runtime.example.json`` is created next to it: the canonical
+  # schema is documented in /home/container/addons/docs/ADDON_README.md.
   if [[ ! -f "$JKA_RUNTIME_CONFIG_PATH" ]]; then
     info "Creating default runtime config at ${JKA_RUNTIME_CONFIG_PATH}"
     jka_runtime_config_template > "$JKA_RUNTIME_CONFIG_PATH"
@@ -164,6 +155,15 @@ load_runtime_json_config() {
 
   if ! jq -e . "$JKA_RUNTIME_CONFIG_PATH" >/dev/null 2>&1; then
     fail "Runtime config at ${JKA_RUNTIME_CONFIG_PATH} is not valid JSON"
+  fi
+
+  # Best-effort: remove any stale jka-runtime.example.json that an
+  # older image revision may have left in the operator volume. We
+  # never delete the user-owned file and this branch is a no-op when
+  # the example file is absent.
+  local stale_example="${JKA_RUNTIME_CONFIG_DIR}/jka-runtime.example.json"
+  if [[ -f "$stale_example" ]]; then
+    rm -f "$stale_example" 2>/dev/null || true
   fi
 
   JKA_RUNTIME_CONFIG_LOADED=1
@@ -244,11 +244,11 @@ load_runtime_json_config() {
   fi
   export RCON_GUARD_ENABLED RCON_GUARD_ACTION RCON_GUARD_BROADCAST RCON_GUARD_IGNORE_HOSTS
 
-  # Addons.
+  # Addons (runtime-wide settings only; per-addon enabled/config lives
+  # in /home/container/config/jka-addons.json and is loaded by
+  # load_addons_json_config in jka_addon_loader.sh).
   ADDONS_ENABLED="$(jka_runtime_config_query_or '.addons.enabled' 'true')"
   ADDONS_DIR="$(jka_runtime_config_query_or '.addons.directory' '/home/container/addons')"
-  ADDON_EVENT_ADDONS_DIR="$(jka_runtime_config_query_or '.addons.event_addons_dir' "${ADDONS_DIR}/events")"
-  ADDON_CHATLOGGER_ENABLED="$(jka_runtime_config_query_or '.addons.chatlogger_enabled' 'false')"
   ADDONS_STRICT="$(jka_runtime_config_query_or '.addons.strict' 'false')"
   ADDONS_TIMEOUT_SECONDS="$(jka_runtime_config_query_or '.addons.timeout_seconds' '30')"
   ADDONS_LOG_OUTPUT="$(jka_runtime_config_query_or '.addons.log_output' 'true')"
@@ -256,8 +256,7 @@ load_runtime_json_config() {
   ADDON_EVENT_BUS_BUFFER_SIZE="$(jka_runtime_config_query_or '.addons.event_bus.buffer_size' '1000')"
   ADDON_EVENT_BUS_DROP_POLICY="$(jka_runtime_config_query_or '.addons.event_bus.drop_policy' 'drop-oldest')"
   export \
-    ADDONS_ENABLED ADDONS_DIR ADDON_EVENT_ADDONS_DIR \
-    ADDON_CHATLOGGER_ENABLED \
+    ADDONS_ENABLED ADDONS_DIR \
     ADDONS_STRICT ADDONS_TIMEOUT_SECONDS ADDONS_LOG_OUTPUT \
     ADDON_EVENT_BUS_ENABLED ADDON_EVENT_BUS_BUFFER_SIZE ADDON_EVENT_BUS_DROP_POLICY
 }

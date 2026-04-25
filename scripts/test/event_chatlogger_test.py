@@ -2,7 +2,7 @@
 """
 Smoke test for the event-driven chatlogger addon.
 
-Spawns ``bundled-addons/defaults/events/40-chatlogger.py`` with a
+Spawns ``bundled-addons/defaults/chatlogger.py`` with a
 sandboxed ``HOME`` (so it writes into a tmp dir instead of
 ``/home/container/chatlogs``), pipes a small batch of NDJSON events
 into stdin and asserts the resulting daily chat log contains the
@@ -29,7 +29,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-ADDON_PATH = REPO_ROOT / "bundled-addons" / "defaults" / "events" / "40-chatlogger.py"
+ADDON_PATH = REPO_ROOT / "bundled-addons" / "defaults" / "chatlogger.py"
 
 
 def _ndjson(*events: dict) -> str:

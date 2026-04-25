@@ -270,7 +270,7 @@ print_paths() {
   kv "Addons dir" "$ADDONS_DIR"
   kv "Addon docs" "$ADDON_DOCS_DIR"
   kv "Addon defaults" "$ADDON_DEFAULTS_DIR"
-  kv "Event addons dir" "$ADDON_EVENT_ADDONS_DIR"
+  kv "Addons config" "$JKA_ADDONS_CONFIG_PATH"
   kv "Runtime env" "/home/container/.runtime/taystjk-effective.env"
   kv "Runtime json" "/home/container/.runtime/taystjk-effective.json"
   kv "Server log" "$TAYSTJK_ACTIVE_SERVER_LOG_PATH"
@@ -308,7 +308,6 @@ print_debug_inventory() {
   kv "Addon files" "$(list_dir_files "$ADDONS_DIR")"
   kv "Addon docs" "$(list_dir_files "$ADDON_DOCS_DIR")"
   kv "Addon defaults" "$(list_dir_files "$ADDON_DEFAULTS_DIR")"
-  kv "Event addons" "$(list_dir_files "$ADDON_EVENT_ADDONS_DIR")"
 }
 
 print_launch_decision() {
@@ -386,7 +385,8 @@ fi
 sync_runtime_files
 sync_addon_docs
 sync_managed_addon_defaults
-sync_managed_addon_default_configs
+load_addons_json_config
+cleanup_legacy_addon_paths
 cleanup_stale_live_output_files
 determine_runtime_ownership
 
@@ -413,8 +413,6 @@ validate_selected_runtime_paths
 
 resolve_effective_server_settings "/home/container/${active_game_dir}/${SERVER_CONFIG}"
 install_managed_python_announcer_helper
-install_managed_live_team_announcer_helper
-install_managed_chatlogger_helper
 install_managed_rcon_live_guard_helper
 
 if [[ "$#" -gt 0 ]]; then

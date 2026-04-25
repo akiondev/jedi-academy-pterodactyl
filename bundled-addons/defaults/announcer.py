@@ -1,16 +1,24 @@
 #!/usr/bin/env python3
 """
-Bundled example addon template: scheduled Python announcer.
+Bundled default addon: scheduled Python announcer.
 
-This script is meant to be copied into ``/home/container/addons`` and then
-read and modified by server owners. When the addon loader executes it during
-startup, the script launches a detached background worker and exits quickly
-so the normal server startup can continue.
+This script is launched by the runtime layer when
+``addons.announcer.enabled = true`` in
+``/home/container/config/jka-addons.json``. The runtime passes the
+``addons.announcer`` JSON section as the ``JKA_ADDON_CONFIG_JSON``
+environment variable so the addon does not need its own
+``*.config.json`` file. When the addon loader executes it during
+startup, the script launches a detached background worker and exits
+quickly so the normal server startup can continue.
 
 The background worker reads:
 
-* ``20-python-announcer.config.json`` -- runtime configuration
-* ``20-python-announcer.messages.txt`` -- rotated message list
+* ``JKA_ADDON_CONFIG_JSON`` -- runtime configuration JSON (passed by
+  the runtime layer). When absent the script falls back to the
+  ``addons.announcer`` section in ``jka-addons.json`` directly so
+  ``python3 announcer.py`` keeps working from a shell.
+* ``announcer.messages.txt`` -- rotated message list living next to
+  this script.
 
 It then sends announcements over local RCON. The default RCON command is
 ``svsay`` (server announcement, no name prefix). You can switch to ``say``
@@ -76,8 +84,24 @@ except ImportError:  # pragma: no cover - very old runtimes only
 
 HOME_DIR = Path("/home/container")
 SCRIPT_PATH = Path(__file__).resolve()
-CONFIG_PATH = SCRIPT_PATH.with_suffix(".config.json")
-DEFAULT_MESSAGES_PATH = SCRIPT_PATH.with_suffix(".messages.txt")
+# The addon's runtime configuration is supplied by the runtime layer
+# through the ``JKA_ADDON_CONFIG_JSON`` environment variable. The value
+# is the JSON object copied from
+# ``/home/container/config/jka-addons.json`` -> ``addons.<name>``. This
+# replaces the legacy ``*.config.json`` file that used to live next to
+# this script. ``ADDONS_CONFIG_PATH`` is the centralised file the
+# runtime layer reads from; it is consulted only as a debug fallback
+# when ``JKA_ADDON_CONFIG_JSON`` is not provided.
+ADDON_CONFIG_ENV = "JKA_ADDON_CONFIG_JSON"
+ADDON_NAME_ENV = "JKA_ADDON_NAME"
+ADDONS_CONFIG_PATH = Path(
+    os.environ.get(
+        "JKA_ADDONS_CONFIG_PATH",
+        "/home/container/config/jka-addons.json",
+    )
+)
+DEFAULT_ADDON_NAME = "announcer"
+DEFAULT_MESSAGES_PATH = SCRIPT_PATH.with_name("announcer.messages.txt")
 LOGS_DIR = HOME_DIR / "logs"
 DEFAULT_LOG_PATH = LOGS_DIR / "bundled-python-announcer.log"
 PID_PATH = LOGS_DIR / "bundled-python-announcer.pid"
@@ -277,21 +301,59 @@ def _resolve_timezone(raw: Any) -> _dt.tzinfo | None:
         return _dt.datetime.now().astimezone().tzinfo
 
 
+def _load_section_from_addons_file(name: str) -> dict[str, Any] | None:
+    """Best-effort fallback when ``JKA_ADDON_CONFIG_JSON`` is missing.
+
+    Reads the centralised ``jka-addons.json`` file and returns the
+    ``addons.<name>`` object. Used only by direct invocation; the
+    runtime layer normally passes the section as an env var.
+    """
+    try:
+        raw = ADDONS_CONFIG_PATH.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    addons = parsed.get("addons")
+    if not isinstance(addons, dict):
+        return None
+    section = addons.get(name)
+    if isinstance(section, dict):
+        return section
+    return None
+
+
 def load_config() -> dict[str, Any]:
     config = dict(DEFAULT_CONFIG)
 
-    if CONFIG_PATH.is_file():
+    raw_env = os.environ.get(ADDON_CONFIG_ENV, "")
+    loaded: dict[str, Any] | None = None
+    if raw_env.strip():
         try:
-            loaded = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError) as exc:
-            log(f"Failed to read config {CONFIG_PATH}: {exc}. Using defaults.")
+            parsed = json.loads(raw_env)
+        except json.JSONDecodeError as exc:
+            log(f"Failed to parse {ADDON_CONFIG_ENV}: {exc}. Using defaults.")
         else:
-            if isinstance(loaded, dict):
-                config.update(loaded)
+            if isinstance(parsed, dict):
+                loaded = parsed
             else:
-                log(f"Config file {CONFIG_PATH} does not contain a JSON object. Using defaults.")
-    else:
-        log(f"Config file not found at {CONFIG_PATH}. Using defaults.")
+                log(f"{ADDON_CONFIG_ENV} is not a JSON object. Using defaults.")
+
+    if loaded is None:
+        addon_name = os.environ.get(ADDON_NAME_ENV, DEFAULT_ADDON_NAME)
+        loaded = _load_section_from_addons_file(addon_name)
+        if loaded is None:
+            log(
+                "No addon config supplied via "
+                f"{ADDON_CONFIG_ENV} or {ADDONS_CONFIG_PATH}; using built-in defaults."
+            )
+
+    if isinstance(loaded, dict):
+        config.update(loaded)
 
     config["enabled"] = safe_bool(config.get("enabled", True), True)
     config["startup_delay_seconds"] = safe_int(config.get("startup_delay_seconds"), 60, 0)

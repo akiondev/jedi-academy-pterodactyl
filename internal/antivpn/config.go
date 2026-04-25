@@ -183,12 +183,14 @@ func LoadConfigFromEnv() (Config, error) {
 
 	// Event-driven addon runner. Defaults are tuned so a fresh install
 	// with no addon directory present is a no-op (Enabled=true but
-	// Start() returns gracefully when the directory is missing).
+	// Start() returns gracefully when no enabled event addons are
+	// configured in jka-addons.json).
 	cfg.AddonRunner = AddonRunnerConfig{
-		Enabled:    envBool("ADDON_EVENT_BUS_ENABLED", true),
-		AddonsDir:  envString("ADDON_EVENT_ADDONS_DIR", "/home/container/addons/events"),
-		BufferSize: envInt("ADDON_EVENT_BUS_BUFFER_SIZE", 1000),
-		DropPolicy: ParseEventDispatchPolicy(envString("ADDON_EVENT_BUS_DROP_POLICY", "drop-oldest")),
+		Enabled:     envBool("ADDON_EVENT_BUS_ENABLED", true),
+		DefaultsDir: envString("ADDON_DEFAULTS_DIR", "/home/container/addons/defaults"),
+		ConfigPath:  envString("JKA_ADDONS_CONFIG_PATH", "/home/container/config/jka-addons.json"),
+		BufferSize:  envInt("ADDON_EVENT_BUS_BUFFER_SIZE", 1000),
+		DropPolicy:  ParseEventDispatchPolicy(envString("ADDON_EVENT_BUS_DROP_POLICY", "drop-oldest")),
 	}
 
 	mode, err := parseMode(envString("ANTI_VPN_MODE", string(ModeBlock)))

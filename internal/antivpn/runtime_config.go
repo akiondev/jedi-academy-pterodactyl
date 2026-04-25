@@ -62,14 +62,12 @@ type jsonRuntimeConfig struct {
 		IgnoreHosts []string `json:"ignore_hosts"`
 	} `json:"rcon_guard"`
 	Addons struct {
-		Enabled                  *bool  `json:"enabled"`
-		Directory                string `json:"directory"`
-		EventAddonsDir           string `json:"event_addons_dir"`
-		ChatloggerEnabled        *bool  `json:"chatlogger_enabled"`
-		Strict                   *bool  `json:"strict"`
-		TimeoutSeconds           *int   `json:"timeout_seconds"`
-		LogOutput                *bool  `json:"log_output"`
-		EventBus                 struct {
+		Enabled        *bool  `json:"enabled"`
+		Directory      string `json:"directory"`
+		Strict         *bool  `json:"strict"`
+		TimeoutSeconds *int   `json:"timeout_seconds"`
+		LogOutput      *bool  `json:"log_output"`
+		EventBus       struct {
 			Enabled    *bool  `json:"enabled"`
 			BufferSize *int   `json:"buffer_size"`
 			DropPolicy string `json:"drop_policy"`
@@ -238,9 +236,6 @@ func applyJSONOverrides(cfg Config, jsonCfg *jsonRuntimeConfig) (Config, error) 
 	// Addons / event bus.
 	if jsonCfg.Addons.EventBus.Enabled != nil {
 		cfg.AddonRunner.Enabled = *jsonCfg.Addons.EventBus.Enabled
-	}
-	if v := strings.TrimSpace(jsonCfg.Addons.EventAddonsDir); v != "" {
-		cfg.AddonRunner.AddonsDir = v
 	}
 	if jsonCfg.Addons.EventBus.BufferSize != nil && *jsonCfg.Addons.EventBus.BufferSize > 0 {
 		cfg.AddonRunner.BufferSize = *jsonCfg.Addons.EventBus.BufferSize
