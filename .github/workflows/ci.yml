@@ -26,12 +26,6 @@ jobs:
       go_validate: ${{ steps.filter.outputs.go_validate }}
       runtime_validate: ${{ steps.filter.outputs.runtime_validate }}
       docker_taystjk_modern64: ${{ steps.filter.outputs.docker_taystjk_modern64 }}
-      docker_openjk_modern64: ${{ steps.filter.outputs.docker_openjk_modern64 }}
-      docker_openjk_legacy32: ${{ steps.filter.outputs.docker_openjk_legacy32 }}
-      docker_vanilla_legacy32: ${{ steps.filter.outputs.docker_vanilla_legacy32 }}
-      docker_ybeproxy_legacy32: ${{ steps.filter.outputs.docker_ybeproxy_legacy32 }}
-      docker_taystjk_legacy32: ${{ steps.filter.outputs.docker_taystjk_legacy32 }}
-      docker: ${{ steps.aggregate.outputs.docker }}
 
     steps:
       - name: Check out repository
@@ -66,77 +60,6 @@ jobs:
               - "docs/addon_readme.md"
               - "docs/addon_readme_advanced.md"
               - "go.mod"
-            docker_openjk_modern64:
-              - ".github/workflows/ci.yml"
-              - "docker/openjk-modern64/**"
-              - "image/openjk-modern64/runtime.json"
-              - "cmd/**"
-              - "internal/**"
-              - "scripts/**"
-              - "bundled-addons/**"
-              - "docs/addon_readme.md"
-              - "docs/addon_readme_advanced.md"
-              - "go.mod"
-            docker_openjk_legacy32:
-              - ".github/workflows/ci.yml"
-              - "docker/openjk-legacy32/**"
-              - "image/openjk-legacy32/runtime.json"
-              - "cmd/**"
-              - "internal/**"
-              - "scripts/**"
-              - "bundled-addons/**"
-              - "docs/addon_readme.md"
-              - "docs/addon_readme_advanced.md"
-              - "go.mod"
-            docker_vanilla_legacy32:
-              - ".github/workflows/ci.yml"
-              - "docker/vanilla-legacy32/**"
-              - "image/vanilla-legacy32/runtime.json"
-              - "cmd/**"
-              - "internal/**"
-              - "scripts/**"
-              - "bundled-addons/**"
-              - "docs/addon_readme.md"
-              - "docs/addon_readme_advanced.md"
-              - "go.mod"
-            docker_ybeproxy_legacy32:
-              - ".github/workflows/ci.yml"
-              - "docker/ybeproxy-legacy32/**"
-              - "image/ybeproxy-legacy32/runtime.json"
-              - "cmd/**"
-              - "internal/**"
-              - "scripts/**"
-              - "bundled-addons/**"
-              - "docs/addon_readme.md"
-              - "docs/addon_readme_advanced.md"
-              - "go.mod"
-            docker_taystjk_legacy32:
-              - ".github/workflows/ci.yml"
-              - "docker/taystjk-legacy32/**"
-              - "image/taystjk-legacy32/runtime.json"
-              - "cmd/**"
-              - "internal/**"
-              - "scripts/**"
-              - "bundled-addons/**"
-              - "docs/addon_readme.md"
-              - "docs/addon_readme_advanced.md"
-              - "go.mod"
-
-      - name: Aggregate docker flag
-        id: aggregate
-        env:
-          DOCKER_TAYSTJK_MODERN64: ${{ steps.filter.outputs.docker_taystjk_modern64 }}
-          DOCKER_OPENJK_MODERN64: ${{ steps.filter.outputs.docker_openjk_modern64 }}
-          DOCKER_OPENJK_LEGACY32: ${{ steps.filter.outputs.docker_openjk_legacy32 }}
-          DOCKER_VANILLA_LEGACY32: ${{ steps.filter.outputs.docker_vanilla_legacy32 }}
-          DOCKER_YBEPROXY_LEGACY32: ${{ steps.filter.outputs.docker_ybeproxy_legacy32 }}
-          DOCKER_TAYSTJK_LEGACY32: ${{ steps.filter.outputs.docker_taystjk_legacy32 }}
-        run: |
-          if [[ "${DOCKER_TAYSTJK_MODERN64}" == "true" || "${DOCKER_OPENJK_MODERN64}" == "true" || "${DOCKER_OPENJK_LEGACY32}" == "true" || "${DOCKER_VANILLA_LEGACY32}" == "true" || "${DOCKER_YBEPROXY_LEGACY32}" == "true" || "${DOCKER_TAYSTJK_LEGACY32}" == "true" ]]; then
-            echo "docker=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "docker=false" >> "$GITHUB_OUTPUT"
-          fi
 
   validate:
     name: Validate scripts and egg
@@ -157,7 +80,7 @@ jobs:
       - name: Decide whether runtime validation is required
         id: gate
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" || "${{ startsWith(github.ref, 'refs/tags/v') }}" == "true" || "${{ needs.changes.outputs.runtime_validate }}" == "true" || "${{ needs.changes.outputs.docker }}" == "true" ]]; then
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" || "${{ startsWith(github.ref, 'refs/tags/v') }}" == "true" || "${{ needs.changes.outputs.runtime_validate }}" == "true" || "${{ needs.changes.outputs.docker_taystjk_modern64 }}" == "true" ]]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
@@ -195,9 +118,6 @@ jobs:
           while IFS= read -r common_file; do
             shell_files+=("$common_file")
           done < <(find scripts/common -maxdepth 1 -type f -name '*.sh' | LC_ALL=C sort)
-          while IFS= read -r runtime_file; do
-            shell_files+=("$runtime_file")
-          done < <(find scripts/runtimes -type f -name '*.sh' | LC_ALL=C sort)
           for shell_file in "${shell_files[@]}"; do
             echo "bash -n ${shell_file}"
             bash -n "$shell_file"
@@ -282,89 +202,28 @@ jobs:
     needs:
       - changes
       - validate
-    if: github.event_name == 'pull_request' && needs.changes.outputs.docker == 'true'
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: taystjk-modern64
-            dockerfile: docker/taystjk-modern64/Dockerfile
-            cache_scope: taystjk-modern64-image
-          - target: openjk-modern64
-            dockerfile: docker/openjk-modern64/Dockerfile
-            cache_scope: openjk-modern64-image
-          - target: openjk-legacy32
-            dockerfile: docker/openjk-legacy32/Dockerfile
-            cache_scope: openjk-legacy32-image
-          - target: vanilla-legacy32
-            dockerfile: docker/vanilla-legacy32/Dockerfile
-            cache_scope: vanilla-legacy32-image
-          - target: ybeproxy-legacy32
-            dockerfile: docker/ybeproxy-legacy32/Dockerfile
-            cache_scope: ybeproxy-legacy32-image
-          - target: taystjk-legacy32
-            dockerfile: docker/taystjk-legacy32/Dockerfile
-            cache_scope: taystjk-legacy32-image
+    if: github.event_name == 'pull_request' && needs.changes.outputs.docker_taystjk_modern64 == 'true'
 
     steps:
-      - name: Decide if this matrix cell should run
-        id: gate
-        env:
-          EVENT: ${{ github.event_name }}
-          REF: ${{ github.ref }}
-          TARGET: ${{ matrix.target }}
-          DOCKER_TAYSTJK_MODERN64: ${{ needs.changes.outputs.docker_taystjk_modern64 }}
-          DOCKER_OPENJK_MODERN64: ${{ needs.changes.outputs.docker_openjk_modern64 }}
-          DOCKER_OPENJK_LEGACY32: ${{ needs.changes.outputs.docker_openjk_legacy32 }}
-          DOCKER_VANILLA_LEGACY32: ${{ needs.changes.outputs.docker_vanilla_legacy32 }}
-          DOCKER_YBEPROXY_LEGACY32: ${{ needs.changes.outputs.docker_ybeproxy_legacy32 }}
-          DOCKER_TAYSTJK_LEGACY32: ${{ needs.changes.outputs.docker_taystjk_legacy32 }}
-        run: |
-          set -euo pipefail
-          if [[ "$EVENT" == "workflow_dispatch" || "$REF" == refs/tags/v* ]]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          case "$TARGET" in
-            taystjk-modern64) flag="$DOCKER_TAYSTJK_MODERN64" ;;
-            openjk-modern64) flag="$DOCKER_OPENJK_MODERN64" ;;
-            openjk-legacy32) flag="$DOCKER_OPENJK_LEGACY32" ;;
-            vanilla-legacy32) flag="$DOCKER_VANILLA_LEGACY32" ;;
-            ybeproxy-legacy32) flag="$DOCKER_YBEPROXY_LEGACY32" ;;
-            taystjk-legacy32) flag="$DOCKER_TAYSTJK_LEGACY32" ;;
-            *) echo "Unknown target: $TARGET" >&2; exit 1 ;;
-          esac
-          if [[ "$flag" == "true" ]]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "Skipping ${TARGET}: no changes affecting this target."
-          fi
-
       - name: Check out repository
-        if: steps.gate.outputs.run == 'true'
         uses: actions/checkout@v4
 
       - name: Prepare image name
-        if: steps.gate.outputs.run == 'true'
         id: image
         run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/jedi-academy-pterodactyl" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
-        if: steps.gate.outputs.run == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Build image
-        if: steps.gate.outputs.run == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
+          file: docker/taystjk-modern64/Dockerfile
           push: false
-          tags: ${{ steps.image.outputs.name }}:ci-${{ github.sha }}-${{ matrix.target }}
-          cache-from: type=gha,scope=${{ matrix.cache_scope }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.cache_scope }}
+          tags: ${{ steps.image.outputs.name }}:ci-${{ github.sha }}-taystjk-modern64
+          cache-from: type=gha,scope=taystjk-modern64-image
+          cache-to: type=gha,mode=max,scope=taystjk-modern64-image
           provenance: false
 
   publish-images:
@@ -374,105 +233,16 @@ jobs:
     needs:
       - changes
       - validate
-    if: github.ref == 'refs/heads/main' && (needs.changes.outputs.docker == 'true' || github.event_name == 'workflow_dispatch')
+    if: github.ref == 'refs/heads/main' && (needs.changes.outputs.docker_taystjk_modern64 == 'true' || github.event_name == 'workflow_dispatch')
     permissions:
       contents: read
       packages: write
 
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: taystjk-modern64
-            dockerfile: docker/taystjk-modern64/Dockerfile
-            cache_scope: taystjk-modern64-image
-            upstream_repo: https://github.com/taysta/TaystJK.git
-            upstream_branch: master
-            build_arg_ref: TAYSTJK_REF
-            build_arg_commit: TAYSTJK_COMMIT
-            label_prefix: io.akiondev.taystjk
-          - target: openjk-modern64
-            dockerfile: docker/openjk-modern64/Dockerfile
-            cache_scope: openjk-modern64-image
-            upstream_repo: https://github.com/JACoders/OpenJK.git
-            upstream_branch: master
-            build_arg_ref: OPENJK_REF
-            build_arg_commit: OPENJK_COMMIT
-            label_prefix: io.akiondev.openjk
-          - target: openjk-legacy32
-            dockerfile: docker/openjk-legacy32/Dockerfile
-            cache_scope: openjk-legacy32-image
-            upstream_repo: https://github.com/JACoders/OpenJK.git
-            upstream_branch: master
-            build_arg_ref: OPENJK_REF
-            build_arg_commit: OPENJK_COMMIT
-            label_prefix: io.akiondev.openjk
-          - target: vanilla-legacy32
-            dockerfile: docker/vanilla-legacy32/Dockerfile
-            cache_scope: vanilla-legacy32-image
-            upstream_repo: ""
-            upstream_branch: ""
-            build_arg_ref: ""
-            build_arg_commit: ""
-            label_prefix: io.akiondev.vanilla
-          - target: ybeproxy-legacy32
-            dockerfile: docker/ybeproxy-legacy32/Dockerfile
-            cache_scope: ybeproxy-legacy32-image
-            upstream_repo: https://github.com/Yberion/JKA_YBEProxy.git
-            upstream_branch: main
-            build_arg_ref: YBEPROXY_REF
-            build_arg_commit: YBEPROXY_COMMIT
-            label_prefix: io.akiondev.ybeproxy
-          - target: taystjk-legacy32
-            dockerfile: docker/taystjk-legacy32/Dockerfile
-            cache_scope: taystjk-legacy32-image
-            upstream_repo: https://github.com/taysta/TaystJK.git
-            upstream_branch: master
-            build_arg_ref: TAYSTJK_REF
-            build_arg_commit: TAYSTJK_COMMIT
-            label_prefix: io.akiondev.taystjk-legacy32
-
     steps:
-      - name: Decide if this matrix cell should run
-        id: gate
-        env:
-          EVENT: ${{ github.event_name }}
-          REF: ${{ github.ref }}
-          TARGET: ${{ matrix.target }}
-          DOCKER_TAYSTJK_MODERN64: ${{ needs.changes.outputs.docker_taystjk_modern64 }}
-          DOCKER_OPENJK_MODERN64: ${{ needs.changes.outputs.docker_openjk_modern64 }}
-          DOCKER_OPENJK_LEGACY32: ${{ needs.changes.outputs.docker_openjk_legacy32 }}
-          DOCKER_VANILLA_LEGACY32: ${{ needs.changes.outputs.docker_vanilla_legacy32 }}
-          DOCKER_YBEPROXY_LEGACY32: ${{ needs.changes.outputs.docker_ybeproxy_legacy32 }}
-          DOCKER_TAYSTJK_LEGACY32: ${{ needs.changes.outputs.docker_taystjk_legacy32 }}
-        run: |
-          set -euo pipefail
-          if [[ "$EVENT" == "workflow_dispatch" ]]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          case "$TARGET" in
-            taystjk-modern64) flag="$DOCKER_TAYSTJK_MODERN64" ;;
-            openjk-modern64) flag="$DOCKER_OPENJK_MODERN64" ;;
-            openjk-legacy32) flag="$DOCKER_OPENJK_LEGACY32" ;;
-            vanilla-legacy32) flag="$DOCKER_VANILLA_LEGACY32" ;;
-            ybeproxy-legacy32) flag="$DOCKER_YBEPROXY_LEGACY32" ;;
-            taystjk-legacy32) flag="$DOCKER_TAYSTJK_LEGACY32" ;;
-            *) echo "Unknown target: $TARGET" >&2; exit 1 ;;
-          esac
-          if [[ "$flag" == "true" ]]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "Skipping ${TARGET}: no changes affecting this target."
-          fi
-
       - name: Check out repository
-        if: steps.gate.outputs.run == 'true'
         uses: actions/checkout@v4
 
       - name: Prepare image names
-        if: steps.gate.outputs.run == 'true'
         id: image
         run: |
           owner_lc="${GITHUB_REPOSITORY_OWNER,,}"
@@ -480,7 +250,6 @@ jobs:
           echo "dockerhub=docker.io/${owner_lc}/jedi-academy-pterodactyl" >> "$GITHUB_OUTPUT"
 
       - name: Decide whether to publish to Docker Hub
-        if: steps.gate.outputs.run == 'true'
         id: dockerhub_gate
         env:
           PUBLISH_DOCKERHUB_VAR: ${{ vars.PUBLISH_DOCKERHUB }}
@@ -493,32 +262,23 @@ jobs:
             echo "publish=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Resolve upstream master commit
-        if: steps.gate.outputs.run == 'true' && matrix.upstream_repo != ''
+      - name: Resolve TaystJK upstream master commit
         id: upstream
-        env:
-          UPSTREAM_REPO: ${{ matrix.upstream_repo }}
-          UPSTREAM_BRANCH: ${{ matrix.upstream_branch }}
         run: |
           set -euo pipefail
-
-          upstream_sha="$(git ls-remote "${UPSTREAM_REPO}" "refs/heads/${UPSTREAM_BRANCH}" | awk '{print $1}')"
+          upstream_sha="$(git ls-remote https://github.com/taysta/TaystJK.git refs/heads/master | awk '{print $1}')"
           if [[ -z "$upstream_sha" ]]; then
-            echo "Failed to resolve ${UPSTREAM_REPO} ${UPSTREAM_BRANCH} HEAD" >&2
+            echo "Failed to resolve TaystJK master HEAD" >&2
             exit 1
           fi
-
           short_sha="${upstream_sha:0:12}"
-
           echo "sha=${upstream_sha}" >> "$GITHUB_OUTPUT"
           echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
-        if: steps.gate.outputs.run == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
-        if: steps.gate.outputs.run == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -526,7 +286,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Log in to Docker Hub
-        if: steps.gate.outputs.run == 'true' && steps.dockerhub_gate.outputs.publish == 'true'
+        if: steps.dockerhub_gate.outputs.publish == 'true'
         uses: docker/login-action@v3
         with:
           registry: docker.io
@@ -534,7 +294,6 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Compose target image list
-        if: steps.gate.outputs.run == 'true'
         id: targets
         run: |
           {
@@ -547,103 +306,44 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Compose tag patterns
-        if: steps.gate.outputs.run == 'true'
         id: tagspec
         env:
-          TARGET: ${{ matrix.target }}
+          UPSTREAM_SHORT_SHA: ${{ steps.upstream.outputs.short_sha }}
         run: |
           set -euo pipefail
           {
             echo "patterns<<EOF"
-            case "${TARGET}" in
-              taystjk-modern64)
-                cat <<TAGS
+            cat <<TAGS
+          type=raw,value=latest,enable={{is_default_branch}}
+          type=raw,value=taystjk
           type=raw,value=taystjk-modern64
+          type=raw,value=taystjk-modern64-master-${UPSTREAM_SHORT_SHA}
           TAGS
-                ;;
-              openjk-modern64)
-                cat <<TAGS
-          type=raw,value=openjk-modern64
-          TAGS
-                ;;
-              openjk-legacy32)
-                cat <<TAGS
-          type=raw,value=openjk-legacy32
-          TAGS
-                ;;
-              vanilla-legacy32)
-                cat <<TAGS
-          type=raw,value=vanilla-legacy32
-          TAGS
-                ;;
-              ybeproxy-legacy32)
-                cat <<TAGS
-          type=raw,value=ybeproxy-legacy32
-          TAGS
-                ;;
-              taystjk-legacy32)
-                cat <<TAGS
-          type=raw,value=taystjk-legacy32
-          TAGS
-                ;;
-              *)
-                echo "Unknown target: ${TARGET}" >&2
-                exit 1
-                ;;
-            esac
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
       - name: Extract metadata
-        if: steps.gate.outputs.run == 'true'
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ steps.targets.outputs.images }}
           tags: ${{ steps.tagspec.outputs.patterns }}
 
-      - name: Compose build args and labels
-        if: steps.gate.outputs.run == 'true'
-        id: buildmeta
-        env:
-          UPSTREAM_REPO: ${{ matrix.upstream_repo }}
-          UPSTREAM_BRANCH: ${{ matrix.upstream_branch }}
-          UPSTREAM_SHA: ${{ steps.upstream.outputs.sha }}
-          BUILD_ARG_REF: ${{ matrix.build_arg_ref }}
-          BUILD_ARG_COMMIT: ${{ matrix.build_arg_commit }}
-          LABEL_PREFIX: ${{ matrix.label_prefix }}
-        run: |
-          set -euo pipefail
-          {
-            echo "build_args<<EOF"
-            if [[ -n "${UPSTREAM_REPO}" && -n "${BUILD_ARG_REF}" ]]; then
-              echo "${BUILD_ARG_REF}=${UPSTREAM_SHA}"
-              echo "${BUILD_ARG_COMMIT}=${UPSTREAM_SHA}"
-            fi
-            echo "EOF"
-            echo "extra_labels<<EOF"
-            if [[ -n "${UPSTREAM_REPO}" ]]; then
-              echo "${LABEL_PREFIX}.upstream.repo=${UPSTREAM_REPO}"
-              echo "${LABEL_PREFIX}.upstream.branch=${UPSTREAM_BRANCH}"
-              echo "${LABEL_PREFIX}.upstream.commit=${UPSTREAM_SHA}"
-            else
-              echo "${LABEL_PREFIX}.runtime.kind=manual"
-            fi
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
       - name: Build and push
-        if: steps.gate.outputs.run == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
+          file: docker/taystjk-modern64/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: |
             ${{ steps.meta.outputs.labels }}
-            ${{ steps.buildmeta.outputs.extra_labels }}
-          build-args: ${{ steps.buildmeta.outputs.build_args }}
-          cache-from: type=gha,scope=${{ matrix.cache_scope }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.cache_scope }}
+            io.akiondev.taystjk.upstream.repo=https://github.com/taysta/TaystJK.git
+            io.akiondev.taystjk.upstream.branch=master
+            io.akiondev.taystjk.upstream.commit=${{ steps.upstream.outputs.sha }}
+          build-args: |
+            TAYSTJK_REF=${{ steps.upstream.outputs.sha }}
+            TAYSTJK_COMMIT=${{ steps.upstream.outputs.sha }}
+          cache-from: type=gha,scope=taystjk-modern64-image
+          cache-to: type=gha,mode=max,scope=taystjk-modern64-image
           provenance: false

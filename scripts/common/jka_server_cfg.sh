@@ -166,32 +166,21 @@ write_runtime_state() {
 }
 
 configure_server_settings() {
-  : "${SERVER_CFG_OVERRIDES_ENABLED:=true}"
-  : "${SERVER_HOSTNAME:=}"
-  : "${SERVER_MOTD:=}"
-  : "${SERVER_MAXCLIENTS:=}"
-  : "${SERVER_GAMETYPE:=}"
-  : "${SERVER_RCON_PASSWORD:=}"
-
-  SERVER_CFG_OVERRIDES_ENABLED="$(normalize_optional_boolean "$SERVER_CFG_OVERRIDES_ENABLED" "SERVER_CFG_OVERRIDES_ENABLED" "true")"
-
-  require_no_newlines "$SERVER_HOSTNAME" "SERVER_HOSTNAME"
-  require_no_newlines "$SERVER_MOTD" "SERVER_MOTD"
-  require_no_newlines "$SERVER_RCON_PASSWORD" "SERVER_RCON_PASSWORD"
+  # The manual-first egg model never writes panel-supplied cvars into
+  # server.cfg. Hostname/MOTD/maxclients/gametype/rconpassword are
+  # owned by the operator's server.cfg and are read from there at
+  # resolve time. This function now only validates the port fallback
+  # sourced from .server.port_fallback in jka-runtime.json.
+  SERVER_CFG_OVERRIDES_ENABLED="false"
+  SERVER_HOSTNAME=""
+  SERVER_MOTD=""
+  SERVER_MAXCLIENTS=""
+  SERVER_GAMETYPE=""
+  SERVER_RCON_PASSWORD=""
 
   if [[ ! "$SERVER_PORT" =~ ^[0-9]+$ || "$SERVER_PORT" -lt 1 || "$SERVER_PORT" -gt 65535 ]]; then
-    warn "SERVER_PORT=${SERVER_PORT} is invalid, falling back to 29070"
+    warn "server.port_fallback=${SERVER_PORT} is invalid, falling back to 29070"
     SERVER_PORT="29070"
-  fi
-
-  if [[ -n "$SERVER_MAXCLIENTS" && ! "$SERVER_MAXCLIENTS" =~ ^[0-9]+$ ]]; then
-    warn "SERVER_MAXCLIENTS=${SERVER_MAXCLIENTS} is invalid, ignoring the override"
-    SERVER_MAXCLIENTS=""
-  fi
-
-  if [[ -n "$SERVER_GAMETYPE" && ! "$SERVER_GAMETYPE" =~ ^[0-9]+$ ]]; then
-    warn "SERVER_GAMETYPE=${SERVER_GAMETYPE} is invalid, ignoring the override"
-    SERVER_GAMETYPE=""
   fi
 }
 
@@ -259,17 +248,10 @@ resolve_effective_server_settings() {
   local config_gametype=""
   local config_rcon_password=""
 
-  if [[ "$SERVER_CFG_OVERRIDES_ENABLED" == "true" ]]; then
-    upsert_server_cvar "$active_config_path" "net_port" "$SERVER_PORT"
-    [[ -n "$SERVER_HOSTNAME" ]] && upsert_server_cvar "$active_config_path" "sv_hostname" "$SERVER_HOSTNAME"
-    [[ -n "$SERVER_MOTD" ]] && upsert_server_cvar "$active_config_path" "g_motd" "$SERVER_MOTD"
-    [[ -n "$SERVER_MAXCLIENTS" ]] && upsert_server_cvar "$active_config_path" "sv_maxclients" "$SERVER_MAXCLIENTS"
-    [[ -n "$SERVER_GAMETYPE" ]] && upsert_server_cvar "$active_config_path" "g_gametype" "$SERVER_GAMETYPE"
-
-    if [[ -n "$SERVER_RCON_PASSWORD" ]]; then
-      upsert_server_cvar "$active_config_path" "rconpassword" "$SERVER_RCON_PASSWORD"
-    fi
-  fi
+  # The manual-first egg model never writes managed cvars into
+  # server.cfg from panel variables. Effective values are derived
+  # from the active server.cfg only, with port_fallback used when
+  # net_port is missing.
 
   config_port="$(read_server_cvar "$active_config_path" "net_port")"
   config_hostname="$(read_server_cvar "$active_config_path" "sv_hostname")"
@@ -282,26 +264,17 @@ resolve_effective_server_settings() {
   TAYSTJK_ACTIVE_SERVER_CONFIG="$SERVER_CONFIG"
   TAYSTJK_ACTIVE_SERVER_CONFIG_PATH="$active_config_path"
   TAYSTJK_ACTIVE_SERVER_LOG_PATH="$(active_server_log_path)"
-  TAYSTJK_SERVER_CFG_OVERRIDES_ENABLED="$SERVER_CFG_OVERRIDES_ENABLED"
+  TAYSTJK_SERVER_CFG_OVERRIDES_ENABLED="false"
   TAYSTJK_EFFECTIVE_SERVER_BINARY="$server_binary_name"
 
   resolve_effective_live_output_settings
 
-  if [[ "$SERVER_CFG_OVERRIDES_ENABLED" == "true" ]]; then
-    TAYSTJK_EFFECTIVE_SERVER_PORT="$SERVER_PORT"
-    TAYSTJK_EFFECTIVE_SERVER_HOSTNAME="${SERVER_HOSTNAME:-${config_hostname:-TaystJK Pterodactyl Server}}"
-    TAYSTJK_EFFECTIVE_SERVER_MOTD="${SERVER_MOTD:-${config_motd:-Powered by TaystJK on Pterodactyl}}"
-    TAYSTJK_EFFECTIVE_SERVER_MAXCLIENTS="${SERVER_MAXCLIENTS:-${config_maxclients:-16}}"
-    TAYSTJK_EFFECTIVE_SERVER_GAMETYPE="${SERVER_GAMETYPE:-${config_gametype:-0}}"
-    TAYSTJK_EFFECTIVE_SERVER_RCON_PASSWORD="${SERVER_RCON_PASSWORD:-$config_rcon_password}"
-  else
-    TAYSTJK_EFFECTIVE_SERVER_PORT="${config_port:-$SERVER_PORT}"
-    TAYSTJK_EFFECTIVE_SERVER_HOSTNAME="${config_hostname:-TaystJK Pterodactyl Server}"
-    TAYSTJK_EFFECTIVE_SERVER_MOTD="${config_motd:-Powered by TaystJK on Pterodactyl}"
-    TAYSTJK_EFFECTIVE_SERVER_MAXCLIENTS="${config_maxclients:-16}"
-    TAYSTJK_EFFECTIVE_SERVER_GAMETYPE="${config_gametype:-0}"
-    TAYSTJK_EFFECTIVE_SERVER_RCON_PASSWORD="$config_rcon_password"
-  fi
+  TAYSTJK_EFFECTIVE_SERVER_PORT="${config_port:-$SERVER_PORT}"
+  TAYSTJK_EFFECTIVE_SERVER_HOSTNAME="${config_hostname:-TaystJK Pterodactyl Server}"
+  TAYSTJK_EFFECTIVE_SERVER_MOTD="${config_motd:-Powered by TaystJK on Pterodactyl}"
+  TAYSTJK_EFFECTIVE_SERVER_MAXCLIENTS="${config_maxclients:-16}"
+  TAYSTJK_EFFECTIVE_SERVER_GAMETYPE="${config_gametype:-0}"
+  TAYSTJK_EFFECTIVE_SERVER_RCON_PASSWORD="$config_rcon_password"
 
   export \
     TAYSTJK_ACTIVE_MOD_DIR \
@@ -329,6 +302,10 @@ resolve_effective_server_settings() {
 ensure_managed_taystjk_server_config() {
   local config_path="/home/container/${active_game_dir}/${SERVER_CONFIG}"
 
+  # The runtime only seeds a minimal default server.cfg when the
+  # expected config is missing AND the active mod is the image-managed
+  # TaystJK directory. An existing user-owned server.cfg is never
+  # overwritten.
   if ! is_taystjk_managed_mod_dir "$active_game_dir"; then
     return 0
   fi
