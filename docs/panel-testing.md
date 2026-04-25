@@ -27,8 +27,9 @@ the "Done" string Wings uses to mark the server as **online** is
 
 - `/home/container/base/` (empty — operator uploads PK3s here)
 - `/home/container/logs/`
-- `/home/container/addons/`, `addons/docs/`, `addons/examples/`,
-  `addons/defaults/`
+- `/home/container/addons/`, `addons/docs/`, `addons/defaults/`,
+  `addons/defaults/events/` (managed default addons + their
+  `*.config.json` files; user-owned configs are preserved on update)
 - `/home/container/config/jka-runtime.json` (default template; never
   overwritten on subsequent starts)
 - `/home/container/config/jka-runtime.example.json` (refreshed on

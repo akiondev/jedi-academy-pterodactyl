@@ -33,7 +33,7 @@ configure_anti_vpn() {
   : "${ANTI_VPN_CACHE_FLUSH_INTERVAL:=2s}"
   : "${ANTI_VPN_AUDIT_LOG_PATH:=/home/container/logs/anti-vpn-audit.log}"
   : "${ANTI_VPN_ENFORCEMENT_MODE:=kick-only}"
-  : "${ANTI_VPN_BROADCAST_MODE:=block-only}"
+  : "${ANTI_VPN_BROADCAST_MODE:=pass-and-block}"
   : "${ANTI_VPN_BROADCAST_COOLDOWN:=90s}"
   : "${ANTI_VPN_BROADCAST_PASS_TEMPLATE:=say [Anti-VPN] VPN PASS: %PLAYER% cleared checks (%SCORE%/%THRESHOLD%). %SUMMARY%}"
   : "${ANTI_VPN_BROADCAST_BLOCK_TEMPLATE:=say [Anti-VPN] VPN BLOCKED: %PLAYER% triggered anti-VPN (%SCORE%/%THRESHOLD%). %SUMMARY%}"
@@ -52,7 +52,7 @@ configure_anti_vpn() {
   # degraded / error decisions are written to the audit log. A busy
   # server can otherwise produce thousands of allow rows per map,
   # which historically masked real security events.
-  : "${ANTI_VPN_AUDIT_ALLOW:=false}"
+  : "${ANTI_VPN_AUDIT_ALLOW:=true}"
   # Built-in RCON guard module configuration (replaces the legacy
   # 50-rcon-live-guard.py addon).
   : "${RCON_GUARD_ENABLED:=true}"
@@ -73,8 +73,8 @@ configure_anti_vpn() {
   case "$ANTI_VPN_BROADCAST_MODE_NORMALIZED" in
     off|block-only|pass-and-block) ;;
     *)
-      warn "ANTI_VPN_BROADCAST_MODE=${ANTI_VPN_BROADCAST_MODE} is invalid, falling back to block-only"
-      ANTI_VPN_BROADCAST_MODE_NORMALIZED="block-only"
+      warn "ANTI_VPN_BROADCAST_MODE=${ANTI_VPN_BROADCAST_MODE} is invalid, falling back to pass-and-block"
+      ANTI_VPN_BROADCAST_MODE_NORMALIZED="pass-and-block"
       ;;
   esac
   ANTI_VPN_BROADCAST_MODE="$ANTI_VPN_BROADCAST_MODE_NORMALIZED"

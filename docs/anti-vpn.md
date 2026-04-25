@@ -27,8 +27,9 @@ The anti-VPN feature is implemented as a compiled Go binary inside the runtime i
 - runtime model: supervisor around the dedicated server process
 - signal source: **process-output-only** — the supervisor is the single owner/reader of the dedicated server's stdout/stderr and parses every event from that stream exactly once. The legacy `server.log` tailer remains available as an opt-in debug fallback (`ANTI_VPN_LOG_MONITOR_ENABLED=true`) but is OFF by default.
 - enforcement path: server stdin console commands
-- optional public player-chat broadcast path: server `say` command templates (default `ANTI_VPN_BROADCAST_MODE=block-only`)
-- audit path: dedicated anti-VPN audit log file (allow decisions are NOT audited by default; set `ANTI_VPN_AUDIT_ALLOW=true` for full forensic mode)
+- public player-chat broadcast path: server `say` command templates. Default is `ANTI_VPN_BROADCAST_MODE=pass-and-block`, so a connecting player produces either a `VPN PASS:` or `VPN BLOCKED:` chat line. Set the mode to `block-only` if you want allow decisions to be silent, or `off` to suppress all anti-VPN chat output.
+- audit path: dedicated anti-VPN audit log file. Allow decisions are audited by default (`ANTI_VPN_AUDIT_ALLOW=true`) so a normal pass is verifiable in `/home/container/logs/anti-vpn-audit.log`. Set `ANTI_VPN_AUDIT_ALLOW=false` to drop the per-allow rows on very busy servers; block / would-block / degraded / provider errors are always audited regardless of this flag.
+- console-decision logging: optional structured per-decision log line on stdout (`anti_vpn.log_decisions`, default `false`). The three knobs are independent: `broadcast` controls what the in-game chat sees, `audit_allow` controls what the audit log file records, and `log_decisions` controls supervisor stdout verbosity.
 - built-in modules dispatched from the same parsed line stream:
   - connection tracker (slot ↔ IP ↔ player name)
   - anti-VPN decision engine
@@ -173,7 +174,7 @@ Supported broadcast modes:
 
 - `off`
 - `block-only`
-- `pass-and-block`
+- `pass-and-block` *(default)*
 
 Default pass template:
 
@@ -193,6 +194,30 @@ Supported placeholders:
 - `%SLOT%`
 
 Player names are sanitized before broadcast to strip color codes, control characters, and overlong values.
+
+## Migrating an existing jka-runtime.json
+
+The image only writes `/home/container/config/jka-runtime.json` when the file does **not** already exist; an operator-edited file is never overwritten. As a result, servers that were originally provisioned on an older image keep their previous defaults — including the legacy `block-only` broadcast mode and `audit_allow=false`, both of which silently dropped allow decisions and made the system look broken.
+
+The new shipped defaults are visible-by-default:
+
+```json
+"anti_vpn": {
+  "audit_allow": true,
+  "broadcast": { "mode": "pass-and-block" }
+}
+```
+
+To adopt them on an existing deployment, either:
+
+1. compare your file against `/home/container/config/jka-runtime.example.json` (refreshed on every boot) and copy over the two keys above, or
+2. delete `jka-runtime.json` and let the entrypoint regenerate it from the current template (this resets every other key as well, including provider API keys).
+
+When the supervisor starts and observes that the resolved `anti_vpn.broadcast.mode` is still `block-only`, it now logs a one-line migration warning so the silent-PASS pitfall is visible in the panel console:
+
+```text
+Anti-VPN broadcast mode is block-only; PASS messages will not be shown. Set anti_vpn.broadcast.mode=pass-and-block in /home/container/config/jka-runtime.json for visible PASS/BLOCKED behavior.
+```
 
 ## Allowlist
 

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"net/netip"
 	"os"
@@ -249,6 +248,16 @@ func (s *Supervisor) Run(ctx context.Context, serverCommand []string) error {
 		"event_bus_buffer_size", s.cfg.AddonRunner.BufferSize,
 	)
 
+	// Migration nudge for existing deployments: a user-owned
+	// jka-runtime.json from an older image may still carry the legacy
+	// block-only broadcast mode, which silently drops PASS messages.
+	// We never rewrite the operator's file; we only surface a one-line
+	// warning so the operator can opt into the new visible-by-default
+	// behaviour by editing their config.
+	if msg, ok := legacyBroadcastModeMigrationWarning(s.cfg.BroadcastMode); ok {
+		s.logger.Warn(msg)
+	}
+
 	if s.addonRunner != nil {
 		if err := s.addonRunner.Start(runCtx, s.dispatcher); err != nil && s.logger != nil {
 			s.logger.Warn("event addon runner failed to start", "error", err)
@@ -368,9 +377,6 @@ func (s *Supervisor) forwardConsoleInput(ctx context.Context, stdin io.Writer) {
 		}
 
 		line := scanner.Text()
-		if s.handleBuiltinConsoleCommand(ctx, line) {
-			continue
-		}
 
 		if _, err := fmt.Fprintln(stdin, line); err != nil {
 			s.logger.Warn("anti-vpn stdin forwarding failed", "error", err)
@@ -381,67 +387,6 @@ func (s *Supervisor) forwardConsoleInput(ctx context.Context, stdin io.Writer) {
 	if err := scanner.Err(); err != nil {
 		s.logger.Warn("anti-vpn stdin scanner failed", "error", err)
 	}
-}
-
-func (s *Supervisor) handleBuiltinConsoleCommand(ctx context.Context, line string) bool {
-	command := strings.TrimSpace(line)
-	if command == "" {
-		return false
-	}
-
-	switch strings.ToLower(command) {
-	case "checkserverstatus", "rcon checkserverstatus":
-		s.runCheckServerStatus(ctx)
-		return true
-	default:
-		return false
-	}
-}
-
-func (s *Supervisor) runCheckServerStatus(ctx context.Context) {
-	commandPath := "/home/container/bin/checkserverstatus"
-
-	if _, err := os.Stat(commandPath); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			fmt.Fprintln(os.Stdout, "[helper:checkserverstatus] checkserverstatus is not available in /home/container/bin")
-			fmt.Fprintln(os.Stdout, "[helper:checkserverstatus] Confirm that ADDON_CHECKSERVERSTATUS_ENABLED=true, /home/container/addons/defaults/30-checkserverstatus.sh exists, and the managed runtime startup path completed normally")
-			return
-		}
-		s.logger.Warn("checkserverstatus availability check failed", "path", commandPath, "error", err)
-		fmt.Fprintln(os.Stdout, "[helper:checkserverstatus] Failed to inspect checkserverstatus command availability")
-		return
-	}
-
-	cmdCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	command := exec.CommandContext(cmdCtx, commandPath)
-	command.Dir = "/home/container"
-	command.Env = os.Environ()
-	output, err := command.CombinedOutput()
-
-	if len(output) > 0 {
-		if _, writeErr := os.Stdout.Write(output); writeErr != nil && s.logger != nil {
-			s.logger.Warn("checkserverstatus console output mirror failed", "error", writeErr)
-		}
-		if output[len(output)-1] != '\n' {
-			fmt.Fprintln(os.Stdout)
-		}
-	}
-
-	if err == nil {
-		return
-	}
-
-	if errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
-		fmt.Fprintln(os.Stdout, "[helper:checkserverstatus] checkserverstatus timed out after 10s")
-		return
-	}
-
-	if s.logger != nil {
-		s.logger.Warn("checkserverstatus execution failed", "error", err)
-	}
-	fmt.Fprintln(os.Stdout, "[helper:checkserverstatus] checkserverstatus failed")
 }
 
 // logMonitorMaxBytesPerPoll caps how many bytes the log-file fallback tail
@@ -630,6 +575,14 @@ func (s *Supervisor) handleLogLine(ctx context.Context, stdin io.Writer, line st
 		// inline handler is fine; the chatlogger addon consumes them
 		// from the event bus.
 		s.publishEvent(newChatMessageEvent(line, eventSource, now, chat.Slot, chat.Name, chat.Message))
+		return
+	}
+
+	if team, ok := parseTeamChange(line); ok {
+		// Team changes are emitted as their own event so the live team
+		// announcer (and any other addon) can react via the central
+		// event bus instead of tailing the engine's server.log.
+		s.publishEvent(newTeamChangeEvent(line, eventSource, now, team))
 		return
 	}
 
@@ -916,12 +869,10 @@ func (s *Supervisor) auditDecision(source, slot string, addr netip.Addr, decisio
 	}
 
 	action := decisionAction(decision)
-	// Suppress per-allow audit rows by default. A busy server can produce
-	// thousands of allow decisions per map (cache hits, userinfo
-	// re-checks, reconnects), and the historical audit log was the
-	// observed source of console-flooding storms after a map restart
-	// fed cached events back through the file tailer. Block /
-	// would-block / degraded / provider errors are always audited.
+	// `allow` rows are written when AuditAllow is true (default). Set
+	// AuditAllow=false to suppress per-allow rows on very busy
+	// servers; block / would-block / degraded / provider errors are
+	// always audited.
 	if action == "allow" && !decision.Degraded && !s.cfg.AuditAllow {
 		return
 	}
@@ -1156,6 +1107,21 @@ func parseClientConnect(line string) (string, netip.Addr, string, bool) {
 	}
 
 	return matches[1], addr, normalizeLoggedPlayerName(matches[3]), true
+}
+
+// legacyBroadcastModeMigrationWarning returns the operator-facing
+// migration nudge to print when an existing jka-runtime.json is still
+// pinned to the legacy block-only broadcast mode. New defaults
+// (pass-and-block) only apply to freshly-created config files; this
+// helper makes the silent-PASS pitfall visible at startup without
+// touching the operator's file.
+func legacyBroadcastModeMigrationWarning(mode BroadcastMode) (string, bool) {
+	if mode != BroadcastBlockOnly {
+		return "", false
+	}
+	return "Anti-VPN broadcast mode is block-only; PASS messages will not be shown. " +
+		"Set anti_vpn.broadcast.mode=pass-and-block in /home/container/config/jka-runtime.json " +
+		"for visible PASS/BLOCKED behavior.", true
 }
 
 func normalizeLogLineForParsing(line string) string {

@@ -58,7 +58,7 @@ jka_runtime_config_template() {
     "cache_ttl": "6h",
     "cache_flush_interval": "2s",
     "audit_log_path": "/home/container/logs/anti-vpn-audit.log",
-    "audit_allow": false,
+    "audit_allow": true,
     "log_decisions": false,
     "providers": {
       "proxycheck_api_key": "",
@@ -69,7 +69,7 @@ jka_runtime_config_template() {
       "iplocate_api_key": ""
     },
     "broadcast": {
-      "mode": "block-only",
+      "mode": "pass-and-block",
       "cooldown": "90s",
       "pass_template": "say [Anti-VPN] VPN PASS: %PLAYER% cleared checks (%SCORE%/%THRESHOLD%). %SUMMARY%",
       "block_template": "say [Anti-VPN] VPN BLOCKED: %PLAYER% triggered anti-VPN (%SCORE%/%THRESHOLD%). %SUMMARY%"
@@ -90,7 +90,6 @@ jka_runtime_config_template() {
     "enabled": true,
     "directory": "/home/container/addons",
     "event_addons_dir": "/home/container/addons/events",
-    "checkserverstatus_enabled": false,
     "chatlogger_enabled": false,
     "strict": false,
     "timeout_seconds": 30,
@@ -210,7 +209,7 @@ load_runtime_json_config() {
   ANTI_VPN_CACHE_TTL="$(jka_runtime_config_query_or '.anti_vpn.cache_ttl' '6h')"
   ANTI_VPN_CACHE_FLUSH_INTERVAL="$(jka_runtime_config_query_or '.anti_vpn.cache_flush_interval' '2s')"
   ANTI_VPN_AUDIT_LOG_PATH="$(jka_runtime_config_query_or '.anti_vpn.audit_log_path' '/home/container/logs/anti-vpn-audit.log')"
-  ANTI_VPN_AUDIT_ALLOW="$(jka_runtime_config_query_or '.anti_vpn.audit_allow' 'false')"
+  ANTI_VPN_AUDIT_ALLOW="$(jka_runtime_config_query_or '.anti_vpn.audit_allow' 'true')"
   ANTI_VPN_LOG_DECISIONS="$(jka_runtime_config_query_or '.anti_vpn.log_decisions' 'false')"
   ANTI_VPN_PROXYCHECK_API_KEY="$(jka_runtime_config_query_or '.anti_vpn.providers.proxycheck_api_key' '')"
   ANTI_VPN_IPAPIIS_API_KEY="$(jka_runtime_config_query_or '.anti_vpn.providers.ipapiis_api_key' '')"
@@ -218,7 +217,7 @@ load_runtime_json_config() {
   ANTI_VPN_VPNAPI_IO_API_KEY="$(jka_runtime_config_query_or '.anti_vpn.providers.vpnapi_io_api_key' '')"
   ANTI_VPN_IPQUALITYSCORE_API_KEY="$(jka_runtime_config_query_or '.anti_vpn.providers.ipqualityscore_api_key' '')"
   ANTI_VPN_IPLOCATE_API_KEY="$(jka_runtime_config_query_or '.anti_vpn.providers.iplocate_api_key' '')"
-  ANTI_VPN_BROADCAST_MODE="$(jka_runtime_config_query_or '.anti_vpn.broadcast.mode' 'block-only')"
+  ANTI_VPN_BROADCAST_MODE="$(jka_runtime_config_query_or '.anti_vpn.broadcast.mode' 'pass-and-block')"
   ANTI_VPN_BROADCAST_COOLDOWN="$(jka_runtime_config_query_or '.anti_vpn.broadcast.cooldown' '90s')"
   ANTI_VPN_BROADCAST_PASS_TEMPLATE="$(jka_runtime_config_query_or '.anti_vpn.broadcast.pass_template' 'say [Anti-VPN] VPN PASS: %PLAYER% cleared checks (%SCORE%/%THRESHOLD%). %SUMMARY%')"
   ANTI_VPN_BROADCAST_BLOCK_TEMPLATE="$(jka_runtime_config_query_or '.anti_vpn.broadcast.block_template' 'say [Anti-VPN] VPN BLOCKED: %PLAYER% triggered anti-VPN (%SCORE%/%THRESHOLD%). %SUMMARY%')"
@@ -249,7 +248,6 @@ load_runtime_json_config() {
   ADDONS_ENABLED="$(jka_runtime_config_query_or '.addons.enabled' 'true')"
   ADDONS_DIR="$(jka_runtime_config_query_or '.addons.directory' '/home/container/addons')"
   ADDON_EVENT_ADDONS_DIR="$(jka_runtime_config_query_or '.addons.event_addons_dir' "${ADDONS_DIR}/events")"
-  ADDON_CHECKSERVERSTATUS_ENABLED="$(jka_runtime_config_query_or '.addons.checkserverstatus_enabled' 'false')"
   ADDON_CHATLOGGER_ENABLED="$(jka_runtime_config_query_or '.addons.chatlogger_enabled' 'false')"
   ADDONS_STRICT="$(jka_runtime_config_query_or '.addons.strict' 'false')"
   ADDONS_TIMEOUT_SECONDS="$(jka_runtime_config_query_or '.addons.timeout_seconds' '30')"
@@ -259,7 +257,7 @@ load_runtime_json_config() {
   ADDON_EVENT_BUS_DROP_POLICY="$(jka_runtime_config_query_or '.addons.event_bus.drop_policy' 'drop-oldest')"
   export \
     ADDONS_ENABLED ADDONS_DIR ADDON_EVENT_ADDONS_DIR \
-    ADDON_CHECKSERVERSTATUS_ENABLED ADDON_CHATLOGGER_ENABLED \
+    ADDON_CHATLOGGER_ENABLED \
     ADDONS_STRICT ADDONS_TIMEOUT_SECONDS ADDONS_LOG_OUTPUT \
     ADDON_EVENT_BUS_ENABLED ADDON_EVENT_BUS_BUFFER_SIZE ADDON_EVENT_BUS_DROP_POLICY
 }

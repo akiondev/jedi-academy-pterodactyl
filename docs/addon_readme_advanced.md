@@ -60,13 +60,15 @@ The addon system has four separate areas under `/home/container/addons`:
   docs/
     ADDON_README.md
     ADDON_README_ADVANCED.md
-  examples/
+  defaults/
     20-python-announcer.py
     20-python-announcer.config.json
     20-python-announcer.messages.txt
-  defaults/
-    30-checkserverstatus.sh
-    40-chatlogger.py
+    events/
+      30-live-team-announcer.py
+      30-live-team-announcer.config.json
+      40-chatlogger.py
+      40-chatlogger.config.json
 ```
 
 Meaning:
@@ -106,11 +108,10 @@ These are user-owned:
 These are image-managed:
 
 - `/home/container/addons/docs/*`
-- `/home/container/addons/examples/*`
-- `/home/container/addons/defaults/*`
-- the built-in `checkserverstatus` helper installation path logic
+- `/home/container/addons/defaults/*` source files (`*.py`, `*.sh`, `*.txt`, `*.md`)
+- the managed default-addon enable/disable lifecycle (driven by per-addon `*.config.json` files)
 
-Image-managed addon material is refreshed from the current image during normal managed startup.
+Image-managed addon material is refreshed from the current image during normal managed startup. The runtime explicitly **never** overwrites operator-edited `*.config.json` files under `defaults/` — those control whether each managed addon runs and are owned by the server operator.
 
 Implications:
 
@@ -179,20 +180,19 @@ Normal managed startup flow is:
 
 1. runtime preparation
 2. image-managed addon docs refresh
-3. image-managed addon examples refresh
-4. image-managed helper/default refresh
-5. managed `checkserverstatus` helper installation/update
-6. top-level user addon execution
-7. normal server startup
+3. image-managed addon defaults refresh (source files; user-owned `*.config.json` files preserved)
+4. managed default-addon enable/disable based on each addon's own config file
+5. top-level user addon execution
+6. normal server startup
 
-If `ADDONS_ENABLED=false`, step 6 is skipped, but the image-managed material still refreshes.
+If `ADDONS_ENABLED=false`, step 5 is skipped, but the image-managed material still refreshes.
 
 If the server is started with a fully custom startup command instead of the managed startup path, addon execution is bypassed.
 
 The managed helpers in `defaults/` are separate from user addon execution:
 
-- `checkserverstatus` and `chatlogger` are refreshed and handled by dedicated runtime logic
-- they are controlled by `ADDON_CHECKSERVERSTATUS_ENABLED` and `ADDON_CHATLOGGER_ENABLED`
+- the Python announcer, the event-driven live team announcer, and the event-driven chatlogger are refreshed and handled by dedicated runtime logic
+- they are controlled by their own `*.config.json` file's `enabled` flag, not by Pterodactyl egg variables
 - they are not normal top-level user addons
 - they are not wrapped by the user addon timeout
 
@@ -201,8 +201,7 @@ The managed helpers in `defaults/` are separate from user addon execution:
 Relevant variables:
 
 - `ADDONS_ENABLED`
-- `ADDON_CHECKSERVERSTATUS_ENABLED`
-- `ADDON_CHATLOGGER_ENABLED`
+- `ADDON_CHATLOGGER_ENABLED` *(legacy alias; the supported toggle is `enabled` inside `defaults/events/40-chatlogger.config.json`)*
 - `ADDONS_STRICT`
 - `ADDONS_TIMEOUT_SECONDS`
 - `ADDONS_LOG_OUTPUT`
@@ -510,44 +509,20 @@ Instead:
 - prefer `TAYSTJK_ACTIVE_MOD_DIR`
 - treat manual alternative binaries/mod folders as user-owned paths that must already exist
 
-## Built-in managed helpers
+## Built-in managed default addons
 
-The project ships managed helpers:
-
-```text
-/home/container/addons/defaults/30-checkserverstatus.sh
-/home/container/addons/defaults/40-chatlogger.py
-```
-
-These helpers are not user addons.
-
-### checkserverstatus
-
-It exists to provide the built-in command:
+The project ships managed default addons under:
 
 ```text
-checkserverstatus
+/home/container/addons/defaults/20-python-announcer.py
+/home/container/addons/defaults/20-python-announcer.config.json
+/home/container/addons/defaults/events/30-live-team-announcer.py
+/home/container/addons/defaults/events/30-live-team-announcer.config.json
+/home/container/addons/defaults/events/40-chatlogger.py
+/home/container/addons/defaults/events/40-chatlogger.config.json
 ```
 
-Behavior:
-
-- it is refreshed from the image every managed startup
-- it installs/updates `/home/container/bin/checkserverstatus`
-- it is available from the Pterodactyl console through the runtime bridge
-- it can also be run from a shell inside the container
-- it is controlled by the egg variable `ADDON_CHECKSERVERSTATUS_ENABLED`
-
-Practical note:
-
-- this is a managed helper command bridged by the runtime supervisor
-- it is not a TaystJK engine command implemented inside the game itself
-- typing `checkserverstatus` or `rcon checkserverstatus` in the Pterodactyl console is handled by the runtime bridge, not by in-game remote admin clients
-
-What it does:
-
-- prints current server information
-- reads runtime state
-- performs a live RCON `status` lookup when RCON is configured
+These are not user addons. Each one is shipped **disabled** through its own `*.config.json` file (`"enabled": false`); flip the flag to `true` to enable an addon. The runtime never overwrites edited config files, so your toggles and tunables survive image updates.
 
 ### chatlogger
 
@@ -872,49 +847,17 @@ Check:
 - the background worker is started detached from the startup path
 - PID files are not forcing duplicate launches or blocking relaunch after a stale crash
 
-### checkserverstatus is missing
-
-Check:
-
-- `ADDON_CHECKSERVERSTATUS_ENABLED=true`
-- the server used the normal managed startup path
-- `/home/container/addons/defaults/30-checkserverstatus.sh` exists
-- `/home/container/bin/checkserverstatus` exists
-
-On older existing servers, also confirm that the panel saved an explicit value for `ADDON_CHECKSERVERSTATUS_ENABLED`, because the egg default only applies automatically to new installs.
-
 ### chatlogger is missing or not writing logs
 
 Check:
 
-- `ADDON_CHATLOGGER_ENABLED=true`
+- `"enabled": true` in `/home/container/addons/defaults/events/40-chatlogger.config.json`
 - the server used the normal managed startup path
-- `/home/container/addons/defaults/40-chatlogger.py` exists
-- `/home/container/logs/chatlogger-helper.log` exists and shows
-  recent `alive lines=… chats=… last_chat=…` heartbeat lines (the
-  worker emits one every `CHATLOGGER_HEARTBEAT_SECONDS`, default 5
-  minutes)
-- `/home/container/logs/chatlogger.pid` is not stale — the worker
-  validates the recorded PID against `/proc/<pid>/cmdline` on every
-  managed startup, so a recycled PID will trigger a clean restart
-  automatically
-- the active server log exists at the path published in `TAYSTJK_ACTIVE_SERVER_LOG_PATH`, **or** the live mirror file at `TAYSTJK_LIVE_OUTPUT_PATH` is being written by the supervisor (check the chatlogger `--status` output for the active `tail source`)
+- `/home/container/addons/defaults/events/40-chatlogger.py` exists
+- the addon symlink `/home/container/addons/events/40-chatlogger.py` exists (created by the addon loader when the config flag is true)
+- the supervisor's NDJSON event bus is enabled (`addons.event_bus.enabled = true` in `jka-runtime.json`)
 
-Useful commands:
-
-- `python3 /home/container/addons/defaults/40-chatlogger.py --status`
-  prints PID, last heartbeat, lines seen, chats logged and the most
-  recent captured chat line
-- `python3 /home/container/addons/defaults/40-chatlogger.py --selftest`
-  exercises the parser against synthetic lines without touching the
-  live server log
-
-The worker re-attaches automatically when the engine rotates,
-truncates, unlinks or recreates `server.log` between maps or
-restarts, so a chat going silent after `ShutdownGame` / `InitGame`
-should no longer happen. If it does, inspect
-`/home/container/logs/chatlogger-helper.log` for `tail exited` or
-exception traces.
+The Phase 3 chatlogger consumes parsed `chat_message` events from the supervisor's stdout-sourced event bus; it does not tail any file, so missing chats almost always indicate that the addon is disabled in its config or that the event bus is disabled in the runtime config.
 
 ### Legacy bundled-addons directory exists
 

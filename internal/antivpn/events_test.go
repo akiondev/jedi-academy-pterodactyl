@@ -293,3 +293,152 @@ type funcHandler struct {
 
 func (h *funcHandler) Name() string                            { return h.name }
 func (h *funcHandler) HandleEvent(ctx context.Context, ev Event) { h.fn(ctx, ev) }
+
+func TestParseTeamChangeMatchesTaystJKLine(t *testing.T) {
+line := `2026-04-25 15:12:32 ChangeTeam: 0 [90.144.88.223] (324A7B4259866E7A4960FEC1F6BE407A) "akiondev" BLUE -> RED`
+got, ok := parseTeamChange(line)
+if !ok {
+t.Fatalf("expected parseTeamChange to match line: %q", line)
+}
+want := teamChangeMatch{Slot: "0", IP: "90.144.88.223", Name: "akiondev", OldTeam: "BLUE", NewTeam: "RED"}
+if got != want {
+t.Fatalf("parseTeamChange mismatch: got %+v want %+v", got, want)
+}
+}
+
+func TestParseTeamChangeMatchesStockJKAShape(t *testing.T) {
+// Older / stock JKA shape without IP bracket and without GUID parens.
+line := `ChangeTeam: 3 "Tester" SPECTATOR -> RED`
+got, ok := parseTeamChange(line)
+if !ok {
+t.Fatalf("expected parseTeamChange to match line: %q", line)
+}
+if got.Slot != "3" || got.Name != "Tester" || got.OldTeam != "SPECTATOR" || got.NewTeam != "RED" {
+t.Fatalf("parseTeamChange unexpected fields: %+v", got)
+}
+}
+
+func TestParseTeamChangeIgnoresUnrelatedLine(t *testing.T) {
+if _, ok := parseTeamChange(`ClientConnect: 0 [127.0.0.1]`); ok {
+t.Fatalf("expected parseTeamChange to ignore non-ChangeTeam line")
+}
+}
+
+func TestNewTeamChangeEventCarriesAllFields(t *testing.T) {
+now := time.Now()
+m := teamChangeMatch{Slot: "0", IP: "10.0.0.1", Name: "p1", OldTeam: "BLUE", NewTeam: "RED"}
+ev := newTeamChangeEvent("raw", EventSourceStdout, now, m)
+if ev.Type != EventTypeTeamChange {
+t.Fatalf("unexpected event type %q", ev.Type)
+}
+if ev.Slot != "0" || ev.IP != "10.0.0.1" || ev.Name != "p1" || ev.OldTeam != "BLUE" || ev.NewTeam != "RED" {
+t.Fatalf("event fields mismatch: %+v", ev)
+}
+}
+
+// TestParseTeamChangeStripsTrailingColorCode mirrors the exact TaystJK
+// log line shape supplied by the operator and verifies the parsed
+// player name is normalised (trailing ^7 reset removed) so addons see
+// a clean display name on the team_change event.
+func TestParseTeamChangeStripsTrailingColorCode(t *testing.T) {
+	line := `2026-04-25 15:15:02 ChangeTeam: 0 [90.144.88.223] (324A7B4259866E7A4960FEC1F6BE407A) "akiondev^7" BLUE -> RED`
+	got, ok := parseTeamChange(line)
+	if !ok {
+		t.Fatalf("expected parseTeamChange to match TaystJK line: %q", line)
+	}
+	want := teamChangeMatch{Slot: "0", IP: "90.144.88.223", Name: "akiondev", OldTeam: "BLUE", NewTeam: "RED"}
+	if got != want {
+		t.Fatalf("parseTeamChange mismatch: got %+v want %+v", got, want)
+	}
+}
+
+// TestParseClientConnectMatchesExactTaystJKLine pins the parser to the
+// canonical TaystJK ClientConnect format reproduced from a live
+// `+set dedicated 2` server: timestamped, with bracketed IP, GUID
+// parens and trailing colour reset on the player name.
+func TestParseClientConnectMatchesExactTaystJKLine(t *testing.T) {
+	line := `2026-04-25 15:12:28 ClientConnect: 0 [90.144.88.223] (324A7B4259866E7A4960FEC1F6BE407A) "akiondev^7"`
+	slot, addr, player, ok := parseClientConnect(line)
+	if !ok {
+		t.Fatalf("expected parser to match TaystJK ClientConnect line: %q", line)
+	}
+	if slot != "0" {
+		t.Fatalf("slot = %q, want 0", slot)
+	}
+	if addr.String() != "90.144.88.223" {
+		t.Fatalf("ip = %s, want 90.144.88.223", addr)
+	}
+	if player != "akiondev" {
+		t.Fatalf("player = %q, want akiondev (^7 stripped)", player)
+	}
+}
+
+// TestParseClientDisconnectMatchesExactTaystJKLine pins the disconnect
+// parser to the TaystJK shape with bracketed IP, GUID parens and a
+// quoted player name.
+func TestParseClientDisconnectMatchesExactTaystJKLine(t *testing.T) {
+	line := `2026-04-25 15:18:00 ClientDisconnect: 0 [90.144.88.223] (324A7B4259866E7A4960FEC1F6BE407A) "akiondev^7"`
+	slot, ok := parseClientDisconnect(line)
+	if !ok {
+		t.Fatalf("expected parser to match TaystJK ClientDisconnect line: %q", line)
+	}
+	if slot != "0" {
+		t.Fatalf("slot = %q, want 0", slot)
+	}
+}
+
+// TestParseBadRconMatchesExactTaystJKLine pins the bad-rcon parser to
+// the TaystJK / engine-emitted shape.
+func TestParseBadRconMatchesExactTaystJKLine(t *testing.T) {
+	ev, ok := parseBadRcon(`Bad rcon from 90.144.88.223:29070: status`)
+	if !ok {
+		t.Fatalf("expected parseBadRcon to match")
+	}
+	if ev.Host != "90.144.88.223" || ev.Port != 29070 || ev.Command != "status" {
+		t.Fatalf("parseBadRcon fields = %+v", ev)
+	}
+}
+
+// TestParseBadRconIgnoresSuccessfulRconLine asserts that the engine's
+// `Rcon from <ip>:<port>: <cmd>` success line (i.e. local automation)
+// is NOT classified as a bad rcon attempt and therefore never reaches
+// the RCON guard.
+func TestParseBadRconIgnoresSuccessfulRconLine(t *testing.T) {
+	if _, ok := parseBadRcon(`Rcon from 127.0.0.1:46943: svsay test`); ok {
+		t.Fatalf("parseBadRcon must not match successful Rcon lines")
+	}
+}
+
+// TestRconGuardIgnoresLoopbackHost verifies that the default trusted-
+// host list (`127.0.0.1,::1,localhost`) suppresses the RCON guard for
+// local automation even when the engine emits a `Bad rcon from`
+// variant from 127.0.0.1.
+func TestRconGuardIgnoresLoopbackHost(t *testing.T) {
+	hosts := []string{"127.0.0.1", "::1", "localhost"}
+	addr := netip.MustParseAddr("127.0.0.1")
+	if !rconGuardIsIgnoredHost(hosts, "127.0.0.1", addr) {
+		t.Fatalf("expected loopback host to be ignored by rcon guard")
+	}
+}
+
+// TestLegacyBroadcastModeMigrationWarning verifies the operator-facing
+// migration nudge fires only when the resolved BroadcastMode is the
+// legacy block-only value, regardless of whether that came from an
+// older user-owned jka-runtime.json or an explicit env override.
+func TestLegacyBroadcastModeMigrationWarning(t *testing.T) {
+	if _, ok := legacyBroadcastModeMigrationWarning(BroadcastPassAndBlock); ok {
+		t.Fatalf("pass-and-block must not trigger migration warning")
+	}
+	if _, ok := legacyBroadcastModeMigrationWarning(BroadcastOff); ok {
+		t.Fatalf("off must not trigger migration warning")
+	}
+	msg, ok := legacyBroadcastModeMigrationWarning(BroadcastBlockOnly)
+	if !ok {
+		t.Fatalf("block-only must trigger migration warning")
+	}
+	for _, want := range []string{"block-only", "pass-and-block", "jka-runtime.json"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("warning %q missing %q", msg, want)
+		}
+	}
+}
