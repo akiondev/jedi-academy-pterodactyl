@@ -6,6 +6,17 @@ This guide is synced into:
 /home/container/addons/docs/ADDON_README.md
 ```
 
+> **Configuration source**
+> All addon-related toggles below (`addons.enabled`, `addons.strict`,
+> `addons.checkserverstatus_enabled`, `addons.chatlogger_enabled`,
+> `addons.event_bus.*`, etc.) are configured in
+> `/home/container/config/jka-runtime.json`. The legacy environment
+> variable names referenced in this document (`ADDONS_ENABLED`,
+> `ADDON_CHATLOGGER_ENABLED`, `ADDON_CHECKSERVERSTATUS_ENABLED`, etc.)
+> are still honored as a fallback and still describe the underlying
+> runtime knobs. The Pterodactyl egg no longer exposes these as panel
+> variables.
+
 ## 1. What you need to know
 
 - Addons are simple startup scripts.

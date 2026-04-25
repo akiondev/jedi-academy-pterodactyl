@@ -1,20 +1,12 @@
-# Operator sheet — legacy32 families
+# Operator sheet — TaystJK modern64
 
-Short, panel-only crib sheet for the four shipping legacy32 runtime
-families. Canonical runtime order (with vanilla last where ordering
-matters):
+Short, panel-only crib sheet for the only shipping runtime family,
+`taystjk-modern64`. For the full step-by-step Pterodactyl panel
+walkthrough, see [`docs/panel-testing.md`](panel-testing.md).
 
-1. `taystjk-legacy32`
-2. `openjk-legacy32`
-3. `ybeproxy-legacy32`
-4. `vanilla-legacy32`
+## Shared facts
 
-For full background, error tables and the complete
-step-by-step panel walkthrough, see [`docs/panel-testing.md`](panel-testing.md).
-
-All four families share:
-
-- Same image entrypoint (`/entrypoint.sh`).
+- Image entrypoint: `/entrypoint.sh`.
 - Pterodactyl "Startup Command" field is the literal token
   `--panel-startup`.
 - Egg "Stop Command" is `quit`.
@@ -30,79 +22,47 @@ A start is **godkänd** when the console reaches
 
 ---
 
-## vanilla-legacy32
+## taystjk-modern64
 
-- **Egg:** `egg/egg-jka-vanilla-legacy32-pterodactyl.json`
-- **Image:** `ghcr.io/akiondev/jedi-academy-pterodactyl:vanilla-legacy32`
+- **Egg:** `egg/egg-jka-taystjk-modern64-pterodactyl.json`
+- **Image:** `ghcr.io/akiondev/jedi-academy-pterodactyl:taystjk-modern64`
   (or the same tag on Docker Hub).
-- **You upload:** 32-bit `linuxjampded` to `/home/container/`,
-  base PK3s to `/home/container/base/`.
-- **Image ships:** nothing executable; vanilla is fully manual.
-- **Variables:** `COPYRIGHT_ACKNOWLEDGED=true`,
-  `SERVER_BINARY=./linuxjampded`, `FS_GAME_MOD=base`,
-  `SERVER_CONFIG=server.cfg`.
-- **Log markers for godkänd start:** `Binary mode  manual user-supplied`,
-  `[ OK ] Base assets found`, Raven JAmp banner ending at
+- **You upload:** base PK3s only. If `TAYSTJK_AUTO_UPDATE_BINARY=false`
+  (the default), you must also upload your own `taystjkded.x86_64` (or
+  any compatible binary) to `/home/container/`.
+- **Image ships:** `taystjkded.x86_64` under `/opt/jka/engine/` and the
+  bundled `taystjk/` mod payload under `/opt/jka/engine-payload/`.
+  These are only copied into `/home/container/` when the operator opts
+  in (see below).
+- **Panel variables (the only four):**
+  - `COPYRIGHT_ACKNOWLEDGED=true`
+  - `EXTRA_STARTUP_ARGS=` (optional)
+  - `SERVER_BINARY=./taystjkded.x86_64`
+  - `TAYSTJK_AUTO_UPDATE_BINARY=false` (set to `true` to let the image
+    overwrite `/home/container/taystjkded.x86_64` on every start)
+- **Behavior config:** all other behavior lives in
+  `/home/container/config/jka-runtime.json`. The runtime creates this
+  file from the shipped template on first start and refreshes
+  `jka-runtime.example.json` next to it on every start. The
+  user-owned file is never overwritten. Edit it to enable the anti-VPN
+  supervisor, the RCON guard, addons, the `chatlogger`/`checkserverstatus`
+  helpers, the live-output mirror, debug startup, and the optional
+  `server.fs_game`/`server.config`/`server.log_filename` overrides.
+- **server.cfg ownership:** the runtime never writes managed cvars
+  (`sv_hostname`, `g_motd`, `sv_maxclients`, `g_gametype`, `rconpassword`)
+  into `server.cfg` from panel variables. Set them in your own
+  `server.cfg`. The runtime reads `net_port` from the config; if it is
+  missing it falls back to `server.port_fallback` from
+  `jka-runtime.json`.
+- **Log markers for godkänd start:**
+  `Binary mode  image-managed TaystJK (auto-update enabled)` (when
+  auto-update is on) or `Binary mode  manual user-supplied` (default),
+  `[ OK ] Bundled TaystJK files found`, TaystJK x86_64 engine banner,
   `Resolving master.jkhub.org`.
-- **Most common failure:** `exec format error` → uploaded a 64-bit
-  `linuxjampded` into a 32-bit image.
-
-## openjk-legacy32
-
-- **Egg:** `egg/egg-jka-openjk-legacy32-pterodactyl.json`
-- **Image:** `ghcr.io/akiondev/jedi-academy-pterodactyl:openjk-legacy32`
-- **You upload:** base PK3s only.
-- **Image ships:** `openjkded.i386` (synced into `/home/container/`)
-  and `base/jampgamei386.so` (staged into `/home/container/base/`).
-- **Variables:** `COPYRIGHT_ACKNOWLEDGED=true`,
-  `SERVER_BINARY=./openjkded.i386` (default — leave alone),
-  `FS_GAME_MOD=base`, `SERVER_CONFIG=server.cfg`.
-- **Log markers for godkänd start:** `Binary mode  image-managed`,
-  OpenJK i386 banner, `Sys_LoadDll(jampgamei386)` succeeding from
-  `base/`, `Resolving master.jkhub.org`.
-- **Most common failure:**
-  `Configured image-managed server binary openjkded.i386 was not found in the image-managed runtime`
-  → wrong image tag pulled.
-
-## ybeproxy-legacy32
-
-- **Egg:** `egg/egg-jka-ybeproxy-legacy32-pterodactyl.json`
-- **Image:** `ghcr.io/akiondev/jedi-academy-pterodactyl:ybeproxy-legacy32`
-- **You upload:** 32-bit `linuxjampded` (or any compatible 32-bit
-  dedicated server) to `/home/container/`, base PK3s to
-  `/home/container/base/`.
-- **Image ships:** `base/jampgamei386.so` only (the YBEProxy game
-  module). It is staged into `/home/container/base/` on every start.
-  YBEProxy ships **no engine binary** — this is intentional, it is a
-  game-module proxy.
-- **Variables:** `COPYRIGHT_ACKNOWLEDGED=true`,
-  `SERVER_BINARY=./linuxjampded` (match whatever 32-bit binary you
-  uploaded), `FS_GAME_MOD=base` (only `base` exercises the proxy),
-  `SERVER_CONFIG=server.cfg`.
-- **Log markers for godkänd start:** `Binary mode  manual user-supplied`,
-  engine loads `jampgamei386.so` from `base/` (typically also a
-  YBEProxy banner from the module), `Resolving master.jkhub.org`.
-- **Most common failure:** the YBEProxy banner is missing → you set
-  `FS_GAME_MOD` to something other than `base`, so the
-  image-managed `base/jampgamei386.so` was bypassed.
-
-## taystjk-legacy32
-
-- **Egg:** `egg/egg-jka-taystjk-legacy32-pterodactyl.json`
-- **Image:** `ghcr.io/akiondev/jedi-academy-pterodactyl:taystjk-legacy32`
-  (or the same tag on Docker Hub).
-- **You upload:** base PK3s only.
-- **Image ships:** `taystjkded.i386` (synced into
-  `/home/container/`) and the bundled `taystjk/` mod payload (staged
-  into `/home/container/taystjk/`).
-- **Variables:** `COPYRIGHT_ACKNOWLEDGED=true`,
-  `SERVER_BINARY=./taystjkded.i386` (default — leave alone),
-  `FS_GAME_MOD=base` (default; switch to `taystjk` to actually
-  exercise the bundled payload), `SERVER_CONFIG=server.cfg`.
-- **Log markers for godkänd start:** `Binary mode  image-managed TaystJK`,
-  `[ OK ] Bundled TaystJK files found`, TaystJK i386 engine banner,
-  `Resolving master.jkhub.org`.
-- **Most common failure:** `exec format error` immediately after
-  `Launching…` → the Wings host kernel cannot execute i386 ELFs.
-  Verify on the node with `file /home/container/taystjkded.i386`
-  and try running an i386 binary directly.
+- **Most common failures:**
+  - `Configured manual server binary taystjkded.x86_64 was not found
+    under /home/container.` → set `TAYSTJK_AUTO_UPDATE_BINARY=true` or
+    upload your own binary.
+  - `Runtime config at /home/container/config/jka-runtime.json is not
+    valid JSON` → fix the JSON file (use the `.example.json` next to it
+    as a reference).

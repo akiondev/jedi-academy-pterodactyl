@@ -65,42 +65,44 @@ Warning: this is not an official Pterodactyl installation method. Follow the lin
 2. Create a server with the runtime tag you want, for example `ghcr.io/akiondev/jedi-academy-pterodactyl:taystjk-modern64`. A Docker Hub mirror is published in parallel at `docker.io/akiondev/jedi-academy-pterodactyl` when configured.
 3. Set `COPYRIGHT_ACKNOWLEDGED=true`.
 4. Add your legally owned Jedi Academy base assets manually into `/home/container/base`.
-5. Start the server and verify that `/home/container/base/assets0.pk3` exists.
+5. Start the server. The runtime creates `/home/container/config/jka-runtime.json` from the shipped template on first start; edit that file to change behavior.
+6. Verify that `/home/container/base/assets0.pk3` exists.
 
 > **Migration note (image rename)**
 > Earlier builds were published as `ghcr.io/akiondev/jedi-academy-taystjk`. The platform image is now published under the Pterodactyl-centered name `ghcr.io/akiondev/jedi-academy-pterodactyl` (and mirrored to Docker Hub as `akiondev/jedi-academy-pterodactyl`). Existing servers can switch by editing the server's docker image to the new path; the underlying TaystJK runtime is identical. The legacy GHCR package will remain reachable for an interim period to avoid breaking existing deployments. See [docs/image-strategy.md](docs/image-strategy.md) for the full image and tag policy.
 
+## Manual-first egg model
+
+The egg exposes only four panel variables. Everything else is configured through `/home/container/config/jka-runtime.json` and through your own `server.cfg`.
+
+| Variable | Purpose |
+| --- | --- |
+| `COPYRIGHT_ACKNOWLEDGED` | Required acknowledgment that you legally own the Jedi Academy base assets you upload. |
+| `EXTRA_STARTUP_ARGS` | Optional extra arguments appended to the dedicated server command line. |
+| `SERVER_BINARY` | Path of the dedicated server binary under `/home/container`. Treated as a manual user-owned path unless auto-update is on. |
+| `TAYSTJK_AUTO_UPDATE_BINARY` | When `true`, the runtime overwrites `/home/container/taystjkded.x86_64` from the image-managed TaystJK build on every start and ignores `SERVER_BINARY`. When `false` (default), no engine binary is ever overwritten. |
+
+Behavior switches that used to live in the egg (anti-VPN, RCON guard, addons, event bus, hostname/MOTD/maxclients/gametype/rconpassword, debug, live-output mirror, FS_GAME_MOD, SERVER_CONFIG, SERVER_LOG_FILENAME, server.cfg overrides, addon enable flags, etc.) now live in `/home/container/config/jka-runtime.json`. Provider API keys must be written into that file by the server owner; they are no longer accepted as panel variables.
+
+The runtime never overwrites an existing `jka-runtime.json`; an `jka-runtime.example.json` template is refreshed alongside it on every start so you can compare against the latest shipped defaults.
+
 ## Manual alternatives
 
-1. Upload your own dedicated server binary into `/home/container`, then set `SERVER_BINARY` to that file, for example `./openjkded.x86_64`.
-2. Upload your own mod folder into `/home/container/<modname>`, then set `FS_GAME_MOD` to that folder name, for example `japlus` or `mbii`.
-3. Place the active config file inside that mod folder and set `SERVER_CONFIG` if you are not using `server.cfg`.
+1. Upload your own dedicated server binary into `/home/container`, then set `SERVER_BINARY` to that file, for example `./openjkded.x86_64`. Leave `TAYSTJK_AUTO_UPDATE_BINARY=false` (the default) so the binary is not overwritten.
+2. Upload your own mod folder into `/home/container/<modname>`, then set `server.fs_game` in `/home/container/config/jka-runtime.json` to that folder name, for example `japlus` or `mbii`.
+3. Place the active config file inside that mod folder and set `server.config` in `jka-runtime.json` if you are not using `server.cfg`.
 4. Start the server. The runtime will launch manual binaries and mod folders if they exist, but it will not install, sync, or manage them for you.
 
 ## Runtime tags and update policy
 
-Canonical public runtime tags (and the only ones published):
+The project publishes a single runtime family — `taystjk-modern64` — under the following tags:
 
-1. `taystjk-modern64`
-2. `taystjk-legacy32`
-3. `openjk-modern64`
-4. `openjk-legacy32`
-5. `ybeproxy-legacy32`
-6. `vanilla-legacy32`
-
-Not published: global `latest`, runtime `latest-*`, SHA/immutable tags, release image tags, or legacy alias tags.
-
-Auto-updating upstream TaystJK engine tracks:
-
+- `latest` (default branch only)
+- `taystjk`
 - `taystjk-modern64`
-- `taystjk-legacy32`
+- `taystjk-modern64-master-<short_sha>` (immutable, derived from upstream TaystJK master HEAD)
 
-Non-auto-updating engine tracks:
-
-- `openjk-modern64`
-- `openjk-legacy32`
-- `ybeproxy-legacy32` (manual engine, image-managed YBEProxy payload)
-- `vanilla-legacy32` (manual engine, no image-managed engine payload)
+Auto-updating upstream TaystJK engine: yes (rebuilt and republished when upstream master changes).
 
 ## What this repo contains
 
@@ -112,7 +114,7 @@ Non-auto-updating engine tracks:
 - `docs/addon_readme.md` — compact addon usage guide with quick examples
 - `docs/addon_readme_advanced.md` — full addon reference for developers and AI-guided scripting
 - `docs/anti-vpn.md` — anti-VPN design, variables, scoring and operating notes
-- `docs/operator-sheet.md` — short panel-only crib sheet per legacy32 family
+- `docs/operator-sheet.md` — short panel-only crib sheet for the TaystJK modern64 runtime
 - `docs/panel-testing.md` — full step-by-step Pterodactyl panel walkthrough
 
 ## Key behavior
@@ -121,12 +123,12 @@ Non-auto-updating engine tracks:
 - Tracks TaystJK `master` through image builds, and can automatically rebuild and publish the default image-managed runtime when upstream changes are detected
 - Does **not** bundle `assets*.pk3` or other copyrighted base game files
 - Requires server owners to provide their own legally owned Jedi Academy base assets manually in `/home/container/base`
-- Uses `FS_GAME_MOD=taystjk` by default
-- Allows switching to manually installed mod folders such as `base`, `japlus`, `japro`, or `mbii`
-- Allows switching to a manually uploaded alternative dedicated server binary through `SERVER_BINARY`
+- Uses `server.fs_game="taystjk"` from `/home/container/config/jka-runtime.json` by default
+- Allows switching to manually installed mod folders such as `base`, `japlus`, `japro`, or `mbii` by editing `server.fs_game` in `jka-runtime.json`
+- Allows switching to a manually uploaded alternative dedicated server binary through `SERVER_BINARY` (with `TAYSTJK_AUTO_UPDATE_BINARY=false`)
 - Supports lightweight runtime addons from `/home/container/addons` using top-level `.sh` and `.py` scripts executed alphabetically before normal startup
 - Syncs `ADDON_README.md` and `ADDON_README_ADVANCED.md` automatically into `/home/container/addons/docs`
-- Ships a managed `checkserverstatus` helper that is always refreshed from the image and can be run from the Pterodactyl console
+- Ships a managed `checkserverstatus` helper (toggle via `addons.checkserverstatus_enabled` in `jka-runtime.json`) that is refreshed from the image and can be run from the Pterodactyl console
 - Ships addon examples in `/home/container/addons/examples`, including a Python RCON announcer template that server owners can copy into `/home/container/addons` when they want to enable it
 - Optional anti-VPN supervision using online API checks with cache, allowlist, structured logging and weighted decisions
 
@@ -134,23 +136,23 @@ Non-auto-updating engine tracks:
 
 This repository is intentionally **TaystJK-first**:
 
-- the Docker image automatically builds and syncs the TaystJK dedicated server runtime
-- the default managed dedicated server binary is `taystjkded.*`
-- the default managed mod directory is `taystjk`
-- when a newer image-managed TaystJK runtime is published, servers using the default `taystjkded.*` path receive the newer binary on the next start that uses the refreshed image
+- the Docker image automatically builds the TaystJK dedicated server runtime
+- when `TAYSTJK_AUTO_UPDATE_BINARY=true`, the image-managed `taystjkded.x86_64` is synced into `/home/container` on every start
+- when `server.sync_managed_taystjk_payload=true` (default) in `jka-runtime.json`, the image-managed `taystjk/` mod payload is mirrored into `/home/container/taystjk` on every start
+- when a newer image-managed TaystJK runtime is published, servers using auto-update receive the newer binary on the next start that uses the refreshed image
 
 Manual alternatives are still allowed, but they are **not** automatically managed:
 
-- `SERVER_BINARY` may point at a manually uploaded alternative binary under `/home/container`
-- `FS_GAME_MOD` may point at a manually uploaded mod directory under `/home/container`
+- `SERVER_BINARY` may point at a manually uploaded alternative binary under `/home/container` (use `TAYSTJK_AUTO_UPDATE_BINARY=false`, the default)
+- `server.fs_game` in `jka-runtime.json` may point at a manually uploaded mod directory under `/home/container`
+- `server.sync_managed_taystjk_payload=false` keeps the `taystjk/` directory user-owned even when the active mod is `taystjk`
 - manual alternatives must already exist and contain their own required files before startup
-- manually selected binaries such as `openjkded.x86_64` are left untouched by image-managed TaystJK sync
 - only the default `taystjk` path gets automatic mod-directory preparation and default `server.cfg` generation
 
 Practical rule:
 
-- `taystjkded.*` and `taystjk/` are image-managed TaystJK namespaces
-- other binaries and mod folders are user-owned namespaces
+- `taystjkded.*` (when auto-update is on) and `taystjk/` (when payload sync is on) are image-managed TaystJK namespaces
+- everything else is a user-owned namespace
 
 ## Anti-VPN overview
 
@@ -176,10 +178,10 @@ This repository also includes a lightweight addon loader for self-hosted Pteroda
 - Built-in addon docs: synced into `/home/container/addons/docs`
 - Bundled examples: synced into `/home/container/addons/examples`, kept up to date by the image, and not executed until copied into the top-level addon directory
 - Managed defaults: synced into `/home/container/addons/defaults` and handled by dedicated runtime logic rather than the top-level user addon loader
-- Managed `checkserverstatus`: refreshed from `/home/container/addons/defaults`, installed into `/home/container/bin`, available from the Pterodactyl console through the runtime bridge, and controlled by `ADDON_CHECKSERVERSTATUS_ENABLED`
-- Managed `chatlogger`: refreshed from `/home/container/addons/defaults`, controlled by `ADDON_CHATLOGGER_ENABLED`, follows the resolved active server log path, and writes clean daily player chat logs into `/home/container/chatlogs`
+- Managed `checkserverstatus`: refreshed from `/home/container/addons/defaults`, installed into `/home/container/bin`, available from the Pterodactyl console through the runtime bridge, and controlled by `addons.checkserverstatus_enabled` in `jka-runtime.json`
+- Managed `chatlogger`: refreshed from `/home/container/addons/defaults`, controlled by `addons.chatlogger_enabled` in `jka-runtime.json`, follows the resolved active server log path, and writes clean daily player chat logs into `/home/container/chatlogs`
 - Managed server settings: the runtime publishes effective values into `/home/container/.runtime/taystjk-effective.env` and selected non-sensitive values into `.json` for addons and admin utilities
-- Optional server.cfg overrides: when enabled, non-empty egg override fields can write selected values such as `rconpassword` into the active `server.cfg`; otherwise addons fall back to the current config and runtime defaults
+- server.cfg ownership: the runtime never writes managed cvars (hostname, MOTD, maxclients, gametype, rconpassword) into your `server.cfg` from panel variables. Edit your own `server.cfg` to set them.
 - Runtime image addon baseline: the official image ships `python3`, `pip`, `venv`, `sqlite3`, `curl`, `wget`, `jq`, `git`, `rsync`, `procps`, `tar`, and `unzip`
 - Support files: top-level `.md`, `.json`, and `.txt` files are treated as support files and not executed; image-managed docs, examples, and defaults belong in their dedicated subdirectories
 - Scope: addons affect only the current server container and are fully owned by the server operator
