@@ -107,8 +107,7 @@ RUN printf '%s\n' "${TAYSTJK_COMMIT}" > /opt/jka/engine/.upstream-commit \
     && printf '%s\n' "${TAYSTJK_REF}" > /opt/jka/engine/.upstream-ref
 RUN mkdir -p /opt/jka/docs/addons
 RUN mkdir -p /opt/jka/bundled-addons
-COPY --chown=container:container docs/addon_readme.md /opt/jka/docs/addons/ADDON_README.md
-COPY --chown=container:container docs/addon_readme_advanced.md /opt/jka/docs/addons/ADDON_README_ADVANCED.md
+COPY --chown=container:container docs/addons/ADDON_README.md /opt/jka/docs/addons/ADDON_README.md
 COPY --chown=container:container bundled-addons/ /opt/jka/bundled-addons/
 COPY --chown=container:container scripts/common/ /opt/jka/runtime/common/
 COPY image/taystjk-modern64/runtime.json /opt/jka/runtime.json

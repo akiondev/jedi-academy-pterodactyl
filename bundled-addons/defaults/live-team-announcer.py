@@ -2,12 +2,18 @@
 """
 Event-driven default helper: live team-change announcer.
 
-This is the Phase 3 (event-bus) replacement for the legacy
+This is the event-bus replacement for the legacy
 ``20-live-team-announcer.py`` daemon that used to tail the runtime
 live-output mirror or the engine's ``server.log``. The supervisor now
 reads the dedicated server's stdout/stderr exactly once and publishes
 parsed events through a central dispatcher; this addon receives those
 events as newline-delimited JSON on stdin.
+
+Configuration is supplied by the runtime layer via the
+``JKA_ADDON_CONFIG_JSON`` environment variable (the
+``addons.live_team_announcer`` section of
+``/home/container/config/jka-addons.json``); the addon no longer reads
+its own ``*.config.json`` file.
 
 Protocol:
     One JSON object per line on stdin. The supervisor emits a
@@ -50,7 +56,20 @@ from typing import Any
 ADDON_LABEL = "[helper:live-team-announcer]"
 HOME_DIR = Path(os.environ.get("JKA_LIVE_TEAM_ANNOUNCER_HOME", "/home/container"))
 SCRIPT_PATH = Path(__file__).resolve()
-CONFIG_PATH = SCRIPT_PATH.with_suffix(".config.json")
+# Runtime configuration is passed in via the ``JKA_ADDON_CONFIG_JSON``
+# environment variable (the ``addons.live_team_announcer`` section of
+# ``/home/container/config/jka-addons.json``). When absent the addon
+# falls back to reading the centralised file directly so direct
+# invocations (`python3 live-team-announcer.py`) still work.
+ADDON_CONFIG_ENV = "JKA_ADDON_CONFIG_JSON"
+ADDON_NAME_ENV = "JKA_ADDON_NAME"
+ADDONS_CONFIG_PATH = Path(
+    os.environ.get(
+        "JKA_ADDONS_CONFIG_PATH",
+        str(HOME_DIR / "config" / "jka-addons.json"),
+    )
+)
+DEFAULT_ADDON_NAME = "live_team_announcer"
 LOGS_DIR = HOME_DIR / "logs"
 DEFAULT_LOG_PATH = LOGS_DIR / "bundled-live-team-announcer.log"
 RUNTIME_ENV_PATH = HOME_DIR / ".runtime" / "taystjk-effective.env"
@@ -108,16 +127,46 @@ def safe_bool(value: Any, default: bool) -> bool:
     return default
 
 
+def _load_section_from_addons_file(name: str) -> dict[str, Any] | None:
+    """Best-effort fallback when ``JKA_ADDON_CONFIG_JSON`` is missing."""
+    try:
+        raw = ADDONS_CONFIG_PATH.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    addons = parsed.get("addons")
+    if not isinstance(addons, dict):
+        return None
+    section = addons.get(name)
+    if isinstance(section, dict):
+        return section
+    return None
+
+
 def load_config() -> dict[str, Any]:
     config = dict(DEFAULT_CONFIG)
-    if CONFIG_PATH.is_file():
+    raw_env = os.environ.get(ADDON_CONFIG_ENV, "")
+    loaded: dict[str, Any] | None = None
+    if raw_env.strip():
         try:
-            loaded = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            log(f"failed to parse {CONFIG_PATH}: {exc}; using defaults")
-            loaded = {}
-        if isinstance(loaded, dict):
-            config.update(loaded)
+            parsed = json.loads(raw_env)
+        except json.JSONDecodeError as exc:
+            log(f"failed to parse {ADDON_CONFIG_ENV}: {exc}; using defaults")
+        else:
+            if isinstance(parsed, dict):
+                loaded = parsed
+            else:
+                log(f"{ADDON_CONFIG_ENV} is not a JSON object; using defaults")
+    if loaded is None:
+        addon_name = os.environ.get(ADDON_NAME_ENV, DEFAULT_ADDON_NAME)
+        loaded = _load_section_from_addons_file(addon_name)
+    if isinstance(loaded, dict):
+        config.update(loaded)
     config["enabled"] = safe_bool(config.get("enabled", False), False)
     config["rcon_timeout_seconds"] = safe_int(config.get("rcon_timeout_seconds"), 3, 1)
     config["min_seconds_between_announcements"] = safe_int(
@@ -238,7 +287,7 @@ def main(argv: list[str] | None = None) -> int:
         _log_handle = None
 
     if not config["enabled"]:
-        log(f"disabled in {CONFIG_PATH}; exiting")
+        log("disabled in jka-addons.json; exiting")
         return 0
 
     log("starting event-driven live team announcer; reading NDJSON events from stdin")

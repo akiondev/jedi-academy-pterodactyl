@@ -2,7 +2,7 @@
 # Blank lines and lines starting with # are ignored.
 #
 # By default the worker rotates through these lines once every
-# `interval_seconds` (see 20-python-announcer.config.json).
+# `interval_seconds` (see addons.announcer in jka-addons.json).
 #
 # To send messages at exact times of day instead, populate the `schedule`
 # list in the config. Each entry is one of:
@@ -24,6 +24,6 @@
 # (speaks as the dedicated console). Any other value is rejected.
 
 Welcome to the bundled TaystJK example announcer.
-Edit 20-python-announcer.messages.txt to change these recurring server messages.
+Edit announcer.messages.txt to change these recurring server messages.
 Set SERVER_RCON_PASSWORD in the egg or rconpassword in the active server config to enable bundled RCON announcements.
-Rename or remove 20-python-announcer.py if you do not want to run the bundled announcer.
+Disable the announcer in /home/container/config/jka-addons.json if you do not want to run the bundled announcer.

@@ -14,7 +14,7 @@ It is intentionally scoped to anti-VPN behavior only:
 
 ## Configuration source
 
-The anti-VPN supervisor is configured through `/home/container/config/jka-runtime.json`. The runtime creates this file from the shipped template on first start and refreshes `jka-runtime.example.json` next to it on every start; the user-owned file is never overwritten. Edit the `anti_vpn`, `rcon_guard`, `addons`, and `supervisor` sections in that file to change behavior. **Do not put provider API keys into the Pterodactyl egg** — write them into the `anti_vpn.providers.*` keys in `jka-runtime.json` so they stay on disk in the operator's volume and are never logged to the console.
+The anti-VPN supervisor is configured through `/home/container/config/jka-runtime.json`. The runtime creates this file from the shipped template on first start; the user-owned file is never overwritten. The canonical schema is documented in `docs/addons/ADDON_README.md`. Edit the `anti_vpn`, `rcon_guard`, `addons`, and `supervisor` sections in that file to change behavior. **Do not put provider API keys into the Pterodactyl egg** — write them into the `anti_vpn.providers.*` keys in `jka-runtime.json` so they stay on disk in the operator's volume and are never logged to the console.
 
 The legacy environment variables documented below (`ANTI_VPN_*`, `RCON_GUARD_*`, `ADDON_EVENT_BUS_*`, `JKA_LIVE_OUTPUT_MIRROR_ENABLED`, etc.) are still honored as a fallback and still describe the underlying runtime knobs. When both are present, JSON wins.
 
@@ -34,7 +34,7 @@ The anti-VPN feature is implemented as a compiled Go binary inside the runtime i
   - connection tracker (slot ↔ IP ↔ player name)
   - anti-VPN decision engine
   - RCON guard (`RCON_GUARD_ENABLED`, replaces the legacy `50-rcon-live-guard.py` addon)
-  - addon event dispatcher (`ADDON_EVENT_BUS_ENABLED`, exposes parsed events as NDJSON on the stdin of supervisor-launched addon processes — see `docs/addon_readme_advanced.md`)
+  - addon event dispatcher (`ADDON_EVENT_BUS_ENABLED`, exposes parsed events as NDJSON on the stdin of supervisor-launched addon processes — see `docs/addons/ADDON_README.md`)
 
 The supervisor mirrors the dedicated server output back to Pterodactyl, extracts player IPs from `ClientConnect` / `ClientUserinfoChanged` events as close to the process as possible, queries providers in parallel, evaluates a weighted score, writes a structured audit trail, and optionally sends server console commands such as `clientkick` and, if configured, `addip`.
 
@@ -210,7 +210,7 @@ The new shipped defaults are visible-by-default:
 
 To adopt them on an existing deployment, either:
 
-1. compare your file against `/home/container/config/jka-runtime.example.json` (refreshed on every boot) and copy over the two keys above, or
+1. consult the canonical schema in `docs/addons/ADDON_README.md` (synced into `/home/container/addons/docs/ADDON_README.md`) and copy over the two keys above, or
 2. delete `jka-runtime.json` and let the entrypoint regenerate it from the current template (this resets every other key as well, including provider API keys).
 
 When the supervisor starts and observes that the resolved `anti_vpn.broadcast.mode` is still `block-only`, it now logs a one-line migration warning so the silent-PASS pitfall is visible in the panel console:

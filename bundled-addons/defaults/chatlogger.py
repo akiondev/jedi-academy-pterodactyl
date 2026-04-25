@@ -3,7 +3,7 @@
 Event-driven default helper: persistent player chat logging.
 
 This is the Phase 2 (event-bus) replacement for the legacy
-``40-chatlogger.py`` daemon that used to tail
+``chatlogger.py`` daemon that used to tail
 ``/home/container/.runtime/live/server-output.log`` and
 ``/home/container/<mod>/server.log`` with ``tail -F``. The supervisor
 now reads the dedicated server's stdout/stderr exactly once and

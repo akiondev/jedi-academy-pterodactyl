@@ -81,16 +81,16 @@ else
   pass "no checkserverstatus references in bundled defaults"
 fi
 
-# The Phase 2 event-driven chatlogger must exist.
-EVENT_CHATLOGGER="${DEFAULTS_DIR}/events/40-chatlogger.py"
+# The event-driven chatlogger must exist at its new flat path.
+EVENT_CHATLOGGER="${DEFAULTS_DIR}/chatlogger.py"
 if [[ -f "$EVENT_CHATLOGGER" ]]; then
   pass "event-driven chatlogger present at ${EVENT_CHATLOGGER}"
 else
   fail "event-driven chatlogger missing at ${EVENT_CHATLOGGER}"
 fi
 
-# The Phase 3 event-driven live team announcer must exist.
-EVENT_TEAM_ANNOUNCER="${DEFAULTS_DIR}/events/30-live-team-announcer.py"
+# The event-driven live team announcer must exist at its new flat path.
+EVENT_TEAM_ANNOUNCER="${DEFAULTS_DIR}/live-team-announcer.py"
 if [[ -f "$EVENT_TEAM_ANNOUNCER" ]]; then
   pass "event-driven live team announcer present at ${EVENT_TEAM_ANNOUNCER}"
 else

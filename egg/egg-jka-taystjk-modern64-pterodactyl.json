@@ -1,73 +1,73 @@
 {
-	"_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PTERODACTYL PANEL - Pterodactyl\u00ae https://pterodactyl.io",
-	"meta": {
-		"version": "PTDL_v2",
-		"update_url": null
-	},
-	"exported_at": "2026-04-25T12:00:00+02:00",
-	"name": "TaystJK",
-	"author": "admin@example.com",
-	"description": "Runs the TaystJK modern64 dedicated server on Pterodactyl from an image-managed source build. The egg is intentionally minimal: only four panel variables are exposed and all runtime behavior (server, supervisor, addons, anti-VPN, RCON guard, event bus) is configured manually through /home/container/config/jka-runtime.json and through the operator's own server.cfg. The runtime never ships Jedi Academy base assets.",
-	"features": [],
-	"docker_images": {
-		"Jedi Academy Pterodactyl (TaystJK runtime, GHCR)": "ghcr.io/akiondev/jedi-academy-pterodactyl:taystjk-modern64",
-		"Jedi Academy Pterodactyl (TaystJK runtime, Docker Hub mirror)": "docker.io/akiondev/jedi-academy-pterodactyl:taystjk-modern64"
-	},
-	"file_denylist": [],
-	"startup": "--panel-startup",
-	"config": {
-		"files": "{}",
-		"startup": "{\"done\": \"Resolving master.jkhub.org\"}",
-		"logs": "{}",
-		"stop": "quit"
-	},
-	"scripts": {
-		"installation": {
-			"script": "#!/usr/bin/env bash\nset -euo pipefail\n\ncd /mnt/server\n\n: \"${COPYRIGHT_ACKNOWLEDGED:=false}\"\n[[ \"${COPYRIGHT_ACKNOWLEDGED}\" == \"true\" ]] || {\n  printf '[ERROR] COPYRIGHT_ACKNOWLEDGED must be true. This egg does not distribute Jedi Academy assets.\\n' >&2\n  exit 1\n}\n\nmkdir -p \\\n  /mnt/server/base \\\n  /mnt/server/logs \\\n  /mnt/server/addons \\\n  /mnt/server/config\n\n# Materialise the runtime config example so operators can see the\n# canonical defaults during install. The user file is written only\n# when missing so operator edits survive reinstalls.\nEXAMPLE_PATH=/mnt/server/config/jka-runtime.example.json\nUSER_PATH=/mnt/server/config/jka-runtime.json\ncat > \"${EXAMPLE_PATH}\" <<'JSON'\n{\n  \"server\": {\n    \"fs_game\": \"taystjk\",\n    \"config\": \"server.cfg\",\n    \"log_filename\": \"server.log\",\n    \"port_fallback\": 29070,\n    \"sync_managed_taystjk_payload\": true\n  },\n  \"supervisor\": {\n    \"enabled\": true,\n    \"debug_startup\": false,\n    \"live_output_mirror_enabled\": false\n  },\n  \"anti_vpn\": {\n    \"enabled\": false,\n    \"mode\": \"block\",\n    \"score_threshold\": 90,\n    \"allowlist\": [],\n    \"timeout_ms\": 1500,\n    \"cache_ttl\": \"6h\",\n    \"cache_flush_interval\": \"2s\",\n    \"audit_log_path\": \"/home/container/logs/anti-vpn-audit.log\",\n    \"audit_allow\": true,\n    \"log_decisions\": false,\n    \"providers\": {\n      \"proxycheck_api_key\": \"\",\n      \"ipapiis_api_key\": \"\",\n      \"iphub_api_key\": \"\",\n      \"vpnapi_io_api_key\": \"\",\n      \"ipqualityscore_api_key\": \"\",\n      \"iplocate_api_key\": \"\"\n    },\n    \"broadcast\": {\n      \"mode\": \"pass-and-block\",\n      \"cooldown\": \"90s\",\n      \"pass_template\": \"say [Anti-VPN] VPN PASS: %PLAYER% cleared checks (%SCORE%/%THRESHOLD%). %SUMMARY%\",\n      \"block_template\": \"say [Anti-VPN] VPN BLOCKED: %PLAYER% triggered anti-VPN (%SCORE%/%THRESHOLD%). %SUMMARY%\"\n    },\n    \"enforcement\": {\n      \"mode\": \"kick-only\",\n      \"kick_command\": \"clientkick %SLOT%\",\n      \"ban_command\": \"\"\n    }\n  },\n  \"rcon_guard\": {\n    \"enabled\": true,\n    \"action\": \"kick\",\n    \"broadcast\": true,\n    \"ignore_hosts\": [\"127.0.0.1\", \"::1\", \"localhost\"]\n  },\n  \"addons\": {\n    \"enabled\": true,\n    \"directory\": \"/home/container/addons\",\n    \"event_addons_dir\": \"/home/container/addons/events\",\n    \"chatlogger_enabled\": false,\n    \"strict\": false,\n    \"timeout_seconds\": 30,\n    \"log_output\": true,\n    \"event_bus\": {\n      \"enabled\": true,\n      \"buffer_size\": 1000,\n      \"drop_policy\": \"drop-oldest\"\n    }\n  }\n}\nJSON\n\nif [[ ! -f \"${USER_PATH}\" ]]; then\n  cp \"${EXAMPLE_PATH}\" \"${USER_PATH}\"\n  printf '[INFO] Created default runtime config at %s\\n' \"${USER_PATH}\"\nelse\n  printf '[INFO] Existing runtime config preserved at %s\\n' \"${USER_PATH}\"\nfi\n\nprintf '[INFO] Game assets are manual-only. Upload your legally owned base assets to /mnt/server/base before starting the server.\\n'\nprintf '[INFO] Edit %s to change runtime behavior; only COPYRIGHT_ACKNOWLEDGED, EXTRA_STARTUP_ARGS, SERVER_BINARY and TAYSTJK_AUTO_UPDATE_BINARY remain as panel variables.\\n' \"${USER_PATH}\"\n",
-			"container": "ghcr.io/pterodactyl/installers:debian",
-			"entrypoint": "bash"
-		}
-	},
-	"variables": [
-		{
-			"name": "Copyright Acknowledged",
-			"description": "Required acknowledgment that you legally own the Jedi Academy base assets you upload into /home/container/base. The runtime refuses to start unless this is true. The image never distributes copyrighted assets.",
-			"env_variable": "COPYRIGHT_ACKNOWLEDGED",
-			"default_value": "false",
-			"user_viewable": true,
-			"user_editable": true,
-			"rules": "required|string|in:true,false",
-			"field_type": "text"
-		},
-		{
-			"name": "Extra Startup Args",
-			"description": "Optional additional arguments appended verbatim to the dedicated server command line after +exec server.cfg. Quotes may be used for grouping; shell metacharacters are rejected.",
-			"env_variable": "EXTRA_STARTUP_ARGS",
-			"default_value": "",
-			"user_viewable": true,
-			"user_editable": true,
-			"rules": "nullable|string|max:512",
-			"field_type": "text"
-		},
-		{
-			"name": "Server Binary",
-			"description": "Path of the dedicated server executable under /home/container to launch. Treated as a manual user-owned binary unless TAYSTJK_AUTO_UPDATE_BINARY is true, in which case the value is ignored and the image-managed taystjkded.x86_64 is used.",
-			"env_variable": "SERVER_BINARY",
-			"default_value": "./taystjkded.x86_64",
-			"user_viewable": true,
-			"user_editable": true,
-			"rules": "required|string|max:128|regex:/^(\\.\\/)?[A-Za-z0-9][A-Za-z0-9._-]*$/",
-			"field_type": "text"
-		},
-		{
-			"name": "Auto-Update TaystJK Binary",
-			"description": "When true, the runtime syncs the image-managed TaystJK modern64 binary from /opt/jka/engine/taystjkded.x86_64 into /home/container/taystjkded.x86_64 on every start, ignoring SERVER_BINARY. When false (the default), no engine binary is overwritten and SERVER_BINARY is treated as a manual user-owned path under /home/container.",
-			"env_variable": "TAYSTJK_AUTO_UPDATE_BINARY",
-			"default_value": "false",
-			"user_viewable": true,
-			"user_editable": true,
-			"rules": "required|string|in:true,false",
-			"field_type": "text"
-		}
-	]
+  "_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PTERODACTYL PANEL - Pterodactyl® https://pterodactyl.io",
+  "meta": {
+    "version": "PTDL_v2",
+    "update_url": null
+  },
+  "exported_at": "2026-04-25T12:00:00+02:00",
+  "name": "TaystJK",
+  "author": "admin@example.com",
+  "description": "Runs the TaystJK modern64 dedicated server on Pterodactyl from an image-managed source build. The egg is intentionally minimal: only four panel variables are exposed and all runtime behavior (server, supervisor, addons, anti-VPN, RCON guard, event bus) is configured manually through /home/container/config/jka-runtime.json and through the operator's own server.cfg. The runtime never ships Jedi Academy base assets.",
+  "features": [],
+  "docker_images": {
+    "Jedi Academy Pterodactyl (TaystJK runtime, GHCR)": "ghcr.io/akiondev/jedi-academy-pterodactyl:taystjk-modern64",
+    "Jedi Academy Pterodactyl (TaystJK runtime, Docker Hub mirror)": "docker.io/akiondev/jedi-academy-pterodactyl:taystjk-modern64"
+  },
+  "file_denylist": [],
+  "startup": "--panel-startup",
+  "config": {
+    "files": "{}",
+    "startup": "{\"done\": \"Resolving master.jkhub.org\"}",
+    "logs": "{}",
+    "stop": "quit"
+  },
+  "scripts": {
+    "installation": {
+      "script": "#!/usr/bin/env bash\nset -euo pipefail\n\ncd /mnt/server\n\n: \"${COPYRIGHT_ACKNOWLEDGED:=false}\"\n[[ \"${COPYRIGHT_ACKNOWLEDGED}\" == \"true\" ]] || {\n  printf '[ERROR] COPYRIGHT_ACKNOWLEDGED must be true. This egg does not distribute Jedi Academy assets.\\n' >&2\n  exit 1\n}\n\nmkdir -p \\\n  /mnt/server/base \\\n  /mnt/server/logs \\\n  /mnt/server/addons \\\n  /mnt/server/config\n\n# Materialise the runtime config files only when missing so operator\n# edits survive reinstalls. No example file is written next to them:\n# the canonical schema/defaults are documented in\n# /home/container/addons/docs/ADDON_README.md.\nRUNTIME_PATH=/mnt/server/config/jka-runtime.json\nADDONS_PATH=/mnt/server/config/jka-addons.json\n\nif [[ ! -f \"${RUNTIME_PATH}\" ]]; then\n  cat > \"${RUNTIME_PATH}\" <<'JSON'\n{\n  \"server\": {\n    \"fs_game\": \"taystjk\",\n    \"config\": \"server.cfg\",\n    \"log_filename\": \"server.log\",\n    \"port_fallback\": 29070,\n    \"sync_managed_taystjk_payload\": true\n  },\n  \"supervisor\": {\n    \"enabled\": true,\n    \"debug_startup\": false,\n    \"live_output_mirror_enabled\": false\n  },\n  \"anti_vpn\": {\n    \"enabled\": false,\n    \"mode\": \"block\",\n    \"score_threshold\": 90,\n    \"allowlist\": [],\n    \"timeout_ms\": 1500,\n    \"cache_ttl\": \"6h\",\n    \"cache_flush_interval\": \"2s\",\n    \"audit_log_path\": \"/home/container/logs/anti-vpn-audit.log\",\n    \"audit_allow\": true,\n    \"log_decisions\": false,\n    \"providers\": {\n      \"proxycheck_api_key\": \"\",\n      \"ipapiis_api_key\": \"\",\n      \"iphub_api_key\": \"\",\n      \"vpnapi_io_api_key\": \"\",\n      \"ipqualityscore_api_key\": \"\",\n      \"iplocate_api_key\": \"\"\n    },\n    \"broadcast\": {\n      \"mode\": \"pass-and-block\",\n      \"cooldown\": \"90s\",\n      \"pass_template\": \"say [Anti-VPN] VPN PASS: %PLAYER% cleared checks (%SCORE%/%THRESHOLD%). %SUMMARY%\",\n      \"block_template\": \"say [Anti-VPN] VPN BLOCKED: %PLAYER% triggered anti-VPN (%SCORE%/%THRESHOLD%). %SUMMARY%\"\n    },\n    \"enforcement\": {\n      \"mode\": \"kick-only\",\n      \"kick_command\": \"clientkick %SLOT%\",\n      \"ban_command\": \"\"\n    }\n  },\n  \"rcon_guard\": {\n    \"enabled\": true,\n    \"action\": \"kick\",\n    \"broadcast\": true,\n    \"ignore_hosts\": [\"127.0.0.1\", \"::1\", \"localhost\"]\n  },\n  \"addons\": {\n    \"enabled\": true,\n    \"directory\": \"/home/container/addons\",\n    \"strict\": false,\n    \"timeout_seconds\": 30,\n    \"log_output\": true,\n    \"event_bus\": {\n      \"enabled\": true,\n      \"buffer_size\": 1000,\n      \"drop_policy\": \"drop-oldest\"\n    }\n  }\n}\nJSON\n  printf '[INFO] Created default runtime config at %s\\n' \"${RUNTIME_PATH}\"\nelse\n  printf '[INFO] Existing runtime config preserved at %s\\n' \"${RUNTIME_PATH}\"\nfi\n\nif [[ ! -f \"${ADDONS_PATH}\" ]]; then\n  cat > \"${ADDONS_PATH}\" <<'JSON'\n{\n  \"addons\": {\n    \"announcer\": {\n      \"enabled\": false,\n      \"order\": 20,\n      \"type\": \"scheduled\",\n      \"script\": \"announcer.py\",\n      \"announce_command\": \"svsay\",\n      \"interval_seconds\": 300,\n      \"messages_file\": \"announcer.messages.txt\"\n    },\n    \"live_team_announcer\": {\n      \"enabled\": false,\n      \"order\": 30,\n      \"type\": \"event\",\n      \"script\": \"live-team-announcer.py\",\n      \"announce_command\": \"svsay\",\n      \"min_seconds_between_announcements\": 3\n    },\n    \"chatlogger\": {\n      \"enabled\": false,\n      \"order\": 40,\n      \"type\": \"event\",\n      \"script\": \"chatlogger.py\"\n    }\n  }\n}\nJSON\n  printf '[INFO] Created default addons config at %s\\n' \"${ADDONS_PATH}\"\nelse\n  printf '[INFO] Existing addons config preserved at %s\\n' \"${ADDONS_PATH}\"\nfi\n\nprintf '[INFO] Game assets are manual-only. Upload your legally owned base assets to /mnt/server/base before starting the server.\\n'\nprintf '[INFO] Edit %s to change runtime behavior; only COPYRIGHT_ACKNOWLEDGED, EXTRA_STARTUP_ARGS, SERVER_BINARY and TAYSTJK_AUTO_UPDATE_BINARY remain as panel variables.\\n' \"${RUNTIME_PATH}\"\n",
+      "container": "ghcr.io/pterodactyl/installers:debian",
+      "entrypoint": "bash"
+    }
+  },
+  "variables": [
+    {
+      "name": "Copyright Acknowledged",
+      "description": "Required acknowledgment that you legally own the Jedi Academy base assets you upload into /home/container/base. The runtime refuses to start unless this is true. The image never distributes copyrighted assets.",
+      "env_variable": "COPYRIGHT_ACKNOWLEDGED",
+      "default_value": "false",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|in:true,false",
+      "field_type": "text"
+    },
+    {
+      "name": "Extra Startup Args",
+      "description": "Optional additional arguments appended verbatim to the dedicated server command line after +exec server.cfg. Quotes may be used for grouping; shell metacharacters are rejected.",
+      "env_variable": "EXTRA_STARTUP_ARGS",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string|max:512",
+      "field_type": "text"
+    },
+    {
+      "name": "Server Binary",
+      "description": "Path of the dedicated server executable under /home/container to launch. Treated as a manual user-owned binary unless TAYSTJK_AUTO_UPDATE_BINARY is true, in which case the value is ignored and the image-managed taystjkded.x86_64 is used.",
+      "env_variable": "SERVER_BINARY",
+      "default_value": "./taystjkded.x86_64",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|max:128|regex:/^(\\.\\/)?[A-Za-z0-9][A-Za-z0-9._-]*$/",
+      "field_type": "text"
+    },
+    {
+      "name": "Auto-Update TaystJK Binary",
+      "description": "When true, the runtime syncs the image-managed TaystJK modern64 binary from /opt/jka/engine/taystjkded.x86_64 into /home/container/taystjkded.x86_64 on every start, ignoring SERVER_BINARY. When false (the default), no engine binary is overwritten and SERVER_BINARY is treated as a manual user-owned path under /home/container.",
+      "env_variable": "TAYSTJK_AUTO_UPDATE_BINARY",
+      "default_value": "false",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|in:true,false",
+      "field_type": "text"
+    }
+  ]
 }

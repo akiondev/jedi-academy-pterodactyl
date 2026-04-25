@@ -15,7 +15,26 @@
 # and ${JKA_PATH_DOCS}.
 
 sync_addon_docs() {
-  sync_image_managed_addon_tree "${JKA_PATH_DOCS}/addons" "$ADDON_DOCS_DIR" "addon docs"
+  # The image ships exactly one addon doc file (ADDON_README.md) under
+  # ${JKA_PATH_DOCS}/addons. Sync mirrors only that file into
+  # /home/container/addons/docs and prunes any older synced docs left
+  # over from earlier image revisions.
+  local source_dir="${JKA_PATH_DOCS}/addons"
+  local target_dir="$ADDON_DOCS_DIR"
+
+  mkdir -p "$target_dir"
+
+  if [[ ! -d "$source_dir" ]]; then
+    debug "No image-managed addon docs found under ${source_dir}"
+    return 0
+  fi
+
+  # --delete + restrictive --include keeps only ADDON_README.md.
+  rsync -a --delete \
+    --include='ADDON_README.md' \
+    --exclude='*' \
+    "${source_dir}/" "${target_dir}/"
+  debug "Refreshed image-managed addon docs in ${target_dir}"
 }
 
 sync_image_managed_addon_tree() {
@@ -37,18 +56,16 @@ sync_image_managed_addon_tree() {
 
 sync_managed_addon_defaults() {
   info "Syncing managed addon helpers into ${ADDON_DEFAULTS_DIR}"
-  # Image-managed addon source files (.py / .sh) are refreshed
-  # byte-for-byte from the image. Per-addon *.config.json files are
-  # user-owned (the operator toggles `enabled` and provides addon
-  # settings) and are NOT overwritten by the sync.
+  # Image-managed addon source files (.py / .sh / .txt / .md) are
+  # refreshed byte-for-byte from the image. Per-addon configuration
+  # lives centrally in /home/container/config/jka-addons.json and is
+  # never overwritten by this sync.
   mkdir -p "$ADDON_DEFAULTS_DIR"
   if [[ ! -d "${JKA_PATH_BUNDLED_ADDONS}/defaults" ]]; then
     debug "No image-managed addon defaults found under ${JKA_PATH_BUNDLED_ADDONS}/defaults"
     return 0
   fi
 
-  # Mirror all source/script files but preserve any *.config.json the
-  # operator may have edited.
   rsync -a \
     --include='*/' \
     --include='*.py' --include='*.sh' --include='*.txt' --include='*.md' \
@@ -58,33 +75,53 @@ sync_managed_addon_defaults() {
   debug "Refreshed image-managed addon defaults in ${ADDON_DEFAULTS_DIR}"
 }
 
-# sync_managed_addon_default_configs copies any *.config.json file
-# shipped under bundled-addons/defaults/ into the operator's
-# /home/container/addons/defaults/ tree ONLY when the destination file
-# does not already exist. This preserves operator edits across image
-# upgrades while still seeding new addons (or new keys) on first boot.
-sync_managed_addon_default_configs() {
-  local source_root="${JKA_PATH_BUNDLED_ADDONS}/defaults"
-  local target_root="${ADDON_DEFAULTS_DIR}"
-  local relative_path=""
-  local source_path=""
-  local target_path=""
+# cleanup_legacy_addon_paths removes image-managed paths from earlier
+# revisions of this runtime that should no longer exist on disk:
+#
+#   * /home/container/addons/events           (former event-addon
+#     symlink directory; event addons now launch directly from
+#     /home/container/addons/defaults driven by jka-addons.json)
+#   * /home/container/addons/defaults/events  (former numeric-prefixed
+#     default subdirectory)
+#   * /home/container/addons/defaults/<numeric-prefixed default files>
+#
+# This function is conservative: it only removes well-known legacy
+# paths, never arbitrary user files. User-owned scripts in the
+# top-level /home/container/addons directory are not touched.
+cleanup_legacy_addon_paths() {
+  local removed=0
+  local target=""
 
-  if [[ ! -d "$source_root" ]]; then
-    return 0
+  if [[ -d "${ADDONS_DIR}/events" ]]; then
+    rm -rf "${ADDONS_DIR}/events"
+    info "Removed legacy event-addons directory: ${ADDONS_DIR}/events"
+    removed=$((removed + 1))
   fi
 
-  while IFS= read -r -d '' source_path; do
-    relative_path="${source_path#"${source_root}"/}"
-    target_path="${target_root}/${relative_path}"
-    if [[ -f "$target_path" ]]; then
-      debug "Preserving user-owned addon config: ${target_path}"
-      continue
+  if [[ -d "${ADDON_DEFAULTS_DIR}/events" ]]; then
+    rm -rf "${ADDON_DEFAULTS_DIR}/events"
+    info "Removed legacy defaults/events directory: ${ADDON_DEFAULTS_DIR}/events"
+    removed=$((removed + 1))
+  fi
+
+  for target in \
+    "${ADDON_DEFAULTS_DIR}/20-python-announcer.py" \
+    "${ADDON_DEFAULTS_DIR}/20-python-announcer.messages.txt" \
+    "${ADDON_DEFAULTS_DIR}/20-python-announcer.config.json" \
+    "${ADDON_DEFAULTS_DIR}/30-live-team-announcer.py" \
+    "${ADDON_DEFAULTS_DIR}/30-live-team-announcer.config.json" \
+    "${ADDON_DEFAULTS_DIR}/40-chatlogger.py" \
+    "${ADDON_DEFAULTS_DIR}/40-chatlogger.config.json"; do
+    if [[ -f "$target" || -L "$target" ]]; then
+      rm -f "$target"
+      info "Removed legacy default addon file: ${target}"
+      removed=$((removed + 1))
     fi
-    mkdir -p "$(dirname "$target_path")"
-    cp "$source_path" "$target_path"
-    info "Seeded default addon config (disabled): ${target_path}"
-  done < <(find "$source_root" -type f -name '*.config.json' -print0)
+  done
+
+  if [[ "$removed" -gt 0 ]]; then
+    debug "cleanup_legacy_addon_paths removed ${removed} legacy entr$( [[ "$removed" -eq 1 ]] && printf 'y' || printf 'ies' )"
+  fi
 }
 
 # cleanup_stale_live_output_files removes /home/container/.runtime/live/
@@ -116,116 +153,141 @@ cleanup_stale_live_output_files() {
   fi
 }
 
-install_managed_chatlogger_helper() {
-  install_managed_event_addon "events/40-chatlogger.py"
+# default_addons_config_template emits the canonical jka-addons.json
+# that the runtime materialises on first boot. Keep this in sync with
+# docs/addons/ADDON_README.md.
+default_addons_config_template() {
+  cat <<'JSON'
+{
+  "addons": {
+    "announcer": {
+      "enabled": false,
+      "order": 20,
+      "type": "scheduled",
+      "script": "announcer.py",
+      "announce_command": "svsay",
+      "interval_seconds": 300,
+      "messages_file": "announcer.messages.txt"
+    },
+    "live_team_announcer": {
+      "enabled": false,
+      "order": 30,
+      "type": "event",
+      "script": "live-team-announcer.py",
+      "announce_command": "svsay",
+      "min_seconds_between_announcements": 3
+    },
+    "chatlogger": {
+      "enabled": false,
+      "order": 40,
+      "type": "event",
+      "script": "chatlogger.py"
+    }
+  }
+}
+JSON
+}
+
+# load_addons_json_config materialises /home/container/config/jka-addons.json
+# from the default template when missing, validates it as JSON, and
+# exports per-addon environment variables consumed by the rest of the
+# runtime (including the Go supervisor's addon runner via
+# JKA_ADDONS_CONFIG_PATH).
+#
+# Exports:
+#   JKA_ADDONS_CONFIG_PATH                  — absolute path to the file
+#   ADDON_ANNOUNCER_ENABLED                 — true|false
+#   ADDON_ANNOUNCER_SCRIPT                  — relative script name
+#   ADDON_ANNOUNCER_CONFIG_JSON             — addons.announcer JSON object
+#   ADDON_LIVE_TEAM_ANNOUNCER_ENABLED       — true|false
+#   ADDON_LIVE_TEAM_ANNOUNCER_SCRIPT
+#   ADDON_LIVE_TEAM_ANNOUNCER_CONFIG_JSON
+#   ADDON_CHATLOGGER_ENABLED                — true|false
+#   ADDON_CHATLOGGER_SCRIPT
+#   ADDON_CHATLOGGER_CONFIG_JSON
+#
+# The user-owned file is never overwritten.
+JKA_ADDONS_CONFIG_DIR="${JKA_ADDONS_CONFIG_DIR:-/home/container/config}"
+JKA_ADDONS_CONFIG_PATH="${JKA_ADDONS_CONFIG_PATH:-${JKA_ADDONS_CONFIG_DIR}/jka-addons.json}"
+
+load_addons_json_config() {
+  if ! command -v jq >/dev/null 2>&1; then
+    fail "Addons JSON config loader requires jq, but jq is not available"
+  fi
+
+  mkdir -p "$JKA_ADDONS_CONFIG_DIR"
+
+  if [[ ! -f "$JKA_ADDONS_CONFIG_PATH" ]]; then
+    info "Creating default addons config at ${JKA_ADDONS_CONFIG_PATH}"
+    default_addons_config_template > "$JKA_ADDONS_CONFIG_PATH"
+  fi
+
+  if ! jq -e . "$JKA_ADDONS_CONFIG_PATH" >/dev/null 2>&1; then
+    fail "Addons config at ${JKA_ADDONS_CONFIG_PATH} is not valid JSON"
+  fi
+
+  export JKA_ADDONS_CONFIG_PATH
+
+  local name=""
+  local upper=""
+  local enabled=""
+  # shellcheck disable=SC2034  # consumed via eval below
+  local script=""
+  # shellcheck disable=SC2034  # consumed via eval below
+  local section=""
+  for name in announcer live_team_announcer chatlogger; do
+    upper="$(printf '%s' "$name" | tr '[:lower:]' '[:upper:]')"
+    enabled="$(jq -r --arg n "$name" '(.addons[$n].enabled // false) | tostring' "$JKA_ADDONS_CONFIG_PATH" 2>/dev/null || echo false)"
+    # shellcheck disable=SC2034  # consumed via eval below
+    script="$(jq -r --arg n "$name" '.addons[$n].script // ""' "$JKA_ADDONS_CONFIG_PATH" 2>/dev/null || echo "")"
+    # shellcheck disable=SC2034  # consumed via eval below
+    section="$(jq -c --arg n "$name" '.addons[$n] // {}' "$JKA_ADDONS_CONFIG_PATH" 2>/dev/null || echo '{}')"
+    case "$enabled" in
+      true|false) ;;
+      *) enabled="false" ;;
+    esac
+    eval "ADDON_${upper}_ENABLED=\"\$enabled\""
+    eval "ADDON_${upper}_SCRIPT=\"\$script\""
+    eval "ADDON_${upper}_CONFIG_JSON=\"\$section\""
+    eval "export ADDON_${upper}_ENABLED ADDON_${upper}_SCRIPT ADDON_${upper}_CONFIG_JSON"
+  done
 }
 
 install_managed_python_announcer_helper() {
-  # Phase 3 default-addon model: the Python announcer is shipped as a
-  # managed default addon, disabled via its own config file. When the
-  # operator flips `enabled=true` in
-  # /home/container/addons/defaults/20-python-announcer.config.json
-  # this helper launches the script so it can spawn its scheduled
-  # background worker. When disabled, any leftover lockfile/PID is
-  # ignored: the addon decides on next run whether to take the lock.
-  local helper_path="${ADDON_DEFAULTS_DIR}/20-python-announcer.py"
-  local cfg_path="${ADDON_DEFAULTS_DIR}/20-python-announcer.config.json"
-  local enabled
-  enabled="$(addon_config_enabled "$cfg_path")"
-  if [[ "$enabled" != "true" ]]; then
-    debug "Default Python announcer is disabled (edit ${cfg_path} to enable)"
+  # Manual-first launcher for the scheduled announcer addon. The
+  # addon's own ``enabled`` flag in jka-addons.json gates this; the
+  # script reads its full configuration from the JKA_ADDON_CONFIG_JSON
+  # env var so no per-addon config file is ever written next to the
+  # script.
+  local script_name="${ADDON_ANNOUNCER_SCRIPT:-announcer.py}"
+  local helper_path="${ADDON_DEFAULTS_DIR}/${script_name}"
+
+  if [[ "${ADDON_ANNOUNCER_ENABLED:-false}" != "true" ]]; then
+    debug "Default announcer is disabled (edit ${JKA_ADDONS_CONFIG_PATH} to enable)"
     return 0
   fi
   if [[ ! -f "$helper_path" ]]; then
-    warn "Default Python announcer helper missing at ${helper_path}"
+    warn "Default announcer helper missing at ${helper_path}"
     return 0
   fi
-  info "Starting default Python announcer (enabled in ${cfg_path})"
+  info "Starting default announcer (enabled in ${JKA_ADDONS_CONFIG_PATH})"
   set +e
-  python3 "$helper_path"
+  JKA_ADDON_NAME="announcer" \
+    JKA_ADDON_CONFIG_JSON="${ADDON_ANNOUNCER_CONFIG_JSON:-{}}" \
+    JKA_ADDONS_CONFIG_PATH="$JKA_ADDONS_CONFIG_PATH" \
+    python3 "$helper_path"
   set -e
 }
 
-install_managed_live_team_announcer_helper() {
-  install_managed_event_addon "events/30-live-team-announcer.py"
-}
-
-# install_managed_event_addon is the shared lifecycle helper for
-# event-driven default addons. It reads the addon's own
-# *.config.json `enabled` flag and either symlinks the helper into
-# /home/container/addons/events (so the supervisor's addon runner
-# picks it up) or removes the symlink if disabled. User config files
-# are never overwritten by this helper.
-install_managed_event_addon() {
-  local relative="$1"
-  local helper_path="${ADDON_DEFAULTS_DIR}/${relative}"
-  local cfg_path="${helper_path%.py}.config.json"
-  local addon_basename
-  addon_basename="$(basename "$relative")"
-  local event_addons_dir="${ADDON_EVENT_ADDONS_DIR:-/home/container/addons/events}"
-  local link_path="${event_addons_dir}/${addon_basename}"
-  local enabled
-  enabled="$(addon_config_enabled "$cfg_path")"
-
-  if [[ "$enabled" != "true" ]]; then
-    if [[ -L "$link_path" || -f "$link_path" ]]; then
-      rm -f "$link_path"
-      info "Removed disabled event addon link: ${link_path}"
-    fi
-    debug "Event addon ${addon_basename} disabled (edit ${cfg_path} to enable)"
-    return 0
-  fi
-
-  if [[ ! -f "$helper_path" ]]; then
-    warn "Event addon helper missing at ${helper_path}"
-    return 0
-  fi
-
-  mkdir -p "$event_addons_dir"
-  ln -sfn "$helper_path" "$link_path"
-  chmod 0755 "$helper_path" 2>/dev/null || true
-  info "Installed event addon ${addon_basename} -> ${helper_path}"
-}
-
-# addon_config_enabled returns "true" when the per-addon config file
-# at the given path exists and contains `"enabled": true`. Missing
-# files or invalid JSON are treated as disabled so a broken config
-# never silently runs an addon.
-addon_config_enabled() {
-  local path="$1"
-  if [[ ! -f "$path" ]]; then
-    printf 'false\n'
-    return
-  fi
-  if ! command -v jq >/dev/null 2>&1; then
-    printf 'false\n'
-    return
-  fi
-  local enabled
-  enabled="$(jq -r '.enabled // false' "$path" 2>/dev/null || true)"
-  if [[ "$enabled" == "true" ]]; then
-    printf 'true\n'
-  else
-    printf 'false\n'
-  fi
-}
-
 install_managed_rcon_live_guard_helper() {
-  # The legacy 50-rcon-live-guard.py helper was removed from the
-  # bundled defaults set in Phase 2 because the supervisor now ships
-  # a built-in RCON guard module that consumes ``Bad rcon`` events
-  # directly from the process stdout/stderr stream. This function is
-  # retained as a no-op so existing entrypoint orderings keep working
-  # after upgrade; it logs once if an operator left the legacy env
-  # variable set.
+  # The legacy 50-rcon-live-guard.py helper was removed because the
+  # supervisor now ships a built-in RCON guard module that consumes
+  # ``Bad rcon`` events directly from the process stdout/stderr
+  # stream. This function is retained as a no-op so existing
+  # entrypoint orderings keep working after upgrade.
   local legacy_path="${ADDON_DEFAULTS_DIR}/50-rcon-live-guard.py"
-
-  if [[ "$ADDON_RCON_LIVE_GUARD_ENABLED" == "true" ]]; then
-    warn "ADDON_RCON_LIVE_GUARD_ENABLED=true is deprecated; the built-in supervisor RCON guard (RCON_GUARD_ENABLED) supersedes the Python addon. The bundled 50-rcon-live-guard.py was moved to bundled-addons/examples/deprecated/ and is no longer launched by default."
-  fi
-
   if [[ -f "$legacy_path" ]]; then
-    debug "Removing legacy 50-rcon-live-guard.py from ${ADDON_DEFAULTS_DIR}; the built-in supervisor RCON guard supersedes it"
+    debug "Removing legacy 50-rcon-live-guard.py from ${ADDON_DEFAULTS_DIR}"
     rm -f "$legacy_path"
   fi
 }
@@ -233,9 +295,6 @@ install_managed_rcon_live_guard_helper() {
 configure_addons() {
   : "${ADDONS_ENABLED:=true}"
   : "${ADDONS_DIR:=/home/container/addons}"
-  : "${ADDON_CHATLOGGER_ENABLED:=false}"
-  : "${ADDON_RCON_LIVE_GUARD_ENABLED:=false}"
-  : "${ADDON_EVENT_ADDONS_DIR:=${ADDONS_DIR}/events}"
   : "${ADDONS_STRICT:=false}"
   : "${ADDONS_TIMEOUT_SECONDS:=30}"
   : "${ADDONS_LOG_OUTPUT:=true}"
@@ -253,26 +312,6 @@ configure_addons() {
       ;;
   esac
   ADDONS_ENABLED="$ADDONS_ENABLED_NORMALIZED"
-
-  ADDON_CHATLOGGER_ENABLED_NORMALIZED="$(printf '%s' "$ADDON_CHATLOGGER_ENABLED" | tr '[:upper:]' '[:lower:]')"
-  case "$ADDON_CHATLOGGER_ENABLED_NORMALIZED" in
-    true|false) ;;
-    *)
-      warn "ADDON_CHATLOGGER_ENABLED=${ADDON_CHATLOGGER_ENABLED} is invalid, falling back to true"
-      ADDON_CHATLOGGER_ENABLED_NORMALIZED="true"
-      ;;
-  esac
-  ADDON_CHATLOGGER_ENABLED="$ADDON_CHATLOGGER_ENABLED_NORMALIZED"
-
-  ADDON_RCON_LIVE_GUARD_ENABLED_NORMALIZED="$(printf '%s' "$ADDON_RCON_LIVE_GUARD_ENABLED" | tr '[:upper:]' '[:lower:]')"
-  case "$ADDON_RCON_LIVE_GUARD_ENABLED_NORMALIZED" in
-    true|false) ;;
-    *)
-      warn "ADDON_RCON_LIVE_GUARD_ENABLED=${ADDON_RCON_LIVE_GUARD_ENABLED} is invalid, falling back to false"
-      ADDON_RCON_LIVE_GUARD_ENABLED_NORMALIZED="false"
-      ;;
-  esac
-  ADDON_RCON_LIVE_GUARD_ENABLED="$ADDON_RCON_LIVE_GUARD_ENABLED_NORMALIZED"
 
   ADDONS_STRICT_NORMALIZED="$(printf '%s' "$ADDONS_STRICT" | tr '[:upper:]' '[:lower:]')"
   case "$ADDONS_STRICT_NORMALIZED" in
@@ -309,19 +348,27 @@ configure_addons() {
   ADDON_TIMED_OUT_COUNT=0
 }
 
+# addon_state_label prints ENABLED or DISABLED for the given env var.
+addon_state_label() {
+  if [[ "${1:-false}" == "true" ]]; then
+    printf 'ENABLED\n'
+  else
+    printf 'DISABLED\n'
+  fi
+}
+
 print_addon_summary() {
   section "ADDONS"
   kv_highlight "Status" "$(printf '%s' "$(bool_state "$ADDONS_ENABLED")" | tr '[:lower:]' '[:upper:]')"
-  kv "User dir" "$ADDONS_DIR"
-  kv "Docs dir" "$ADDON_DOCS_DIR"
   kv "Defaults dir" "$ADDON_DEFAULTS_DIR"
-  kv "Event addons dir" "$ADDON_EVENT_ADDONS_DIR"
-  kv "Announcer" "$(addon_default_state '20-python-announcer.config.json')"
-  kv "Live team announcer" "$(addon_default_state 'events/30-live-team-announcer.config.json')"
-  kv "Chatlogger" "$(addon_default_state 'events/40-chatlogger.config.json')"
+  kv "Config" "$JKA_ADDONS_CONFIG_PATH"
+  kv "Announcer" "$(addon_state_label "${ADDON_ANNOUNCER_ENABLED:-false}")"
+  kv "Live team announcer" "$(addon_state_label "${ADDON_LIVE_TEAM_ANNOUNCER_ENABLED:-false}")"
+  kv "Chatlogger" "$(addon_state_label "${ADDON_CHATLOGGER_ENABLED:-false}")"
   kv "Strict" "$(printf '%s' "$(bool_state "$ADDONS_STRICT")" | tr '[:lower:]' '[:upper:]')"
   kv "Timeout" "${ADDONS_TIMEOUT_SECONDS}s"
   kv "Log output" "$(printf '%s' "$(bool_state "$ADDONS_LOG_OUTPUT")" | tr '[:lower:]' '[:upper:]')"
+  kv "Docs" "${ADDON_DOCS_DIR}/ADDON_README.md"
 
   if [[ "$ADDONS_ENABLED" != "true" ]]; then
     warn "User addon execution is disabled; managed defaults still refresh from the image"
@@ -333,26 +380,6 @@ print_addon_summary() {
 
   if [[ -d "${ADDONS_DIR}/bundled-addons" ]]; then
     warn "Legacy bundled-addons directory detected; it is no longer executed by the addon loader"
-  fi
-}
-
-# addon_default_state inspects the per-addon config file (if present)
-# and prints ENABLED/DISABLED based on its `enabled` flag. Used by the
-# ADDONS console section so operators see the effective state without
-# having to dig through individual config files.
-addon_default_state() {
-  local rel="$1"
-  local cfg="${ADDON_DEFAULTS_DIR}/${rel}"
-  if [[ ! -f "$cfg" ]]; then
-    printf 'NOT INSTALLED\n'
-    return
-  fi
-  local enabled
-  enabled="$(jq -r '.enabled // false' "$cfg" 2>/dev/null || true)"
-  if [[ "$enabled" == "true" ]]; then
-    printf 'ENABLED\n'
-  else
-    printf 'DISABLED\n'
   fi
 }
 
