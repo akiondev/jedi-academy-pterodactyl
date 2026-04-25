@@ -90,58 +90,71 @@ install_managed_status_helper() {
 }
 
 install_managed_chatlogger_helper() {
-  local helper_path="${ADDON_DEFAULTS_DIR}/40-chatlogger.py"
+  # Phase 2 event-bus chatlogger. The legacy daemonised
+  # ``40-chatlogger.py`` (which tailed ``server.log`` / live-output)
+  # is replaced by an event-driven addon that the supervisor's addon
+  # runner launches as a child process. This function is responsible
+  # for:
+  #   * stopping any pre-Phase-2 daemon that may still be running on
+  #     this container (so existing installs migrate cleanly);
+  #   * symlinking the new event-driven helper into the supervisor's
+  #     event-addon directory when ADDON_CHATLOGGER_ENABLED=true;
+  #   * removing the symlink (and stopping the daemon) when disabled.
+  local legacy_path="${ADDON_DEFAULTS_DIR}/40-chatlogger.py"
+  local event_helper_path="${ADDON_DEFAULTS_DIR}/events/40-chatlogger.py"
+  local event_addons_dir="${ADDON_EVENT_ADDONS_DIR:-/home/container/addons/events}"
+  local event_link_path="${event_addons_dir}/40-chatlogger.py"
   local helper_exit=0
 
-  if [[ ! -f "$helper_path" ]]; then
-    warn "Managed chat logger helper was not found at ${helper_path}"
-    return 0
+  # Always best-effort stop the legacy daemon: it persists across
+  # restarts via a PID file, so even if the operator now disables the
+  # addon the old worker would otherwise keep tailing server.log.
+  if [[ -f "$legacy_path" ]]; then
+    set +e
+    python3 "$legacy_path" --stop >/dev/null 2>&1
+    helper_exit=$?
+    set -e
+    if [[ "$helper_exit" -ne 0 ]]; then
+      debug "Legacy chatlogger daemon --stop returned exit code ${helper_exit} (may be expected if not running)"
+    fi
   fi
 
   if [[ "$ADDON_CHATLOGGER_ENABLED" != "true" ]]; then
-    set +e
-    python3 "$helper_path" --stop
-    helper_exit=$?
-    set -e
-
-    if [[ "$helper_exit" -ne 0 ]]; then
-      warn "Managed chat logger helper failed to stop cleanly with exit code ${helper_exit}"
+    if [[ -L "$event_link_path" || -f "$event_link_path" ]]; then
+      rm -f "$event_link_path"
+      info "Removed event-bus chatlogger from ${event_link_path}"
     fi
     return 0
   fi
 
-  set +e
-  python3 "$helper_path"
-  helper_exit=$?
-  set -e
-
-  if [[ "$helper_exit" -ne 0 ]]; then
-    warn "Managed chat logger helper failed to refresh with exit code ${helper_exit}"
+  if [[ ! -f "$event_helper_path" ]]; then
+    warn "Event-bus chatlogger helper was not found at ${event_helper_path}"
+    return 0
   fi
+
+  mkdir -p "$event_addons_dir"
+  ln -sfn "$event_helper_path" "$event_link_path"
+  chmod 0755 "$event_helper_path" 2>/dev/null || true
+  info "Installed event-bus chatlogger at ${event_link_path} (consumes NDJSON events from supervisor stdin)"
 }
 
 install_managed_rcon_live_guard_helper() {
-  local helper_path="${ADDON_DEFAULTS_DIR}/50-rcon-live-guard.py"
-  local helper_exit=0
+  # The legacy 50-rcon-live-guard.py helper was removed from the
+  # bundled defaults set in Phase 2 because the supervisor now ships
+  # a built-in RCON guard module that consumes ``Bad rcon`` events
+  # directly from the process stdout/stderr stream. This function is
+  # retained as a no-op so existing entrypoint orderings keep working
+  # after upgrade; it logs once if an operator left the legacy env
+  # variable set.
+  local legacy_path="${ADDON_DEFAULTS_DIR}/50-rcon-live-guard.py"
 
-  if [[ ! -f "$helper_path" ]]; then
-    warn "Managed RCON live guard helper was not found at ${helper_path}"
-    return 0
+  if [[ "$ADDON_RCON_LIVE_GUARD_ENABLED" == "true" ]]; then
+    warn "ADDON_RCON_LIVE_GUARD_ENABLED=true is deprecated; the built-in supervisor RCON guard (RCON_GUARD_ENABLED) supersedes the Python addon. The bundled 50-rcon-live-guard.py was moved to bundled-addons/examples/deprecated/ and is no longer launched by default."
   fi
 
-  if [[ "$ADDON_RCON_LIVE_GUARD_ENABLED" != "true" ]]; then
-    info "Managed RCON live guard is disabled (built-in supervisor RCON guard supersedes it)"
-    return 0
-  fi
-
-  warn "Managed RCON live guard helper is deprecated; the built-in supervisor RCON guard (RCON_GUARD_ENABLED) handles bad-RCON detection from the process stdout/stderr stream and does not require log tailing"
-  set +e
-  python3 "$helper_path"
-  helper_exit=$?
-  set -e
-
-  if [[ "$helper_exit" -ne 0 ]]; then
-    warn "Managed RCON live guard helper failed to start with exit code ${helper_exit}"
+  if [[ -f "$legacy_path" ]]; then
+    debug "Removing legacy 50-rcon-live-guard.py from ${ADDON_DEFAULTS_DIR}; the built-in supervisor RCON guard supersedes it"
+    rm -f "$legacy_path"
   fi
 }
 
@@ -151,6 +164,7 @@ configure_addons() {
   : "${ADDON_CHECKSERVERSTATUS_ENABLED:=false}"
   : "${ADDON_CHATLOGGER_ENABLED:=false}"
   : "${ADDON_RCON_LIVE_GUARD_ENABLED:=false}"
+  : "${ADDON_EVENT_ADDONS_DIR:=${ADDONS_DIR}/events}"
   : "${ADDONS_STRICT:=false}"
   : "${ADDONS_TIMEOUT_SECONDS:=30}"
   : "${ADDONS_LOG_OUTPUT:=true}"

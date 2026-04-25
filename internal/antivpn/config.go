@@ -101,6 +101,13 @@ type Config struct {
 	// connection tracker to decide whether the source IP maps to a
 	// currently connected slot.
 	RconGuard RconGuardConfig
+	// AddonRunner holds the configuration for the supervisor's
+	// event-driven addon runner. The runner is the bridge between the
+	// central event dispatcher and external addon child processes; it
+	// receives parsed events and writes them as NDJSON to each addon's
+	// stdin so addons no longer need to tail server.log or any
+	// supervisor-managed mirror file.
+	AddonRunner AddonRunnerConfig
 }
 
 // RconGuardConfig holds the configuration for the supervisor's built-in
@@ -172,6 +179,16 @@ func LoadConfigFromEnv() (Config, error) {
 		Action:      strings.ToLower(envString("RCON_GUARD_ACTION", "kick")),
 		Broadcast:   envBool("RCON_GUARD_BROADCAST", true),
 		IgnoreHosts: parseRconGuardIgnoreHosts(envString("RCON_GUARD_IGNORE_HOSTS", "127.0.0.1,::1,localhost")),
+	}
+
+	// Event-driven addon runner. Defaults are tuned so a fresh install
+	// with no addon directory present is a no-op (Enabled=true but
+	// Start() returns gracefully when the directory is missing).
+	cfg.AddonRunner = AddonRunnerConfig{
+		Enabled:    envBool("ADDON_EVENT_BUS_ENABLED", true),
+		AddonsDir:  envString("ADDON_EVENT_ADDONS_DIR", "/home/container/addons/events"),
+		BufferSize: envInt("ADDON_EVENT_BUS_BUFFER_SIZE", 1000),
+		DropPolicy: ParseEventDispatchPolicy(envString("ADDON_EVENT_BUS_DROP_POLICY", "drop-oldest")),
 	}
 
 	mode, err := parseMode(envString("ANTI_VPN_MODE", string(ModeBlock)))

@@ -27,6 +27,7 @@ The anti-VPN feature is implemented as a compiled Go binary inside the runtime i
   - connection tracker (slot ↔ IP ↔ player name)
   - anti-VPN decision engine
   - RCON guard (`RCON_GUARD_ENABLED`, replaces the legacy `50-rcon-live-guard.py` addon)
+  - addon event dispatcher (`ADDON_EVENT_BUS_ENABLED`, exposes parsed events as NDJSON on the stdin of supervisor-launched addon processes — see `docs/addon_readme_advanced.md`)
 
 The supervisor mirrors the dedicated server output back to Pterodactyl, extracts player IPs from `ClientConnect` / `ClientUserinfoChanged` events as close to the process as possible, queries providers in parallel, evaluates a weighted score, writes a structured audit trail, and optionally sends server console commands such as `clientkick` and, if configured, `addip`.
 
@@ -68,7 +69,7 @@ These variables are honoured for backwards compatibility but are deprecated in t
 | -------- | --------------------- |
 | `ANTI_VPN_LOG_PATH` | Honoured only when `ANTI_VPN_LOG_MONITOR_ENABLED=true`; the supervisor no longer reads `server.log` by default. |
 | `TAYSTJK_LIVE_OUTPUT_PATH`, `TAYSTJK_LIVE_OUTPUT_MAX_BYTES`, `TAYSTJK_LIVE_OUTPUT_KEEP_ARCHIVES` | Live-output mirroring is OFF by default; enable explicitly with `JKA_LIVE_OUTPUT_MIRROR_ENABLED=true` (or the legacy alias `TAYSTJK_LIVE_OUTPUT_ENABLED=true`). The mirror is now a debug/export feature only and is never used as an event source by the supervisor or by bundled addons. |
-| `ADDON_RCON_LIVE_GUARD_ENABLED` | Default is now `false`. The bundled Python `50-rcon-live-guard.py` addon is superseded by the built-in supervisor RCON guard. |
+| `ADDON_RCON_LIVE_GUARD_ENABLED` | Default is now `false`. The bundled Python `50-rcon-live-guard.py` addon was moved to `bundled-addons/examples/deprecated/` and is superseded by the built-in supervisor RCON guard. |
 
 
 

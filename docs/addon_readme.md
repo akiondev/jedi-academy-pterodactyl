@@ -13,16 +13,16 @@ This guide is synced into:
 - Rename a top-level addon file to end with `.disable` if you want to keep it without running it.
 - Files inside `docs/`, `examples/`, and `defaults/` are **not** executed.
 - The built-in `checkserverstatus` helper is controlled by `ADDON_CHECKSERVERSTATUS_ENABLED`.
-- The built-in `chatlogger` helper is controlled by `ADDON_CHATLOGGER_ENABLED`. It writes daily player chat logs into `/home/container/chatlogs`. It currently still tails the dedicated server's log file; that event source is **deprecated** in favour of the supervisor's process-output event bus (see `docs/addon_readme_advanced.md`) but continues to work.
-- The legacy `rcon-live-guard` Python addon (`ADDON_RCON_LIVE_GUARD_ENABLED`, default **false**) is **deprecated** and superseded by the built-in supervisor RCON guard module (`RCON_GUARD_ENABLED`, default `true`), which receives parsed `bad_rcon` events directly from the dedicated server's stdout/stderr and never tails any file. See `docs/anti-vpn.md` for the full RCON guard configuration.
-- The runtime live-output mirror file (`/home/container/.runtime/live/server-output.log`) is **disabled by default** and is no longer the supported addon event source. Operators that explicitly want a tailable file for debugging or external tooling can enable it with `JKA_LIVE_OUTPUT_MIRROR_ENABLED=true` (legacy alias `TAYSTJK_LIVE_OUTPUT_ENABLED=true`).
+- The built-in `chatlogger` helper is controlled by `ADDON_CHATLOGGER_ENABLED`. It writes daily player chat logs into `/home/container/chatlogs`. It is now an **event-driven addon**: the supervisor launches it and feeds it parsed events as newline-delimited JSON on stdin. It does **not** tail `server.log` or any mirror file. See `docs/addon_readme_advanced.md` for the protocol.
+- The legacy `rcon-live-guard` Python addon (`ADDON_RCON_LIVE_GUARD_ENABLED`, default **false**) has been **removed from bundled defaults** and superseded by the built-in supervisor RCON guard module (`RCON_GUARD_ENABLED`, default `true`), which receives parsed `bad_rcon` events directly from the dedicated server's stdout/stderr and never tails any file. The reference copy is preserved under `bundled-addons/examples/deprecated/` for historical use only. See `docs/anti-vpn.md` for the full RCON guard configuration.
+- The runtime live-output mirror file (`/home/container/.runtime/live/server-output.log`) is **disabled by default** and is no longer a supported addon event source. Operators that explicitly want a tailable file for debugging or external tooling can enable it with `JKA_LIVE_OUTPUT_MIRROR_ENABLED=true` (legacy alias `TAYSTJK_LIVE_OUTPUT_ENABLED=true`).
 - Scripts run in alphabetical order before normal managed startup.
 - If `ADDONS_STRICT=false`, failed addons are logged and startup continues.
 - If `ADDONS_STRICT=true`, a failed addon stops startup.
 - Useful runtime state is available in:
   - `/home/container/.runtime/taystjk-effective.env`
   - `/home/container/.runtime/taystjk-effective.json`
-- **Live server output** is the preferred event source for event-driven addons. The anti-VPN supervisor mirrors every line the server prints to its stdout/stderr into `$TAYSTJK_LIVE_OUTPUT_PATH` (default `/home/container/.runtime/live/server-output.log`). Multiple addons can `tail -F` it concurrently. Tailing `server.log` is now considered fallback / legacy.
+- **Event-driven addons** subscribe to a stable NDJSON event stream produced by the supervisor. The supervisor is the only reader of the dedicated server's stdout/stderr; addons no longer need to tail `server.log` or any mirror file. Drop a `.sh` or `.py` script into `/home/container/addons/events/` (path configurable via `ADDON_EVENT_ADDONS_DIR`) and the supervisor will spawn it and pipe events to its stdin. Tailing `server.log` from an addon is no longer supported as a runtime input.
 
 ## 2. How to use addons
 

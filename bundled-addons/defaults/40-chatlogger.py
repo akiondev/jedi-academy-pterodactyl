@@ -1,32 +1,27 @@
 #!/usr/bin/env python3
 """
-Managed default helper: persistent player chat logging.
+DEPRECATED — Managed default helper: persistent player chat logging.
 
-DEPRECATED EVENT SOURCE: this helper still tails the server.log file
-(or, when explicitly enabled, the optional live-output mirror). The
-long-term direction is for chat extraction to consume parsed
-`chat_message` events from the supervisor's event bus instead of
-tailing files. Until that migration is complete this helper continues
-to work, but log-tailing in addons is no longer the supported
-extension model — see docs/addon_readme_advanced.md for the new
-addon event-bus design and the supervisor's process-output-only
-architecture.
+THIS FILE IS THE PRE-PHASE-2 LEGACY DAEMON. IT IS NO LONGER LAUNCHED
+BY THE MANAGED RUNTIME. The replacement lives at
+``bundled-addons/defaults/events/40-chatlogger.py`` and is started by
+the supervisor's event-driven addon runner; it consumes parsed
+``chat_message`` (and ``raw_line``) events from the supervisor's
+NDJSON event bus instead of tailing ``server.log`` /
+``/home/container/.runtime/live/server-output.log``.
 
-This helper is refreshed from the image into:
-  /home/container/addons/defaults/40-chatlogger.py
+This file is retained ONLY so existing operator tooling that still
+invokes ``python3 40-chatlogger.py --status`` / ``--stop`` keeps
+working; the addon loader uses the ``--stop`` subcommand to terminate
+any pre-Phase-2 worker that may still be running on upgrade. Do not
+re-enable this daemon for new installs — see
+docs/addon_readme_advanced.md for the supported event-bus model.
 
-During managed startup it launches a detached background worker that:
+Original behaviour (no longer the default):
   - tails the resolved active server log path with ``tail -n 0 -F``
-    (so log rotation, truncation, unlink+recreate and engine restarts
-    of ``server.log`` are handled transparently)
   - extracts public/team/whisper/admin chat lines, including common
     JKA / TaystJK / JAPro mod-specific verbs
   - writes clean daily chat logs into /home/container/chatlogs
-
-The worker is hardened against single-line parse failures, writes a
-periodic heartbeat to ``chatlogger-helper.log``, and validates the
-recorded PID against ``/proc/<pid>/cmdline`` so a recycled PID can never
-prevent a fresh start.
 """
 
 from __future__ import annotations

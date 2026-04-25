@@ -83,6 +83,8 @@ type Supervisor struct {
 	reinitBurstUntil time.Time
 	broadcastQueue   chan broadcastJob
 	broadcastWorker  sync.Once
+	dispatcher       *EventDispatcher
+	addonRunner      *AddonRunner
 }
 
 // broadcastJob is the unit of work pushed onto the supervisor's serialised
@@ -145,6 +147,9 @@ func NewSupervisor(cfg Config, logger *slog.Logger) (*Supervisor, error) {
 		liveFeed = nil
 	}
 
+	dispatcher := NewEventDispatcher(logger, cfg.AddonRunner.BufferSize, cfg.AddonRunner.DropPolicy)
+	addonRunner := NewAddonRunner(cfg.AddonRunner, logger)
+
 	return &Supervisor{
 		cfg:             cfg,
 		logger:          logger,
@@ -157,6 +162,8 @@ func NewSupervisor(cfg Config, logger *slog.Logger) (*Supervisor, error) {
 		checkSlots:      make(chan struct{}, 8),
 		liveFeed:        liveFeed,
 		broadcastQueue:  make(chan broadcastJob, 64),
+		dispatcher:      dispatcher,
+		addonRunner:     addonRunner,
 	}, nil
 }
 
@@ -177,6 +184,9 @@ func (s *Supervisor) Close() error {
 		if err := s.liveFeed.Close(); err != nil {
 			errs = append(errs, err)
 		}
+	}
+	if s.dispatcher != nil {
+		s.dispatcher.Close()
 	}
 
 	return errors.Join(errs...)
@@ -234,7 +244,16 @@ func (s *Supervisor) Run(ctx context.Context, serverCommand []string) error {
 		"live_output_path", s.cfg.LiveOutputPath,
 		"live_output_enabled", s.liveFeed != nil,
 		"rcon_guard_enabled", s.cfg.RconGuard.Enabled,
+		"event_bus_enabled", s.cfg.AddonRunner.Enabled,
+		"event_bus_addons_dir", s.cfg.AddonRunner.AddonsDir,
+		"event_bus_buffer_size", s.cfg.AddonRunner.BufferSize,
 	)
+
+	if s.addonRunner != nil {
+		if err := s.addonRunner.Start(runCtx, s.dispatcher); err != nil && s.logger != nil {
+			s.logger.Warn("event addon runner failed to start", "error", err)
+		}
+	}
 
 	go s.scanOutput(runCtx, stdout, os.Stdout, "stdout", true, serverInput)
 	go s.scanOutput(runCtx, stderr, os.Stderr, "stderr", true, serverInput)
@@ -255,6 +274,9 @@ func (s *Supervisor) Run(ctx context.Context, serverCommand []string) error {
 
 	err = command.Wait()
 	cancel()
+	if s.addonRunner != nil {
+		s.addonRunner.Stop(2 * time.Second)
+	}
 	return err
 }
 
@@ -288,6 +310,11 @@ func (s *Supervisor) scanOutput(ctx context.Context, stream io.Reader, destinati
 	scanner := bufio.NewScanner(stream)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
+	eventSource := EventSourceStdout
+	if source == "stderr" {
+		eventSource = EventSourceStderr
+	}
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		if _, err := fmt.Fprintln(destination, line); err != nil {
@@ -307,6 +334,16 @@ func (s *Supervisor) scanOutput(ctx context.Context, stream io.Reader, destinati
 					}
 				})
 			}
+		}
+
+		// Always publish a raw_line event onto the central bus so
+		// addons that want a streaming feed of the dedicated server's
+		// console can subscribe without re-parsing log files. Built-in
+		// modules are still driven by the inline parser below; the
+		// dispatcher fan-out is exclusively for external consumers and
+		// for the parsed structured events we publish there.
+		if s.dispatcher != nil {
+			s.dispatcher.Publish(newRawLineEvent(line, eventSource, time.Now().UTC()))
 		}
 
 		if inspect {
@@ -558,25 +595,53 @@ func (s *Supervisor) handleLogLine(ctx context.Context, stdin io.Writer, line st
 		return
 	}
 
+	now := time.Now().UTC()
+	eventSource := EventSourceStdout
+	if source == "stderr" {
+		eventSource = EventSourceStderr
+	}
+
 	if initGameBurstPattern.MatchString(line) {
 		s.markReinitBurst()
+		// Surface init/shutdown to the bus so addons can synchronise
+		// per-map state. The current parser cannot distinguish these
+		// reliably without a second pattern, but the substring check is
+		// sufficient for addon needs.
+		s.publishEvent(func() Event {
+			if strings.Contains(line, "ShutdownGame") {
+				return newShutdownGameEvent(line, eventSource, now)
+			}
+			return newInitGameEvent(line, eventSource, now)
+		}())
 		// Continue processing the line in case it also matches one of the
 		// client-event patterns below (defensive; current patterns are
 		// disjoint).
 	}
 
 	if event, ok := parseBadRcon(line); ok {
+		s.publishEvent(newBadRconEvent(line, eventSource, now, event.Host, event.IP, event.Port, event.Command))
 		s.handleBadRcon(stdin, source, event)
 		return
 	}
 
+	if chat, ok := parseChatMessage(line); ok {
+		// Chat lines are a pure addon concern: they do not touch the
+		// connection tracker or anti-VPN state. Publishing without an
+		// inline handler is fine; the chatlogger addon consumes them
+		// from the event bus.
+		s.publishEvent(newChatMessageEvent(line, eventSource, now, chat.Slot, chat.Name, chat.Message))
+		return
+	}
+
 	if slot, ok := parseClientDisconnect(line); ok {
+		s.publishEvent(newClientDisconnectEvent(line, eventSource, now, slot))
 		s.clearConnectionState(slot)
 		return
 	}
 
 	slot, addr, playerName, ok := parseClientConnect(line)
 	if ok {
+		s.publishEvent(newClientConnectEvent(line, eventSource, now, slot, addr, playerName))
 		s.storeConnectionState(slot, addr, playerName)
 		s.processConnectionEvent(ctx, stdin, source, slot, addr, playerName, "connect")
 		return
@@ -586,6 +651,8 @@ func (s *Supervisor) handleLogLine(ctx context.Context, stdin io.Writer, line st
 	if !ok {
 		return
 	}
+
+	s.publishEvent(newClientUserinfoChangedEvent(line, eventSource, now, slot, addr, playerName))
 
 	if !hasAddr {
 		// Name/team-only userinfo change: update display name in tracked state but do
@@ -607,6 +674,16 @@ func (s *Supervisor) handleLogLine(ctx context.Context, stdin io.Writer, line st
 	}
 
 	s.processConnectionEvent(ctx, stdin, source, slot, addr, playerName, "userinfo")
+}
+
+// publishEvent is a small helper that fans an event out to the
+// dispatcher when one is configured. It is a no-op in tests that
+// construct a Supervisor without wiring a dispatcher.
+func (s *Supervisor) publishEvent(ev Event) {
+	if s.dispatcher == nil {
+		return
+	}
+	s.dispatcher.Publish(ev)
 }
 
 // markReinitBurst extends the suppression window during which broadcasts
@@ -643,6 +720,12 @@ func (s *Supervisor) inReinitBurst() bool {
 }
 
 func (s *Supervisor) processConnectionEvent(ctx context.Context, stdin io.Writer, source, slot string, addr netip.Addr, playerName, triggerKind string) {
+	if s.engine == nil {
+		// Tests may construct a Supervisor without an engine to drive
+		// event-bus assertions; in that mode the supervisor publishes
+		// parsed events but does not perform anti-VPN provider checks.
+		return
+	}
 	eventKey := slot + "|" + addr.String()
 	if !s.markEvent(eventKey) {
 		return
