@@ -185,6 +185,10 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         run: bash scripts/test/sync_runtime_files_test.sh
 
+      - name: Run announcer config env regression test
+        if: steps.gate.outputs.run == 'true'
+        run: python3 scripts/test/announcer_config_env_test.py -v
+
       - name: Guard against /opt/taystjk-* reintroductions
         if: steps.gate.outputs.run == 'true'
         run: |

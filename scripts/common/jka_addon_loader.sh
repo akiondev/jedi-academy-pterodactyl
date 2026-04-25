@@ -271,9 +271,14 @@ install_managed_python_announcer_helper() {
     return 0
   fi
   info "Starting default announcer (enabled in ${JKA_ADDONS_CONFIG_PATH})"
+  # Use a local variable for the config JSON to avoid the bash brace-counting
+  # trap: ${VAR:-{}} appends a stray } because bash terminates ${...} at the
+  # first } inside the default, leaving the second } as literal text.
+  local _announcer_config_json="${ADDON_ANNOUNCER_CONFIG_JSON}"
+  [[ -z "$_announcer_config_json" ]] && _announcer_config_json='{}'
   set +e
   JKA_ADDON_NAME="announcer" \
-    JKA_ADDON_CONFIG_JSON="${ADDON_ANNOUNCER_CONFIG_JSON:-{}}" \
+    JKA_ADDON_CONFIG_JSON="$_announcer_config_json" \
     JKA_ADDONS_CONFIG_PATH="$JKA_ADDONS_CONFIG_PATH" \
     python3 "$helper_path"
   set -e
