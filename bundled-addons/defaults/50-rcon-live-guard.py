@@ -11,7 +11,10 @@ originating from non-local IP addresses.
 
 When an attempt is detected the guard:
   1. Resolves the player's slot number via a local RCON status query.
-  2. Issues the configured kick command (default: clientkick {slot}).
+  2. If the attacker is connected: issues the configured kick command
+     (default: clientkick {slot}).
+     If the attacker is not connected: issues the configured ban command
+     (default: addip {ip}) to block the source IP at the engine level.
   3. Broadcasts a warning message to all connected players.
   4. Writes a timestamped incident entry to the guard log file.
 
@@ -84,7 +87,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "rcon_timeout_seconds": 3,
     "broadcast_command": "svsay",
     "kick_command_template": "clientkick {slot}",
+    # Command issued when the attacker is NOT a connected game client.
+    # Supports the {ip} placeholder.  Set to "" to disable IP banning.
+    "ban_command_template": "addip {ip}",
     "broadcast_template": "^1{player} was kicked for attempting to access server RCON.",
+    # Broadcast used when the attacker is not connected (IP ban path).
+    # Supports {ip} and {player} placeholders.
+    "ban_broadcast_template": "^1{ip} was banned for attempting to access server RCON.",
     "log_file": str(DEFAULT_LOG_PATH),
     "fallback_to_server_log": True,
     "ignore_ip_hosts": DEFAULT_IGNORE_IP_HOSTS,
@@ -228,6 +237,9 @@ def load_config() -> dict[str, Any]:
         kick_template = "clientkick {slot}"
     config["kick_command_template"] = kick_template
 
+    ban_template = str(config.get("ban_command_template", "addip {ip}")).strip()
+    config["ban_command_template"] = ban_template
+
     broadcast_template = str(
         config.get(
             "broadcast_template",
@@ -235,6 +247,14 @@ def load_config() -> dict[str, Any]:
         )
     ).strip()
     config["broadcast_template"] = broadcast_template
+
+    ban_broadcast_template = str(
+        config.get(
+            "ban_broadcast_template",
+            "^1{ip} was banned for attempting to access server RCON.",
+        )
+    ).strip()
+    config["ban_broadcast_template"] = ban_broadcast_template
 
     raw_ignore = config.get("ignore_ip_hosts", DEFAULT_IGNORE_IP_HOSTS)
     if not isinstance(raw_ignore, list):
@@ -451,7 +471,12 @@ def enforce_rcon_attempt(
     config: dict[str, Any],
     handle: Any,
 ) -> None:
-    """Kick the player and broadcast a warning when an RCON attempt is detected."""
+    """Kick or ban the attacker and broadcast a warning when an RCON attempt is detected.
+
+    Connected attackers (slot resolved) are kicked via ``kick_command_template``.
+    Non-connected attackers (external UDP probe, no game slot) are banned via
+    ``ban_command_template`` (default: ``addip {ip}``).
+    """
     password = effective_rcon_password()
     if not password:
         worker_log(
@@ -487,7 +512,9 @@ def enforce_rcon_attempt(
         + cmd_log,
     )
 
-    # Kick if we found a connected slot.
+    src_ip = bare_ip(source_address)
+
+    # Kick if we found a connected slot; otherwise ban by source IP.
     if slot is not None:
         kick_cmd = config["kick_command_template"].format(slot=slot)
         try:
@@ -496,13 +523,32 @@ def enforce_rcon_attempt(
             worker_log(handle, f"Kick failed for slot {slot}: {exc}")
         else:
             worker_log(handle, f"Kicked slot {slot} ({player_display!r})")
+    else:
+        ban_template = config["ban_command_template"]
+        if ban_template:
+            ban_cmd = ban_template.format(ip=src_ip)
+            try:
+                send_rcon_command(host, port, password, timeout, ban_cmd)
+            except OSError as exc:
+                worker_log(handle, f"IP ban failed for {src_ip!r}: {exc}")
+            else:
+                worker_log(handle, f"Banned IP {src_ip!r} (not a connected player)")
+        else:
+            worker_log(handle, f"ban_command_template is empty; logging only for {src_ip!r}")
 
     # Broadcast warning to the server.
-    broadcast_msg = config["broadcast_template"].format(
-        player=escape_command_argument(player_display),
-        slot=slot if slot is not None else "",
-        ip=bare_ip(source_address),
-    )
+    if slot is not None:
+        broadcast_msg = config["broadcast_template"].format(
+            player=escape_command_argument(player_display),
+            slot=slot,
+            ip=src_ip,
+        )
+    else:
+        broadcast_msg = config["ban_broadcast_template"].format(
+            player=escape_command_argument(player_display),
+            slot="",
+            ip=src_ip,
+        )
     broadcast_command = (
         f'{config["broadcast_command"]} "{escape_command_argument(broadcast_msg)}"'
     )
@@ -632,7 +678,8 @@ def run_worker() -> int:
             f"server_log_path={runtime.get('TAYSTJK_ACTIVE_SERVER_LOG_PATH', '<unset>')} "
             f"fallback_to_server_log={config['fallback_to_server_log']} "
             f"patterns={len(config['compiled_patterns'])} "
-            f"ignore_ip_hosts={config['ignore_ip_hosts']}",
+            f"ignore_ip_hosts={config['ignore_ip_hosts']} "
+            f"ban_command_template={config['ban_command_template']!r}",
         )
 
         backoff = 1
