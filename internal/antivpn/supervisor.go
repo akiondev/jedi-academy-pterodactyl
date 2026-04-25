@@ -39,6 +39,22 @@ var (
 	initGameBurstPattern = regexp.MustCompile(
 		`^(?:\s*` + logTimestampPrefixPattern + `\s+)?(InitGame:|ShutdownGame|------ Server Initialization ------|exec\s+server\.cfg)`,
 	)
+	// badRconPattern matches lines emitted by the JKA engine when an
+	// external client sends an RCON request with the wrong password,
+	// e.g. `Bad rcon from 90.144.88.223:29070: status`. The supervisor
+	// parses these directly from process stdout/stderr and dispatches
+	// them to the built-in RCON guard module so we can map the source
+	// IP back to a connected slot via the central connection tracker
+	// instead of issuing our own `status` RCON query (which would loop
+	// the supervisor's own output back into the parser).
+	//
+	// The host token is captured as a single whitespace-delimited
+	// run; the optional `:port` suffix is split out by parseBadRcon
+	// using engine-specific knowledge so IPv6 literals (which contain
+	// colons themselves) parse correctly.
+	badRconPattern = regexp.MustCompile(
+		`^(?:\s*` + logTimestampPrefixPattern + `\s+)?Bad\s+rcon\s+from\s+(\S+):\s*(.*)$`,
+	)
 )
 
 type slotConnectionState struct {
@@ -115,8 +131,18 @@ func NewSupervisor(cfg Config, logger *slog.Logger) (*Supervisor, error) {
 			}
 		},
 	)
-	if liveFeedErr != nil && logger != nil {
+	if liveFeedErr != nil && logger != nil && cfg.LiveOutputEnabled {
 		logger.Warn("anti-vpn live output mirror unavailable, continuing without addon live feed", "path", cfg.LiveOutputPath, "error", liveFeedErr)
+	}
+	// In the new process-output-only architecture the live mirror file
+	// is opt-in and disabled by default. When it is disabled we drop the
+	// writer entirely so scanOutput cannot accidentally produce a file
+	// that addons might tail.
+	if !cfg.LiveOutputEnabled {
+		if liveFeed != nil {
+			_ = liveFeed.Close()
+		}
+		liveFeed = nil
 	}
 
 	return &Supervisor{
@@ -197,20 +223,34 @@ func (s *Supervisor) Run(ctx context.Context, serverCommand []string) error {
 	s.logger.Info(
 		"anti-vpn supervisor active",
 		"mode", s.cfg.EffectiveMode(),
-		"capture_mode", "stdout-first with active log fallback",
+		"capture_mode", "process-output-only",
 		"log_path", s.cfg.LogPath,
+		"log_monitor_enabled", s.cfg.LogMonitorEnabled,
 		"audit_log_path", s.cfg.AuditLogPath,
+		"audit_allow", s.cfg.AuditAllow,
 		"score_threshold", s.cfg.ScoreThreshold,
 		"cache_ttl", s.cfg.CacheTTL.String(),
 		"cache_flush_interval", s.cfg.CacheFlushInterval.String(),
 		"live_output_path", s.cfg.LiveOutputPath,
 		"live_output_enabled", s.liveFeed != nil,
+		"rcon_guard_enabled", s.cfg.RconGuard.Enabled,
 	)
 
 	go s.scanOutput(runCtx, stdout, os.Stdout, "stdout", true, serverInput)
 	go s.scanOutput(runCtx, stderr, os.Stderr, "stderr", true, serverInput)
 	go s.forwardConsoleInput(runCtx, serverInput)
-	go s.monitorLogFile(runCtx, serverInput)
+	// The legacy server.log tailer is OFF by default. The supervisor's
+	// stdout/stderr scanner is the single owner/reader of the dedicated
+	// server's process output and parses every event exactly once. The
+	// file-based fallback remains available as an opt-in debug hook for
+	// environments where stdout capture is unreliable, but is never
+	// part of the default runtime path because re-reading the same
+	// events from a file produces duplicate decisions, replay storms
+	// after rotation, and console flooding (see internal/antivpn for
+	// the full incident write-up).
+	if s.cfg.LogMonitorEnabled {
+		go s.monitorLogFile(runCtx, serverInput)
+	}
 	go s.runBroadcastWorker(runCtx)
 
 	err = command.Wait()
@@ -525,6 +565,11 @@ func (s *Supervisor) handleLogLine(ctx context.Context, stdin io.Writer, line st
 		// disjoint).
 	}
 
+	if event, ok := parseBadRcon(line); ok {
+		s.handleBadRcon(stdin, source, line, event)
+		return
+	}
+
 	if slot, ok := parseClientDisconnect(line); ok {
 		s.clearConnectionState(slot)
 		return
@@ -661,6 +706,39 @@ func (s *Supervisor) lookupConnectionState(slot string) (slotConnectionState, bo
 	return state, ok
 }
 
+// lookupSlotByIP returns the most recently observed connected slot whose
+// tracked address matches the supplied IP, if any. Used by the built-in
+// RCON guard module to map the source IP of a `Bad rcon` line to a
+// currently-connected player slot without having to issue an RCON
+// `status` query (which the legacy Python addon did, and which created a
+// feedback loop because the supervisor's own RCON traffic produced more
+// log lines for the addon to react to).
+func (s *Supervisor) lookupSlotByIP(addr netip.Addr) (string, slotConnectionState, bool) {
+	if !addr.IsValid() {
+		return "", slotConnectionState{}, false
+	}
+
+	s.connectionMu.Lock()
+	defer s.connectionMu.Unlock()
+
+	var (
+		bestSlot  string
+		bestState slotConnectionState
+		found     bool
+	)
+	for slot, state := range s.connectionState {
+		if !state.Addr.IsValid() || state.Addr != addr {
+			continue
+		}
+		if !found || state.SeenAt.After(bestState.SeenAt) {
+			bestSlot = slot
+			bestState = state
+			found = true
+		}
+	}
+	return bestSlot, bestState, found
+}
+
 func (s *Supervisor) clearConnectionState(slot string) {
 	if strings.TrimSpace(slot) == "" {
 		return
@@ -754,12 +832,23 @@ func (s *Supervisor) auditDecision(source, slot string, addr netip.Addr, decisio
 		return
 	}
 
+	action := decisionAction(decision)
+	// Suppress per-allow audit rows by default. A busy server can produce
+	// thousands of allow decisions per map (cache hits, userinfo
+	// re-checks, reconnects), and the historical audit log was the
+	// observed source of console-flooding storms after a map restart
+	// fed cached events back through the file tailer. Block /
+	// would-block / degraded / provider errors are always audited.
+	if action == "allow" && !decision.Degraded && !s.cfg.AuditAllow {
+		return
+	}
+
 	fields := []any{
 		"event", "decision",
 		"event_source", source,
 		"slot", slot,
 		"ip", addr.String(),
-		"action", decisionAction(decision),
+		"action", action,
 	}
 	fields = append(fields, DecisionLogFields(decision)...)
 	s.auditLogger.Info("anti-vpn audit", fields...)

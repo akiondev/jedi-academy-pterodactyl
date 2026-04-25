@@ -1,5 +1,11 @@
 # ADDON README ADVANCED
 
+> **Architecture notice (process-output-only runtime).** The supervisor is now the single owner/reader of the dedicated server's stdout/stderr. Bundled addons no longer tail `server.log` or the runtime live-output mirror as the supported event source — the live mirror is OFF by default and the legacy `server.log` fallback for the anti-VPN supervisor is OFF by default.
+>
+> The long-term direction is for addons to receive parsed events (`client_connect`, `client_disconnect`, `client_userinfo_changed`, `bad_rcon`, `chat_message`, `init_game`, `shutdown_game`, etc.) from the supervisor's event bus rather than scraping log files. Bundled addons that still tail logs (`40-chatlogger.py`) are marked deprecated for that event source. The bundled `50-rcon-live-guard.py` addon is superseded entirely by the built-in supervisor RCON guard module (`RCON_GUARD_ENABLED`) and is disabled by default.
+>
+> When writing new addons, do not rely on `server.log` or `/home/container/.runtime/live/server-output.log` being present or being authoritative. Those are debug/export artifacts only.
+
 This document is the advanced reference for the addon system used by this TaystJK-first Pterodactyl project.
 
 It is synced automatically into:

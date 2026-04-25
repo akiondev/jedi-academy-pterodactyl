@@ -130,10 +130,11 @@ install_managed_rcon_live_guard_helper() {
   fi
 
   if [[ "$ADDON_RCON_LIVE_GUARD_ENABLED" != "true" ]]; then
-    info "Managed RCON live guard is disabled"
+    info "Managed RCON live guard is disabled (built-in supervisor RCON guard supersedes it)"
     return 0
   fi
 
+  warn "Managed RCON live guard helper is deprecated; the built-in supervisor RCON guard (RCON_GUARD_ENABLED) handles bad-RCON detection from the process stdout/stderr stream and does not require log tailing"
   set +e
   python3 "$helper_path"
   helper_exit=$?
@@ -149,7 +150,7 @@ configure_addons() {
   : "${ADDONS_DIR:=/home/container/addons}"
   : "${ADDON_CHECKSERVERSTATUS_ENABLED:=false}"
   : "${ADDON_CHATLOGGER_ENABLED:=false}"
-  : "${ADDON_RCON_LIVE_GUARD_ENABLED:=true}"
+  : "${ADDON_RCON_LIVE_GUARD_ENABLED:=false}"
   : "${ADDONS_STRICT:=false}"
   : "${ADDONS_TIMEOUT_SECONDS:=30}"
   : "${ADDONS_LOG_OUTPUT:=true}"
@@ -192,8 +193,8 @@ configure_addons() {
   case "$ADDON_RCON_LIVE_GUARD_ENABLED_NORMALIZED" in
     true|false) ;;
     *)
-      warn "ADDON_RCON_LIVE_GUARD_ENABLED=${ADDON_RCON_LIVE_GUARD_ENABLED} is invalid, falling back to true"
-      ADDON_RCON_LIVE_GUARD_ENABLED_NORMALIZED="true"
+      warn "ADDON_RCON_LIVE_GUARD_ENABLED=${ADDON_RCON_LIVE_GUARD_ENABLED} is invalid, falling back to false"
+      ADDON_RCON_LIVE_GUARD_ENABLED_NORMALIZED="false"
       ;;
   esac
   ADDON_RCON_LIVE_GUARD_ENABLED="$ADDON_RCON_LIVE_GUARD_ENABLED_NORMALIZED"

@@ -19,12 +19,58 @@ The anti-VPN feature is implemented as a compiled Go binary inside the runtime i
 - binary: `jka-antivpn` (a deprecated `taystjk-antivpn` symlink is preserved for one beta release window)
 - launch path: `scripts/entrypoint.sh`
 - runtime model: supervisor around the dedicated server process
-- signal source: stdout-first event capture with the resolved active server log path as fallback
+- signal source: **process-output-only** — the supervisor is the single owner/reader of the dedicated server's stdout/stderr and parses every event from that stream exactly once. The legacy `server.log` tailer remains available as an opt-in debug fallback (`ANTI_VPN_LOG_MONITOR_ENABLED=true`) but is OFF by default.
 - enforcement path: server stdin console commands
-- optional public player-chat broadcast path: server `say` command templates
-- audit path: dedicated anti-VPN audit log file
+- optional public player-chat broadcast path: server `say` command templates (default `ANTI_VPN_BROADCAST_MODE=block-only`)
+- audit path: dedicated anti-VPN audit log file (allow decisions are NOT audited by default; set `ANTI_VPN_AUDIT_ALLOW=true` for full forensic mode)
+- built-in modules dispatched from the same parsed line stream:
+  - connection tracker (slot ↔ IP ↔ player name)
+  - anti-VPN decision engine
+  - RCON guard (`RCON_GUARD_ENABLED`, replaces the legacy `50-rcon-live-guard.py` addon)
 
-The supervisor mirrors the dedicated server output back to Pterodactyl, extracts player IPs from `ClientUserinfoChanged` events as close to the process as possible, queries providers in parallel, evaluates a weighted score, writes a structured audit trail, and optionally sends server console commands such as `clientkick` and, if configured, `addip`.
+The supervisor mirrors the dedicated server output back to Pterodactyl, extracts player IPs from `ClientConnect` / `ClientUserinfoChanged` events as close to the process as possible, queries providers in parallel, evaluates a weighted score, writes a structured audit trail, and optionally sends server console commands such as `clientkick` and, if configured, `addip`.
+
+### Why process-output-only
+
+A previous design also tailed the engine-written `server.log` and a runtime-managed live-output mirror file. That introduced multiple parallel readers of the same events, which in production produced duplicate decisions, replay storms after map restart / log rotation, and console-flooding audit rows like:
+
+```
+{"msg":"anti-vpn audit","event":"decision","event_source":"server.log","slot":"1","ip":"85.223.11.238","action":"allow","from_cache":true,...}
+```
+
+In the current architecture there is exactly one reader of stdout/stderr, the live-output mirror is OFF by default (opt-in debug feature), and `server.log` is never an event source unless the operator explicitly re-enables the legacy fallback.
+
+### RCON guard
+
+The RCON guard is a built-in supervisor module. It consumes `Bad rcon from <ip>:<port>: <command>` lines parsed directly from the dedicated server's stdout/stderr and uses the central connection tracker to map the source IP to a currently-connected slot.
+
+Behaviour:
+
+- Local / trusted RCON sources (`RCON_GUARD_IGNORE_HOSTS`, default `127.0.0.1,::1,localhost`) are ignored entirely so internal automation that legitimately uses RCON does not trigger a kick or a broadcast.
+- For external bad RCON attempts, a concise warning is always logged.
+- When the source IP maps to a connected slot, the configured action (default `kick`) is applied to that slot and an optional broadcast is emitted (`RCON_GUARD_BROADCAST=true`).
+- When the source IP does NOT map to a connected slot, the supervisor logs `external bad RCON attempt; no connected slot found` and never claims the player was kicked.
+
+Because the guard is driven from the same line stream that the supervisor already scans, a single bad-RCON line produces at most one decision and the supervisor's own RCON write-back can never feed itself.
+
+| Variable | Default | Notes |
+| -------- | ------- | ----- |
+| `RCON_GUARD_ENABLED` | `true` | Disable to fall back to no in-process RCON enforcement. |
+| `RCON_GUARD_ACTION` | `kick` | `kick` issues `clientkick <slot>`. Any other value disables enforcement and only logs. |
+| `RCON_GUARD_BROADCAST` | `true` | Emit a `say` line when a player is actually kicked. |
+| `RCON_GUARD_IGNORE_HOSTS` | `127.0.0.1,::1,localhost` | Comma/whitespace separated. Matches by hostname or numeric IP literal. |
+
+### Deprecated environment variables
+
+These variables are honoured for backwards compatibility but are deprecated in the new architecture:
+
+| Variable | Replacement / default |
+| -------- | --------------------- |
+| `ANTI_VPN_LOG_PATH` | Honoured only when `ANTI_VPN_LOG_MONITOR_ENABLED=true`; the supervisor no longer reads `server.log` by default. |
+| `TAYSTJK_LIVE_OUTPUT_PATH`, `TAYSTJK_LIVE_OUTPUT_MAX_BYTES`, `TAYSTJK_LIVE_OUTPUT_KEEP_ARCHIVES` | Live-output mirroring is OFF by default; enable explicitly with `JKA_LIVE_OUTPUT_MIRROR_ENABLED=true` (or the legacy alias `TAYSTJK_LIVE_OUTPUT_ENABLED=true`). The mirror is now a debug/export feature only and is never used as an event source by the supervisor or by bundled addons. |
+| `ADDON_RCON_LIVE_GUARD_ENABLED` | Default is now `false`. The bundled Python `50-rcon-live-guard.py` addon is superseded by the built-in supervisor RCON guard. |
+
+
 
 ## Supported providers
 

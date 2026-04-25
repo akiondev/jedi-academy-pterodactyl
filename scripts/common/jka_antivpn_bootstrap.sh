@@ -33,7 +33,7 @@ configure_anti_vpn() {
   : "${ANTI_VPN_CACHE_FLUSH_INTERVAL:=2s}"
   : "${ANTI_VPN_AUDIT_LOG_PATH:=/home/container/logs/anti-vpn-audit.log}"
   : "${ANTI_VPN_ENFORCEMENT_MODE:=kick-only}"
-  : "${ANTI_VPN_BROADCAST_MODE:=pass-and-block}"
+  : "${ANTI_VPN_BROADCAST_MODE:=block-only}"
   : "${ANTI_VPN_BROADCAST_COOLDOWN:=90s}"
   : "${ANTI_VPN_BROADCAST_PASS_TEMPLATE:=say [Anti-VPN] VPN PASS: %PLAYER% cleared checks (%SCORE%/%THRESHOLD%). %SUMMARY%}"
   : "${ANTI_VPN_BROADCAST_BLOCK_TEMPLATE:=say [Anti-VPN] VPN BLOCKED: %PLAYER% triggered anti-VPN (%SCORE%/%THRESHOLD%). %SUMMARY%}"
@@ -41,6 +41,24 @@ configure_anti_vpn() {
   : "${ANTI_VPN_KICK_COMMAND:=clientkick %SLOT%}"
   : "${ANTI_VPN_EVENT_DEDUPE_INTERVAL:=90s}"
   : "${ANTI_VPN_LOG_PATH:=$(active_server_log_path)}"
+  # New process-output-only architecture: the legacy server.log tailer
+  # is OFF by default. The supervisor reads the dedicated server's
+  # stdout/stderr exactly once and parses every event from that single
+  # stream. Set ANTI_VPN_LOG_MONITOR_ENABLED=true to re-enable the
+  # legacy debug fallback for environments where stdout capture is
+  # unreliable.
+  : "${ANTI_VPN_LOG_MONITOR_ENABLED:=false}"
+  # Audit-log noise control: by default only block / would-block /
+  # degraded / error decisions are written to the audit log. A busy
+  # server can otherwise produce thousands of allow rows per map,
+  # which historically masked real security events.
+  : "${ANTI_VPN_AUDIT_ALLOW:=false}"
+  # Built-in RCON guard module configuration (replaces the legacy
+  # 50-rcon-live-guard.py addon).
+  : "${RCON_GUARD_ENABLED:=true}"
+  : "${RCON_GUARD_ACTION:=kick}"
+  : "${RCON_GUARD_BROADCAST:=true}"
+  : "${RCON_GUARD_IGNORE_HOSTS:=127.0.0.1,::1,localhost}"
 
   ANTI_VPN_MODE_NORMALIZED="$(printf '%s' "$ANTI_VPN_MODE" | tr '[:upper:]' '[:lower:]')"
   case "$ANTI_VPN_MODE_NORMALIZED" in
@@ -55,8 +73,8 @@ configure_anti_vpn() {
   case "$ANTI_VPN_BROADCAST_MODE_NORMALIZED" in
     off|block-only|pass-and-block) ;;
     *)
-      warn "ANTI_VPN_BROADCAST_MODE=${ANTI_VPN_BROADCAST_MODE} is invalid, falling back to pass-and-block"
-      ANTI_VPN_BROADCAST_MODE_NORMALIZED="pass-and-block"
+      warn "ANTI_VPN_BROADCAST_MODE=${ANTI_VPN_BROADCAST_MODE} is invalid, falling back to block-only"
+      ANTI_VPN_BROADCAST_MODE_NORMALIZED="block-only"
       ;;
   esac
   ANTI_VPN_BROADCAST_MODE="$ANTI_VPN_BROADCAST_MODE_NORMALIZED"
@@ -143,8 +161,9 @@ print_anti_vpn_summary() {
   kv_highlight "Threshold" "$ANTI_VPN_SCORE_THRESHOLD"
   kv "Allowlist" "$(anti_vpn_allowlist_status)"
   print_anti_vpn_providers
-  debug "Capture mode: stdout-first with active log fallback"
+  debug "Capture mode: process-output-only (server.log fallback ${ANTI_VPN_LOG_MONITOR_ENABLED:-false})"
   debug "Server log path: ${ANTI_VPN_LOG_PATH}"
+  debug "Audit allow decisions: $(printf '%s' "$(bool_state "${ANTI_VPN_AUDIT_ALLOW:-false}")" | tr '[:lower:]' '[:upper:]')"
   debug "Live output mirror: ${TAYSTJK_LIVE_OUTPUT_MODE} (${TAYSTJK_LIVE_OUTPUT_PATH})"
   debug "Decision logs: $(printf '%s' "$(bool_state "$ANTI_VPN_LOG_DECISIONS")" | tr '[:lower:]' '[:upper:]')"
   debug "Cache TTL: ${ANTI_VPN_CACHE_TTL}"

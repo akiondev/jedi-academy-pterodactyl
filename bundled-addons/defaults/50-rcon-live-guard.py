@@ -2,6 +2,20 @@
 """
 Managed default helper: RCON live guard.
 
+DEPRECATED: this Python addon has been superseded by the built-in
+supervisor RCON guard module (RCON_GUARD_ENABLED, see
+docs/anti-vpn.md). The supervisor receives parsed `bad_rcon` events
+directly from the dedicated server's process stdout/stderr, maps the
+source IP to a connected slot via the central connection tracker, and
+issues a `clientkick` only when an actual slot is found. The new path
+does NOT tail any file, never lies about whether a player was kicked,
+and does not require running its own RCON `status` query.
+
+This file is preserved so existing deployments that explicitly set
+ADDON_RCON_LIVE_GUARD_ENABLED=true keep working, but new installs
+should rely on the built-in guard. The default for
+ADDON_RCON_LIVE_GUARD_ENABLED is now `false`.
+
 This helper is refreshed from the image into:
   /home/container/addons/defaults/50-rcon-live-guard.py
 

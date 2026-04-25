@@ -2,6 +2,16 @@
 """
 Managed default helper: persistent player chat logging.
 
+DEPRECATED EVENT SOURCE: this helper still tails the server.log file
+(or, when explicitly enabled, the optional live-output mirror). The
+long-term direction is for chat extraction to consume parsed
+`chat_message` events from the supervisor's event bus instead of
+tailing files. Until that migration is complete this helper continues
+to work, but log-tailing in addons is no longer the supported
+extension model — see docs/addon_readme_advanced.md for the new
+addon event-bus design and the supervisor's process-output-only
+architecture.
+
 This helper is refreshed from the image into:
   /home/container/addons/defaults/40-chatlogger.py
 
