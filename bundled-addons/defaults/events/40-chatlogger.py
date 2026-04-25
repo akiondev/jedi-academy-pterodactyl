@@ -301,7 +301,8 @@ def main(argv: list[str] | None = None) -> int:
 
     writer = ChatWriter()
 
-    def _shutdown(_signum, _frame) -> None:  # noqa: ANN001
+    def _shutdown(signum, frame) -> None:  # pylint: disable=unused-argument
+        del signum, frame
         writer.close()
         sys.exit(0)
 

@@ -58,7 +58,6 @@ type AddonRunner struct {
 	mu         sync.Mutex
 	addons     []*runningAddon
 	dispatcher *EventDispatcher
-	startCtx   context.Context //nolint:containedctx // lifecycle context propagated from Run
 }
 
 type runningAddon struct {
@@ -115,7 +114,6 @@ func (r *AddonRunner) Start(ctx context.Context, dispatcher *EventDispatcher) er
 
 	r.mu.Lock()
 	r.dispatcher = dispatcher
-	r.startCtx = ctx
 	r.mu.Unlock()
 
 	if len(entries) == 0 {
