@@ -225,18 +225,29 @@ configure_live_output_settings() {
 }
 
 resolve_effective_live_output_settings() {
-  # Live-output mirroring is owned by the anti-VPN supervisor because that
-  # is the only process in the runtime that owns the dedicated server's
-  # stdout/stderr pipes. When the supervisor is disabled, the mirror file
-  # is not produced and addons must fall back to the engine-written
-  # server.log.
-  if [[ "$ANTI_VPN_EFFECTIVE_MODE" == "off" ]]; then
+  # Live-output mirroring is OFF by default in the new
+  # process-output-only architecture: the supervisor reads the
+  # dedicated server's stdout/stderr exactly once and dispatches
+  # parsed events to in-process modules (anti-VPN, RCON guard, addon
+  # event bus). Bundled addons no longer tail this file.
+  #
+  # The mirror remains available as an explicit debug/export feature
+  # for operators who want a tailable live-output file. Enable it by
+  # setting JKA_LIVE_OUTPUT_MIRROR_ENABLED=true in the Pterodactyl
+  # startup environment. The legacy TAYSTJK_LIVE_OUTPUT_ENABLED name
+  # is accepted as a deprecated alias when the canonical variable is
+  # not set.
+  local mirror_flag="${JKA_LIVE_OUTPUT_MIRROR_ENABLED:-${TAYSTJK_LIVE_OUTPUT_ENABLED:-false}}"
+  mirror_flag="$(printf '%s' "$mirror_flag" | tr '[:upper:]' '[:lower:]')"
+
+  if [[ "$ANTI_VPN_EFFECTIVE_MODE" == "off" || "$mirror_flag" != "true" ]]; then
     TAYSTJK_LIVE_OUTPUT_ENABLED="false"
     TAYSTJK_LIVE_OUTPUT_MODE="disabled"
   else
     TAYSTJK_LIVE_OUTPUT_ENABLED="true"
     TAYSTJK_LIVE_OUTPUT_MODE="supervisor-mirror"
   fi
+  JKA_LIVE_OUTPUT_MIRROR_ENABLED="$TAYSTJK_LIVE_OUTPUT_ENABLED"
 }
 
 resolve_effective_server_settings() {

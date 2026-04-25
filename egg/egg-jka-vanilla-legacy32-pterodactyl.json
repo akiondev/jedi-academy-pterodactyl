@@ -383,7 +383,7 @@
             "name": "Anti-VPN Broadcast Mode",
             "description": "Runtime variable. Public decision broadcast mode: off, block-only or pass-and-block.",
             "env_variable": "ANTI_VPN_BROADCAST_MODE",
-            "default_value": "pass-and-block",
+            "default_value": "block-only",
             "user_viewable": true,
             "user_editable": true,
             "rules": "required|string|in:off,block-only,pass-and-block",

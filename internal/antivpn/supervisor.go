@@ -39,6 +39,22 @@ var (
 	initGameBurstPattern = regexp.MustCompile(
 		`^(?:\s*` + logTimestampPrefixPattern + `\s+)?(InitGame:|ShutdownGame|------ Server Initialization ------|exec\s+server\.cfg)`,
 	)
+	// badRconPattern matches lines emitted by the JKA engine when an
+	// external client sends an RCON request with the wrong password,
+	// e.g. `Bad rcon from 90.144.88.223:29070: status`. The supervisor
+	// parses these directly from process stdout/stderr and dispatches
+	// them to the built-in RCON guard module so we can map the source
+	// IP back to a connected slot via the central connection tracker
+	// instead of issuing our own `status` RCON query (which would loop
+	// the supervisor's own output back into the parser).
+	//
+	// The host token is captured as a single whitespace-delimited
+	// run; the optional `:port` suffix is split out by parseBadRcon
+	// using engine-specific knowledge so IPv6 literals (which contain
+	// colons themselves) parse correctly.
+	badRconPattern = regexp.MustCompile(
+		`^(?:\s*` + logTimestampPrefixPattern + `\s+)?Bad\s+rcon\s+from\s+(\S+):\s*(.*)$`,
+	)
 )
 
 type slotConnectionState struct {
@@ -67,6 +83,8 @@ type Supervisor struct {
 	reinitBurstUntil time.Time
 	broadcastQueue   chan broadcastJob
 	broadcastWorker  sync.Once
+	dispatcher       *EventDispatcher
+	addonRunner      *AddonRunner
 }
 
 // broadcastJob is the unit of work pushed onto the supervisor's serialised
@@ -115,9 +133,22 @@ func NewSupervisor(cfg Config, logger *slog.Logger) (*Supervisor, error) {
 			}
 		},
 	)
-	if liveFeedErr != nil && logger != nil {
+	if liveFeedErr != nil && logger != nil && cfg.LiveOutputEnabled {
 		logger.Warn("anti-vpn live output mirror unavailable, continuing without addon live feed", "path", cfg.LiveOutputPath, "error", liveFeedErr)
 	}
+	// In the new process-output-only architecture the live mirror file
+	// is opt-in and disabled by default. When it is disabled we drop the
+	// writer entirely so scanOutput cannot accidentally produce a file
+	// that addons might tail.
+	if !cfg.LiveOutputEnabled {
+		if liveFeed != nil {
+			_ = liveFeed.Close()
+		}
+		liveFeed = nil
+	}
+
+	dispatcher := NewEventDispatcher(logger, cfg.AddonRunner.BufferSize, cfg.AddonRunner.DropPolicy)
+	addonRunner := NewAddonRunner(cfg.AddonRunner, logger)
 
 	return &Supervisor{
 		cfg:             cfg,
@@ -131,6 +162,8 @@ func NewSupervisor(cfg Config, logger *slog.Logger) (*Supervisor, error) {
 		checkSlots:      make(chan struct{}, 8),
 		liveFeed:        liveFeed,
 		broadcastQueue:  make(chan broadcastJob, 64),
+		dispatcher:      dispatcher,
+		addonRunner:     addonRunner,
 	}, nil
 }
 
@@ -151,6 +184,9 @@ func (s *Supervisor) Close() error {
 		if err := s.liveFeed.Close(); err != nil {
 			errs = append(errs, err)
 		}
+	}
+	if s.dispatcher != nil {
+		s.dispatcher.Close()
 	}
 
 	return errors.Join(errs...)
@@ -197,24 +233,50 @@ func (s *Supervisor) Run(ctx context.Context, serverCommand []string) error {
 	s.logger.Info(
 		"anti-vpn supervisor active",
 		"mode", s.cfg.EffectiveMode(),
-		"capture_mode", "stdout-first with active log fallback",
+		"capture_mode", "process-output-only",
 		"log_path", s.cfg.LogPath,
+		"log_monitor_enabled", s.cfg.LogMonitorEnabled,
 		"audit_log_path", s.cfg.AuditLogPath,
+		"audit_allow", s.cfg.AuditAllow,
 		"score_threshold", s.cfg.ScoreThreshold,
 		"cache_ttl", s.cfg.CacheTTL.String(),
 		"cache_flush_interval", s.cfg.CacheFlushInterval.String(),
 		"live_output_path", s.cfg.LiveOutputPath,
 		"live_output_enabled", s.liveFeed != nil,
+		"rcon_guard_enabled", s.cfg.RconGuard.Enabled,
+		"event_bus_enabled", s.cfg.AddonRunner.Enabled,
+		"event_bus_addons_dir", s.cfg.AddonRunner.AddonsDir,
+		"event_bus_buffer_size", s.cfg.AddonRunner.BufferSize,
 	)
+
+	if s.addonRunner != nil {
+		if err := s.addonRunner.Start(runCtx, s.dispatcher); err != nil && s.logger != nil {
+			s.logger.Warn("event addon runner failed to start", "error", err)
+		}
+	}
 
 	go s.scanOutput(runCtx, stdout, os.Stdout, "stdout", true, serverInput)
 	go s.scanOutput(runCtx, stderr, os.Stderr, "stderr", true, serverInput)
 	go s.forwardConsoleInput(runCtx, serverInput)
-	go s.monitorLogFile(runCtx, serverInput)
+	// The legacy server.log tailer is OFF by default. The supervisor's
+	// stdout/stderr scanner is the single owner/reader of the dedicated
+	// server's process output and parses every event exactly once. The
+	// file-based fallback remains available as an opt-in debug hook for
+	// environments where stdout capture is unreliable, but is never
+	// part of the default runtime path because re-reading the same
+	// events from a file produces duplicate decisions, replay storms
+	// after rotation, and console flooding (see internal/antivpn for
+	// the full incident write-up).
+	if s.cfg.LogMonitorEnabled {
+		go s.monitorLogFile(runCtx, serverInput)
+	}
 	go s.runBroadcastWorker(runCtx)
 
 	err = command.Wait()
 	cancel()
+	if s.addonRunner != nil {
+		s.addonRunner.Stop(2 * time.Second)
+	}
 	return err
 }
 
@@ -248,6 +310,11 @@ func (s *Supervisor) scanOutput(ctx context.Context, stream io.Reader, destinati
 	scanner := bufio.NewScanner(stream)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
+	eventSource := EventSourceStdout
+	if source == "stderr" {
+		eventSource = EventSourceStderr
+	}
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		if _, err := fmt.Fprintln(destination, line); err != nil {
@@ -267,6 +334,16 @@ func (s *Supervisor) scanOutput(ctx context.Context, stream io.Reader, destinati
 					}
 				})
 			}
+		}
+
+		// Always publish a raw_line event onto the central bus so
+		// addons that want a streaming feed of the dedicated server's
+		// console can subscribe without re-parsing log files. Built-in
+		// modules are still driven by the inline parser below; the
+		// dispatcher fan-out is exclusively for external consumers and
+		// for the parsed structured events we publish there.
+		if s.dispatcher != nil {
+			s.dispatcher.Publish(newRawLineEvent(line, eventSource, time.Now().UTC()))
 		}
 
 		if inspect {
@@ -518,20 +595,53 @@ func (s *Supervisor) handleLogLine(ctx context.Context, stdin io.Writer, line st
 		return
 	}
 
+	now := time.Now().UTC()
+	eventSource := EventSourceStdout
+	if source == "stderr" {
+		eventSource = EventSourceStderr
+	}
+
 	if initGameBurstPattern.MatchString(line) {
 		s.markReinitBurst()
+		// Surface init/shutdown to the bus so addons can synchronise
+		// per-map state. The current parser cannot distinguish these
+		// reliably without a second pattern, but the substring check is
+		// sufficient for addon needs.
+		s.publishEvent(func() Event {
+			if strings.Contains(line, "ShutdownGame") {
+				return newShutdownGameEvent(line, eventSource, now)
+			}
+			return newInitGameEvent(line, eventSource, now)
+		}())
 		// Continue processing the line in case it also matches one of the
 		// client-event patterns below (defensive; current patterns are
 		// disjoint).
 	}
 
+	if event, ok := parseBadRcon(line); ok {
+		s.publishEvent(newBadRconEvent(line, eventSource, now, event.Host, event.IP, event.Port, event.Command))
+		s.handleBadRcon(stdin, source, event)
+		return
+	}
+
+	if chat, ok := parseChatMessage(line); ok {
+		// Chat lines are a pure addon concern: they do not touch the
+		// connection tracker or anti-VPN state. Publishing without an
+		// inline handler is fine; the chatlogger addon consumes them
+		// from the event bus.
+		s.publishEvent(newChatMessageEvent(line, eventSource, now, chat.Slot, chat.Name, chat.Message))
+		return
+	}
+
 	if slot, ok := parseClientDisconnect(line); ok {
+		s.publishEvent(newClientDisconnectEvent(line, eventSource, now, slot))
 		s.clearConnectionState(slot)
 		return
 	}
 
 	slot, addr, playerName, ok := parseClientConnect(line)
 	if ok {
+		s.publishEvent(newClientConnectEvent(line, eventSource, now, slot, addr, playerName))
 		s.storeConnectionState(slot, addr, playerName)
 		s.processConnectionEvent(ctx, stdin, source, slot, addr, playerName, "connect")
 		return
@@ -541,6 +651,8 @@ func (s *Supervisor) handleLogLine(ctx context.Context, stdin io.Writer, line st
 	if !ok {
 		return
 	}
+
+	s.publishEvent(newClientUserinfoChangedEvent(line, eventSource, now, slot, addr, playerName))
 
 	if !hasAddr {
 		// Name/team-only userinfo change: update display name in tracked state but do
@@ -562,6 +674,16 @@ func (s *Supervisor) handleLogLine(ctx context.Context, stdin io.Writer, line st
 	}
 
 	s.processConnectionEvent(ctx, stdin, source, slot, addr, playerName, "userinfo")
+}
+
+// publishEvent is a small helper that fans an event out to the
+// dispatcher when one is configured. It is a no-op in tests that
+// construct a Supervisor without wiring a dispatcher.
+func (s *Supervisor) publishEvent(ev Event) {
+	if s.dispatcher == nil {
+		return
+	}
+	s.dispatcher.Publish(ev)
 }
 
 // markReinitBurst extends the suppression window during which broadcasts
@@ -598,6 +720,12 @@ func (s *Supervisor) inReinitBurst() bool {
 }
 
 func (s *Supervisor) processConnectionEvent(ctx context.Context, stdin io.Writer, source, slot string, addr netip.Addr, playerName, triggerKind string) {
+	if s.engine == nil {
+		// Tests may construct a Supervisor without an engine to drive
+		// event-bus assertions; in that mode the supervisor publishes
+		// parsed events but does not perform anti-VPN provider checks.
+		return
+	}
 	eventKey := slot + "|" + addr.String()
 	if !s.markEvent(eventKey) {
 		return
@@ -659,6 +787,39 @@ func (s *Supervisor) lookupConnectionState(slot string) (slotConnectionState, bo
 
 	state, ok := s.connectionState[slot]
 	return state, ok
+}
+
+// lookupSlotByIP returns the most recently observed connected slot whose
+// tracked address matches the supplied IP, if any. Used by the built-in
+// RCON guard module to map the source IP of a `Bad rcon` line to a
+// currently-connected player slot without having to issue an RCON
+// `status` query (which the legacy Python addon did, and which created a
+// feedback loop because the supervisor's own RCON traffic produced more
+// log lines for the addon to react to).
+func (s *Supervisor) lookupSlotByIP(addr netip.Addr) (string, slotConnectionState, bool) {
+	if !addr.IsValid() {
+		return "", slotConnectionState{}, false
+	}
+
+	s.connectionMu.Lock()
+	defer s.connectionMu.Unlock()
+
+	var (
+		bestSlot  string
+		bestState slotConnectionState
+		found     bool
+	)
+	for slot, state := range s.connectionState {
+		if !state.Addr.IsValid() || state.Addr != addr {
+			continue
+		}
+		if !found || state.SeenAt.After(bestState.SeenAt) {
+			bestSlot = slot
+			bestState = state
+			found = true
+		}
+	}
+	return bestSlot, bestState, found
 }
 
 func (s *Supervisor) clearConnectionState(slot string) {
@@ -754,12 +915,23 @@ func (s *Supervisor) auditDecision(source, slot string, addr netip.Addr, decisio
 		return
 	}
 
+	action := decisionAction(decision)
+	// Suppress per-allow audit rows by default. A busy server can produce
+	// thousands of allow decisions per map (cache hits, userinfo
+	// re-checks, reconnects), and the historical audit log was the
+	// observed source of console-flooding storms after a map restart
+	// fed cached events back through the file tailer. Block /
+	// would-block / degraded / provider errors are always audited.
+	if action == "allow" && !decision.Degraded && !s.cfg.AuditAllow {
+		return
+	}
+
 	fields := []any{
 		"event", "decision",
 		"event_source", source,
 		"slot", slot,
 		"ip", addr.String(),
-		"action", decisionAction(decision),
+		"action", action,
 	}
 	fields = append(fields, DecisionLogFields(decision)...)
 	s.auditLogger.Info("anti-vpn audit", fields...)

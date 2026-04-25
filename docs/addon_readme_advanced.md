@@ -1,5 +1,11 @@
 # ADDON README ADVANCED
 
+> **Architecture notice (process-output-only runtime).** The supervisor is now the single owner/reader of the dedicated server's stdout/stderr. Bundled addons no longer tail `server.log` or the runtime live-output mirror as the supported event source — the live mirror is OFF by default and the legacy `server.log` fallback for the anti-VPN supervisor is OFF by default.
+>
+> The long-term direction is for addons to receive parsed events (`client_connect`, `client_disconnect`, `client_userinfo_changed`, `bad_rcon`, `chat_message`, `init_game`, `shutdown_game`, etc.) from the supervisor's event bus rather than scraping log files. Bundled addons that still tail logs (`40-chatlogger.py`) are marked deprecated for that event source. The bundled `50-rcon-live-guard.py` addon is superseded entirely by the built-in supervisor RCON guard module (`RCON_GUARD_ENABLED`) and is disabled by default.
+>
+> When writing new addons, do not rely on `server.log` or `/home/container/.runtime/live/server-output.log` being present or being authoritative. Those are debug/export artifacts only.
+
 This document is the advanced reference for the addon system used by this TaystJK-first Pterodactyl project.
 
 It is synced automatically into:
@@ -341,140 +347,122 @@ The runtime also publishes the live-output addon interface state. Every variable
 - `TAYSTJK_LIVE_OUTPUT_PATH` — absolute path to the live mirror file. Default: `/home/container/.runtime/live/server-output.log`. Multiple addons may `tail -F` this file concurrently.
 - `TAYSTJK_LIVE_OUTPUT_MAX_BYTES` — soft size cap before the supervisor rotates the file. When the file grows past this size the supervisor renames it to `<path>.1` (replacing any previous archive) and reopens a fresh file. Default: `10485760` (10 MiB).
 
-## Live server output (preferred event source)
+## Event bus (the supported event source)
 
-Event-driven addons should consume **live server output** instead of tailing `server.log` themselves.
+Event-driven addons consume a **structured NDJSON event stream** produced by the supervisor. The supervisor is the single owner and reader of the dedicated server's stdout/stderr; addons no longer tail `server.log`, the live-output mirror, or any other file as a runtime input.
 
 ### Why this exists
 
-A regular user addon launched from `entrypoint.sh` does not own the dedicated server's stdout/stderr pipes. The anti-VPN supervisor does, because it directly supervises the engine. Historically that meant:
-
-- backend-managed features (anti-VPN) reacted in near real time
-- addon-based features depended on tailing `server.log`, which the engine flushes lazily and rotates between maps, leading to delayed or fragile reactions
-
-To close that gap, the supervisor now mirrors every line it scans on stdout/stderr into a runtime-managed **live output file**. Addons consume that file with any line-oriented reader, and benefit from the same near-real-time stream the supervisor uses internally.
+Tailing files is unreliable on a busy game server: the engine flushes lazily, rotates `server.log` between maps, and a misbehaving tail can replay history after a truncate. The supervisor already parses every line on stdout/stderr — once — for anti-VPN, the connection tracker, and the built-in RCON guard. Phase 2 exposes those parsed events to external addons through a dedicated event bus, so addons get the same near-real-time signal the supervisor uses internally without competing for the same file descriptor.
 
 ### Architecture
 
-- The anti-VPN supervisor owns the engine's stdout/stderr pipes (verified in `internal/antivpn/supervisor.go`, the `scanOutput` path).
-- For every line the supervisor scans, it appends that line (newline-terminated) to `$TAYSTJK_LIVE_OUTPUT_PATH`.
-- The file is a regular append-only file, **not** a FIFO/socket. This is intentional: a regular file allows multiple consumers (`tail -F`) to read concurrently, never blocks the supervisor's hot path on a missing reader, never loses lines on consumer disconnect, and is trivially inspectable with `cat` / `less`.
-- The supervisor performs size-based rotation. When the file grows past `TAYSTJK_LIVE_OUTPUT_MAX_BYTES` it renames the current file to `<path>.1` (replacing any previous archive) and reopens a fresh file. Consumers using `tail -F` reattach automatically.
-- When the supervisor is disabled (`ANTI_VPN_ENABLED=false` or `ANTI_VPN_MODE=off`), `TAYSTJK_LIVE_OUTPUT_ENABLED=false` and the live file is not produced. Addons must fall back to `TAYSTJK_ACTIVE_SERVER_LOG_PATH`.
-
-### When to use live output vs server.log fallback
-
-- **Use live output** for any event-driven addon: chat watchers, team-change watchers, kill-feed watchers, RCON-triggered automations, webhook bridges, map-change announcers, etc.
-- **Use the `server.log` fallback** only when:
-  - the addon explicitly needs to scan history written before it started, or
-  - the supervisor is disabled and you still want the addon to function in a degraded mode.
-
-The bundled `chatlogger` helper demonstrates the recommended pattern: prefer `TAYSTJK_LIVE_OUTPUT_PATH` when it is enabled, otherwise transparently fall back to `TAYSTJK_ACTIVE_SERVER_LOG_PATH`.
-
-### Lifecycle and reliability guarantees
-
-- The live mirror file exists for the entire lifetime of an active supervisor run. The file is opened on supervisor startup and closed on supervisor shutdown.
-- Across server restarts (engine respawn), the supervisor process keeps running and keeps appending. There is **no** mid-stream truncation. Lines from `ShutdownGame` to `InitGame` continue uninterrupted.
-- Across worker (supervisor) restarts the file is reopened in append mode, so consumers using `tail -F` resume cleanly.
-- Rotation is best-effort and never fatal. If rotation fails (e.g. disk full), the supervisor disables further mirror writes for the rest of the run rather than blocking the server. A warning is logged once.
-- Mirror writes are **never** allowed to block the engine. A failing write disables the mirror for the rest of the run; the engine continues normally.
-
-### Performance caveats
-
-- Every line the engine prints is written to disk via the supervisor. This is the same I/O profile the engine's own `server.log` already produces, so it is not a new bottleneck in practice. Operators with very chatty mods can lower `TAYSTJK_LIVE_OUTPUT_MAX_BYTES` to keep the active file small.
-- Multiple `tail -F` consumers are cheap, but each one runs its own `tail` process. Prefer one consumer per addon.
-- There is no per-line JSON envelope. If an addon needs structured events, parse them from the line text itself, the same way anti-VPN parses `ClientConnect:` / `ClientUserinfoChanged:` / `ChangeTeam:` lines.
-
-### Bundled / default consumers
-
-- `defaults/40-chatlogger.py` — primary input is the live mirror file when available, with automatic fallback to `server.log`. The status command (`--status`) prints which source is currently being tailed.
-- `examples/20-live-team-announcer.py` — bundled example that consumes the live mirror file, parses `ChangeTeam:` events, and announces team changes via `say` or `svsay` over RCON. Activate it by copying the script and its `.config.json` into the top-level addon directory.
-
-### Concrete examples
-
-#### Bash: react to ChangeTeam events from live output
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-LIVE="${TAYSTJK_LIVE_OUTPUT_PATH:-/home/container/.runtime/live/server-output.log}"
-
-if [[ ! -e "${LIVE}" ]]; then
-  echo "[addon:bash-live] live output not available; supervisor disabled?"
-  exit 1
-fi
-
-# tail -F follows rotation, truncation, and unlink+recreate.
-tail -n 0 -F -- "${LIVE}" | while IFS= read -r line; do
-  if [[ "${line}" == *"ChangeTeam:"* ]]; then
-    echo "[addon:bash-live] ${line}"
-  fi
-done
+```text
+JKA process (stdout/stderr)
+        ↓
+supervisor.scanOutput          (single reader)
+        ↓
+line parser
+        ↓
+EventDispatcher                (per-handler buffered channels)
+        ↓
+built-in modules:               + addon child processes
+  - connection tracker            (NDJSON on stdin)
+  - anti-VPN
+  - RCON guard
 ```
 
-#### Python: react to ChangeTeam events and announce via RCON
+- The supervisor's `scanOutput` reads each line exactly once (`internal/antivpn/supervisor.go`).
+- Each line is parsed into a typed event (`raw_line` plus, when applicable, `client_connect`, `client_disconnect`, `client_userinfo_changed`, `bad_rcon`, `chat_message`, `init_game`, `shutdown_game`).
+- Events are published to an in-process `EventDispatcher`. Built-in modules consume them inline. Each registered addon process is registered with the dispatcher as a handler with its own bounded buffered channel; events are written to the addon's stdin as NDJSON.
+- A slow or crashed addon never blocks the supervisor: when an addon's queue fills, the configured drop policy (`drop-oldest` by default) discards the oldest queued event for that handler only.
+
+### Addon protocol (stdin, NDJSON)
+
+Each event is one JSON object on its own line, terminated by `\n`. Stable field names:
+
+| Field        | Type   | Required | Notes                                                                     |
+|--------------|--------|----------|---------------------------------------------------------------------------|
+| `type`       | string | yes      | One of `raw_line`, `init_game`, `shutdown_game`, `client_connect`, `client_disconnect`, `client_userinfo_changed`, `bad_rcon`, `chat_message`. |
+| `time`       | string | yes      | RFC3339 UTC timestamp.                                                    |
+| `source`     | string | yes      | `stdout` or `stderr`.                                                     |
+| `raw`        | string | no       | The original server output line (with engine timestamp prefix, if any).   |
+| `slot`       | string | no       | JKA player slot number, when known.                                       |
+| `ip`         | string | no       | Source IP for connect / userinfo / bad_rcon events.                       |
+| `port`       | int    | no       | Source UDP port (bad_rcon).                                               |
+| `name`       | string | no       | Player name, normalised (Quake colour codes preserved verbatim in `raw`). |
+| `command`    | string | no       | RCON command string (bad_rcon).                                           |
+| `message`    | string | no       | Chat payload (chat_message).                                              |
+
+Examples:
+
+```json
+{"type":"client_connect","time":"2026-04-25T11:00:00Z","source":"stdout","slot":"0","ip":"1.2.3.4","name":"akiondev","raw":"ClientConnect: 0 [1.2.3.4] \"akiondev\""}
+{"type":"chat_message","time":"2026-04-25T11:00:01Z","source":"stdout","slot":"0","name":"akiondev","message":"hello","raw":"say: akiondev: hello"}
+{"type":"bad_rcon","time":"2026-04-25T11:00:02Z","source":"stdout","ip":"90.144.88.223","port":29070,"command":"status","raw":"Bad rcon from 90.144.88.223:29070: status"}
+```
+
+Field set may grow over time; addons must ignore unknown fields and unknown `type` values.
+
+### Where event addons live
+
+- Drop a `.sh` or `.py` file into `/home/container/addons/events/` (path configurable via `ADDON_EVENT_ADDONS_DIR`).
+- The supervisor scans the directory at startup, launches each addon as a child process, and pipes events to its stdin. Addon stdout/stderr is line-prefixed (`[addon:<name>:<stream>] …`) into the main runtime console.
+- Files inside `/home/container/addons/events/` are run as long-lived processes; do **not** put one-shot startup helpers there. One-shot helpers continue to live in the top-level `/home/container/addons/` directory and run via the existing run-once loader.
+- Addons can self-disable by exiting; the supervisor will log the exit and stop sending events.
+
+### Configuration
+
+| Variable                       | Default                              | Purpose                                                              |
+|--------------------------------|--------------------------------------|----------------------------------------------------------------------|
+| `ADDON_EVENT_BUS_ENABLED`      | `true`                               | Master switch for the event-driven addon runner.                     |
+| `ADDON_EVENT_ADDONS_DIR`       | `/home/container/addons/events`      | Directory scanned for event-driven addons at supervisor startup.     |
+| `ADDON_EVENT_BUS_BUFFER_SIZE`  | `1000`                               | Per-addon event queue capacity.                                      |
+| `ADDON_EVENT_BUS_DROP_POLICY`  | `drop-oldest`                        | What to do when an addon falls behind. Also accepts `drop-newest`.   |
+
+### Authoring rules
+
+- Read NDJSON from stdin **line by line**. One `json.loads(line)` per iteration.
+- Treat all fields as optional except `type`.
+- Do **not** open `server.log` or `/home/container/.runtime/live/server-output.log`. Those are debug/export artefacts only and are off by default.
+- Do **not** spawn `tail` from inside an event-driven addon. The supervisor delivers everything you need.
+- Keep per-event work fast. Long-running I/O should be pushed onto a worker thread or queue inside the addon so stdin keeps draining.
+- Print diagnostic lines to stdout / stderr; they will be prefixed with the addon name so they show up in the runtime console.
+
+### Minimal Python example
 
 ```python
 #!/usr/bin/env python3
-import os, re, socket, subprocess
+import json, sys
 
-LIVE = os.getenv("TAYSTJK_LIVE_OUTPUT_PATH", "/home/container/.runtime/live/server-output.log")
-PORT = int(os.getenv("TAYSTJK_EFFECTIVE_SERVER_PORT", "29070"))
-PASSWORD = os.getenv("TAYSTJK_EFFECTIVE_SERVER_RCON_PASSWORD", "")
-
-CHANGE_TEAM = re.compile(
-    r'ChangeTeam:\s*\d+\s*\[[^\]]*\]\s*\([^)]*\)\s*"(?P<player>[^"]+)"\s+\w+\s*->\s*(?P<team>\w+)'
-)
-
-def announce(message: str, command: str = "svsay") -> None:
-    if not PASSWORD:
-        return
-    payload = b"\xff\xff\xff\xffrcon " + PASSWORD.encode() + f' {command} "{message}"'.encode()
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.settimeout(3)
-    try:
-        sock.sendto(payload, ("127.0.0.1", PORT))
-    finally:
-        sock.close()
-
-proc = subprocess.Popen(["tail", "-n", "0", "-F", "--", LIVE],
-                        stdout=subprocess.PIPE, text=True, bufsize=1)
-for line in proc.stdout:
-    match = CHANGE_TEAM.search(line)
-    if not match:
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
         continue
-    team = match.group("team").upper()
-    player = match.group("player")
-    if team == "RED":
-        announce(f"{player} joined RED TEAM")
-    elif team == "BLUE":
-        announce(f"{player} joined BLUE TEAM")
-    elif team in {"SPECTATOR", "FREE"}:
-        announce(f"{player} changed SPECTATORS")
+    event = json.loads(line)
+    if event.get("type") == "chat_message":
+        print(f"[say] {event.get('name')}: {event.get('message')}", flush=True)
 ```
 
-To use `say` instead of `svsay`, change the `command` argument in `announce()`. Both go through the same UDP RCON path used by the bundled examples.
+### Migration from old tail-based addons
 
-#### Migration: switching an existing tail addon to live output
+The pre-Phase-2 addon model relied on `tail -F` against either `server.log` or the runtime live-output mirror. That model is no longer supported as a runtime input:
 
-Before:
+| Old pattern                                                                 | New pattern                                                |
+|-----------------------------------------------------------------------------|------------------------------------------------------------|
+| `tail -n 0 -F -- "${TAYSTJK_LIVE_OUTPUT_PATH}"`                              | Read NDJSON events from stdin.                             |
+| `tail -n 0 -F -- "${TAYSTJK_ACTIVE_SERVER_LOG_PATH}"`                        | Read NDJSON events from stdin.                             |
+| `if [[ "${TAYSTJK_LIVE_OUTPUT_ENABLED:-false}" != "true" ]]; then …`         | No fallback needed: the supervisor is the source of truth. |
+| `fallback_to_server_log` helper / `preferred_tail_source()` selector logic   | Removed; addons no longer choose between sources.          |
 
-```bash
-tail -n 0 -F -- "${TAYSTJK_ACTIVE_SERVER_LOG_PATH}"
-```
+The runtime live-output mirror file remains available as a **debug/export artefact** for operators who want a tailable file outside the addon system. It is opt-in (`JKA_LIVE_OUTPUT_MIRROR_ENABLED=true`, legacy alias `TAYSTJK_LIVE_OUTPUT_ENABLED=true`) and is not produced by default. Treat it as you would any other operator log file: useful for postmortem inspection, never as a runtime event source for an addon.
 
-After:
+### Built-in event addons
 
-```bash
-TAIL_PATH="${TAYSTJK_LIVE_OUTPUT_PATH:-${TAYSTJK_ACTIVE_SERVER_LOG_PATH}}"
-if [[ "${TAYSTJK_LIVE_OUTPUT_ENABLED:-false}" != "true" ]]; then
-  TAIL_PATH="${TAYSTJK_ACTIVE_SERVER_LOG_PATH}"
-fi
-tail -n 0 -F -- "${TAIL_PATH}"
-```
+- `bundled-addons/defaults/events/40-chatlogger.py` — the Phase 2 replacement for the legacy chatlogger daemon. Consumes `chat_message` events directly and falls back to a richer raw_line classifier for mod-specific verbs (e.g. JAPro `amsay`). Writes daily plain-text logs into `/home/container/chatlogs/`. Activated by `ADDON_CHATLOGGER_ENABLED=true`; the addon loader symlinks it into `${ADDON_EVENT_ADDONS_DIR}` and the supervisor launches it.
+- The legacy `bundled-addons/defaults/40-chatlogger.py` is retained only so its `--stop` subcommand can terminate any pre-Phase-2 daemon that may still be running on upgrade. It is **not** launched by the managed runtime any more and is marked `DEPRECATED` in its module docstring.
 
-### Recommended read order for addons
+### Recommended read order for addons (runtime values)
 
 When an addon needs runtime values, prefer this order:
 
@@ -482,8 +470,6 @@ When an addon needs runtime values, prefer this order:
 2. `/home/container/.runtime/taystjk-effective.env`
 3. `/home/container/.runtime/taystjk-effective.json` for non-sensitive values
 4. fallback to direct config parsing only when truly needed
-
-This keeps scripts aligned with the actual managed runtime state instead of hardcoding assumptions.
 
 Practical storage guidance:
 

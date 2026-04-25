@@ -205,7 +205,14 @@ jobs:
 
       - name: Validate Python addon helpers
         if: steps.gate.outputs.run == 'true'
-        run: python3 -m py_compile bundled-addons/defaults/40-chatlogger.py bundled-addons/defaults/50-rcon-live-guard.py bundled-addons/examples/20-python-announcer.py
+        run: |
+          mapfile -d '' addon_py < <(find bundled-addons -type f -name '*.py' -print0)
+          if [[ ${#addon_py[@]} -eq 0 ]]; then
+            echo "No bundled Python addons found to validate" >&2
+            exit 1
+          fi
+          printf '%s\n' "${addon_py[@]}"
+          python3 -m py_compile "${addon_py[@]}"
 
       - name: Validate egg JSON
         if: steps.gate.outputs.run == 'true'

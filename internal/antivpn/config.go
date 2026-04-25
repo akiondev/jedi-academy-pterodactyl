@@ -74,6 +74,53 @@ type Config struct {
 	// the emissions guarantees the engine processes one `say` per frame.
 	// Zero disables spacing.
 	BroadcastEmissionSpacing time.Duration
+	// LogMonitorEnabled gates the legacy `server.log` tailing fallback.
+	// In the new process-output-only architecture the supervisor reads
+	// the dedicated server's stdout/stderr exactly once and parses events
+	// from that single stream, so the file-based fallback is OFF by
+	// default. Set ANTI_VPN_LOG_MONITOR_ENABLED=true to re-enable the
+	// legacy debug fallback for environments where stdout capture is
+	// unreliable.
+	LogMonitorEnabled bool
+	// LiveOutputEnabled gates the runtime-managed live mirror file. The
+	// mirror is now off by default; addons consume parsed events from
+	// the supervisor's event bus instead of tailing a file. Operators
+	// that want the file as an explicit debug/export feature can set
+	// JKA_LIVE_OUTPUT_MIRROR_ENABLED=true (legacy alias:
+	// TAYSTJK_LIVE_OUTPUT_ENABLED).
+	LiveOutputEnabled bool
+	// AuditAllow controls whether plain `allow` decisions are written
+	// to the audit log. Default false: only block / would-block /
+	// degraded / error decisions are audited so a normal busy server
+	// does not produce thousands of allow rows. Set
+	// ANTI_VPN_AUDIT_ALLOW=true for forensic / debug runs.
+	AuditAllow bool
+	// RconGuard holds the configuration for the built-in RCON guard
+	// module. The guard consumes `Bad rcon from ...` events parsed
+	// directly from process stdout/stderr and uses the central
+	// connection tracker to decide whether the source IP maps to a
+	// currently connected slot.
+	RconGuard RconGuardConfig
+	// AddonRunner holds the configuration for the supervisor's
+	// event-driven addon runner. The runner is the bridge between the
+	// central event dispatcher and external addon child processes; it
+	// receives parsed events and writes them as NDJSON to each addon's
+	// stdin so addons no longer need to tail server.log or any
+	// supervisor-managed mirror file.
+	AddonRunner AddonRunnerConfig
+}
+
+// RconGuardConfig holds the configuration for the supervisor's built-in
+// RCON guard module. The guard replaces the legacy
+// 50-rcon-live-guard.py addon that used to tail the live-output mirror
+// file. Because it consumes events from the same stream the supervisor
+// already scans, it cannot loop on its own RCON commands and never
+// lies about whether a player was actually kicked.
+type RconGuardConfig struct {
+	Enabled     bool
+	Action      string
+	Broadcast   bool
+	IgnoreHosts []string
 }
 
 func LoadConfigFromEnv() (Config, error) {
@@ -109,6 +156,39 @@ func LoadConfigFromEnv() (Config, error) {
 		AuditLogKeepArchives:   envInt("ANTI_VPN_AUDIT_LOG_KEEP_ARCHIVES", 7),
 		RotateLogsOnStart:      envBool("ANTI_VPN_ROTATE_LOGS_ON_START", true),
 		BroadcastEmissionSpacing: envDuration("ANTI_VPN_BROADCAST_EMISSION_SPACING", 350*time.Millisecond),
+		// New process-output-only architecture: the legacy server.log
+		// tailer and the live-output mirror are OFF by default. They
+		// remain available as opt-in debug fallbacks so existing
+		// deployments that intentionally rely on them can re-enable
+		// them, but the supervisor never reads server.log nor mirrors
+		// to a file unless explicitly told to.
+		LogMonitorEnabled: envBool("ANTI_VPN_LOG_MONITOR_ENABLED", false),
+		AuditAllow:        envBool("ANTI_VPN_AUDIT_ALLOW", false),
+	}
+
+	// JKA_LIVE_OUTPUT_MIRROR_ENABLED is the canonical env var for the
+	// live-output mirror; the legacy TAYSTJK_LIVE_OUTPUT_ENABLED name is
+	// accepted as a deprecated alias when the canonical variable is not
+	// set.
+	cfg.LiveOutputEnabled = envBoolWithFallback("JKA_LIVE_OUTPUT_MIRROR_ENABLED", "TAYSTJK_LIVE_OUTPUT_ENABLED", false)
+
+	// Built-in RCON guard module. Replaces the legacy
+	// 50-rcon-live-guard.py addon that tailed the live-output file.
+	cfg.RconGuard = RconGuardConfig{
+		Enabled:     envBool("RCON_GUARD_ENABLED", true),
+		Action:      strings.ToLower(envString("RCON_GUARD_ACTION", "kick")),
+		Broadcast:   envBool("RCON_GUARD_BROADCAST", true),
+		IgnoreHosts: parseRconGuardIgnoreHosts(envString("RCON_GUARD_IGNORE_HOSTS", "127.0.0.1,::1,localhost")),
+	}
+
+	// Event-driven addon runner. Defaults are tuned so a fresh install
+	// with no addon directory present is a no-op (Enabled=true but
+	// Start() returns gracefully when the directory is missing).
+	cfg.AddonRunner = AddonRunnerConfig{
+		Enabled:    envBool("ADDON_EVENT_BUS_ENABLED", true),
+		AddonsDir:  envString("ADDON_EVENT_ADDONS_DIR", "/home/container/addons/events"),
+		BufferSize: envInt("ADDON_EVENT_BUS_BUFFER_SIZE", 1000),
+		DropPolicy: ParseEventDispatchPolicy(envString("ADDON_EVENT_BUS_DROP_POLICY", "drop-oldest")),
 	}
 
 	mode, err := parseMode(envString("ANTI_VPN_MODE", string(ModeBlock)))
@@ -123,7 +203,7 @@ func LoadConfigFromEnv() (Config, error) {
 	}
 	cfg.EnforcementMode = enforcementMode
 
-	broadcastMode, err := parseBroadcastMode(envString("ANTI_VPN_BROADCAST_MODE", string(BroadcastPassAndBlock)))
+	broadcastMode, err := parseBroadcastMode(envString("ANTI_VPN_BROADCAST_MODE", string(BroadcastBlockOnly)))
 	if err != nil {
 		return Config{}, err
 	}
@@ -344,6 +424,39 @@ func envInt(key string, fallback int) int {
 		return fallback
 	}
 	return parsed
+}
+
+// envBoolWithFallback returns the parsed boolean value of `primaryKey`. If
+// `primaryKey` is unset, the value of `legacyKey` is consulted instead.
+// Used to keep deprecated environment variable names working while the
+// canonical name takes precedence when both are set.
+func envBoolWithFallback(primaryKey, legacyKey string, fallback bool) bool {
+	if value := strings.TrimSpace(os.Getenv(primaryKey)); value != "" {
+		return envBool(primaryKey, fallback)
+	}
+	return envBool(legacyKey, fallback)
+}
+
+// parseRconGuardIgnoreHosts splits a comma/whitespace separated list of
+// hostnames or IP literals into a normalised slice. Entries are
+// lower-cased and trimmed; empty entries are dropped. The result is
+// always non-nil but may be empty.
+func parseRconGuardIgnoreHosts(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return []string{}
+	}
+	fields := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == '\n' || r == '\r' || r == ' ' || r == '\t'
+	})
+	out := make([]string, 0, len(fields))
+	for _, item := range fields {
+		item = strings.ToLower(strings.TrimSpace(item))
+		if item == "" {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 func envDuration(key string, fallback time.Duration) time.Duration {
