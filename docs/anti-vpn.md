@@ -195,6 +195,30 @@ Supported placeholders:
 
 Player names are sanitized before broadcast to strip color codes, control characters, and overlong values.
 
+## Migrating an existing jka-runtime.json
+
+The image only writes `/home/container/config/jka-runtime.json` when the file does **not** already exist; an operator-edited file is never overwritten. As a result, servers that were originally provisioned on an older image keep their previous defaults — including the legacy `block-only` broadcast mode and `audit_allow=false`, both of which silently dropped allow decisions and made the system look broken.
+
+The new shipped defaults are visible-by-default:
+
+```json
+"anti_vpn": {
+  "audit_allow": true,
+  "broadcast": { "mode": "pass-and-block" }
+}
+```
+
+To adopt them on an existing deployment, either:
+
+1. compare your file against `/home/container/config/jka-runtime.example.json` (refreshed on every boot) and copy over the two keys above, or
+2. delete `jka-runtime.json` and let the entrypoint regenerate it from the current template (this resets every other key as well, including provider API keys).
+
+When the supervisor starts and observes that the resolved `anti_vpn.broadcast.mode` is still `block-only`, it now logs a one-line migration warning so the silent-PASS pitfall is visible in the panel console:
+
+```text
+Anti-VPN broadcast mode is block-only; PASS messages will not be shown. Set anti_vpn.broadcast.mode=pass-and-block in /home/container/config/jka-runtime.json for visible PASS/BLOCKED behavior.
+```
+
 ## Allowlist
 
 `ANTI_VPN_ALLOWLIST` supports:

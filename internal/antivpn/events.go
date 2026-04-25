@@ -233,7 +233,7 @@ func parseTeamChange(line string) (teamChangeMatch, bool) {
 	return teamChangeMatch{
 		Slot:    matches[1],
 		IP:      strings.TrimSpace(matches[2]),
-		Name:    matches[3],
+		Name:    normalizeLoggedPlayerName(matches[3]),
 		OldTeam: strings.ToUpper(matches[4]),
 		NewTeam: strings.ToUpper(matches[5]),
 	}, true

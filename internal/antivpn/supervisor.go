@@ -248,6 +248,16 @@ func (s *Supervisor) Run(ctx context.Context, serverCommand []string) error {
 		"event_bus_buffer_size", s.cfg.AddonRunner.BufferSize,
 	)
 
+	// Migration nudge for existing deployments: a user-owned
+	// jka-runtime.json from an older image may still carry the legacy
+	// block-only broadcast mode, which silently drops PASS messages.
+	// We never rewrite the operator's file; we only surface a one-line
+	// warning so the operator can opt into the new visible-by-default
+	// behaviour by editing their config.
+	if msg, ok := legacyBroadcastModeMigrationWarning(s.cfg.BroadcastMode); ok {
+		s.logger.Warn(msg)
+	}
+
 	if s.addonRunner != nil {
 		if err := s.addonRunner.Start(runCtx, s.dispatcher); err != nil && s.logger != nil {
 			s.logger.Warn("event addon runner failed to start", "error", err)
@@ -1097,6 +1107,21 @@ func parseClientConnect(line string) (string, netip.Addr, string, bool) {
 	}
 
 	return matches[1], addr, normalizeLoggedPlayerName(matches[3]), true
+}
+
+// legacyBroadcastModeMigrationWarning returns the operator-facing
+// migration nudge to print when an existing jka-runtime.json is still
+// pinned to the legacy block-only broadcast mode. New defaults
+// (pass-and-block) only apply to freshly-created config files; this
+// helper makes the silent-PASS pitfall visible at startup without
+// touching the operator's file.
+func legacyBroadcastModeMigrationWarning(mode BroadcastMode) (string, bool) {
+	if mode != BroadcastBlockOnly {
+		return "", false
+	}
+	return "Anti-VPN broadcast mode is block-only; PASS messages will not be shown. " +
+		"Set anti_vpn.broadcast.mode=pass-and-block in /home/container/config/jka-runtime.json " +
+		"for visible PASS/BLOCKED behavior.", true
 }
 
 func normalizeLogLineForParsing(line string) string {
