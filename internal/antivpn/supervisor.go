@@ -62,6 +62,19 @@ type slotConnectionState struct {
 	SeenAt     time.Time
 }
 
+// Connect-kind classification values used to distinguish a genuine new
+// player join from a TaystJK/JKA game-VM reinitialisation that re-emits
+// ClientConnect for already-connected slots (map restart, map change,
+// timelimit hit, ShutdownGame/InitGame). Only real_connect joins should
+// produce a public "VPN PASS" broadcast; reinit_connect events still get
+// audited and still enforce BLOCKED, but their PASS is suppressed to
+// keep the in-game console clean.
+const (
+	connectKindReal     = "real_connect"
+	connectKindReinit   = "reinit_connect"
+	triggerKindUserinfo = "userinfo"
+)
+
 type Supervisor struct {
 	cfg              Config
 	logger           *slog.Logger
@@ -596,8 +609,15 @@ func (s *Supervisor) handleLogLine(ctx context.Context, stdin io.Writer, line st
 	slot, addr, playerName, ok := parseClientConnect(line)
 	if ok {
 		s.publishEvent(newClientConnectEvent(line, eventSource, now, slot, addr, playerName))
+		// Classify BEFORE storeConnectionState overwrites the prior state
+		// for this slot. A reinit_connect is only declared when we are
+		// inside the reinit-burst window AND the slot already had tracked
+		// state AND the previous IP matches the current one. All other
+		// cases (no prior state, IP changed, post-disconnect reconnect,
+		// outside the burst window) classify as real_connect.
+		connectKind := s.classifyConnect(slot, addr)
 		s.storeConnectionState(slot, addr, playerName)
-		s.processConnectionEvent(ctx, stdin, source, slot, addr, playerName, "connect")
+		s.processConnectionEvent(ctx, stdin, source, slot, addr, playerName, connectKind)
 		return
 	}
 
@@ -627,7 +647,34 @@ func (s *Supervisor) handleLogLine(ctx context.Context, stdin io.Writer, line st
 		return
 	}
 
-	s.processConnectionEvent(ctx, stdin, source, slot, addr, playerName, "userinfo")
+	s.processConnectionEvent(ctx, stdin, source, slot, addr, playerName, triggerKindUserinfo)
+}
+
+// classifyConnect inspects the supervisor's previous slotConnectionState
+// for the supplied slot/addr to decide whether a fresh ClientConnect line
+// represents a genuine new join (real_connect) or a re-emission caused by
+// a TaystJK/JKA game-VM reinitialisation (reinit_connect). Slot+IP is the
+// authoritative key; player names are deliberately ignored because they
+// can change mid-session via name/color/AFK toggles.
+func (s *Supervisor) classifyConnect(slot string, addr netip.Addr) string {
+	if !s.inReinitBurst() {
+		return connectKindReal
+	}
+	if strings.TrimSpace(slot) == "" || !addr.IsValid() {
+		return connectKindReal
+	}
+	prev, hasPrev := s.lookupConnectionState(slot)
+	if !hasPrev || !prev.Addr.IsValid() {
+		// Slot was empty (server startup, or cleared by an earlier
+		// ClientDisconnect) — treat as a real new join.
+		return connectKindReal
+	}
+	if prev.Addr != addr {
+		// Slot reused with a different IP — a different player took the
+		// slot during the reinit window, so the connect is real.
+		return connectKindReal
+	}
+	return connectKindReinit
 }
 
 // publishEvent is a small helper that fans an event out to the
@@ -699,7 +746,13 @@ func (s *Supervisor) processConnectionEvent(ctx context.Context, stdin io.Writer
 			return
 		}
 
-		s.auditDecision(source, slot, addr, decision)
+		// Compute audit / broadcast extras up front so the audit row
+		// reflects whether the public PASS broadcast was suppressed
+		// because this ClientConnect was reinit-driven.
+		passBroadcastSuppressed := triggerKind == connectKindReinit && !decision.Blocked && !decision.WouldBlock
+		auditExtras := connectAuditExtras(triggerKind, passBroadcastSuppressed)
+
+		s.auditDecision(source, slot, addr, decision, auditExtras...)
 
 		if s.cfg.LogDecisions {
 			level := slog.LevelInfo
@@ -864,7 +917,7 @@ func (s *Supervisor) enforceDecision(stdin io.Writer, slot string, addr netip.Ad
 	}
 }
 
-func (s *Supervisor) auditDecision(source, slot string, addr netip.Addr, decision Decision) {
+func (s *Supervisor) auditDecision(source, slot string, addr netip.Addr, decision Decision, extraFields ...any) {
 	if s.auditLogger == nil {
 		return
 	}
@@ -886,15 +939,53 @@ func (s *Supervisor) auditDecision(source, slot string, addr netip.Addr, decisio
 		"action", action,
 	}
 	fields = append(fields, DecisionLogFields(decision)...)
+	if len(extraFields) > 0 {
+		fields = append(fields, extraFields...)
+	}
 	s.auditLogger.Info("anti-vpn audit", fields...)
+}
+
+// connectAuditExtras returns the additional structured-log fields that
+// should be attached to a per-connect audit row. Only ClientConnect
+// triggers (real_connect / reinit_connect) carry connect_kind; for the
+// reinit_connect allow-suppression case we also record that the public
+// broadcast was deliberately swallowed.
+func connectAuditExtras(triggerKind string, passBroadcastSuppressed bool) []any {
+	switch triggerKind {
+	case connectKindReal, connectKindReinit:
+		extras := []any{"connect_kind", triggerKind}
+		if passBroadcastSuppressed {
+			extras = append(extras, "pass_broadcast_suppressed", true)
+		}
+		return extras
+	default:
+		return nil
+	}
 }
 
 func (s *Supervisor) broadcastDecision(stdin io.Writer, slot, playerName string, decision Decision, triggerKind string) {
 	// Suppress redundant cached "VPN PASS" broadcasts triggered by the engine
 	// re-emitting ClientUserinfoChanged for every existing client during a map
 	// restart / cfg reload. Genuine ClientConnect events (triggerKind ==
-	// "connect") and any blocked / would-block decision still go through.
-	if triggerKind == "userinfo" && decision.FromCache && !decision.Blocked && !decision.WouldBlock && s.inReinitBurst() {
+	// connectKindReal) and any blocked / would-block decision still go through.
+	if triggerKind == triggerKindUserinfo && decision.FromCache && !decision.Blocked && !decision.WouldBlock && s.inReinitBurst() {
+		return
+	}
+
+	// Suppress the public PASS broadcast when a ClientConnect line was
+	// produced by a TaystJK/JKA game-VM reinitialisation re-emitting
+	// connects for already-connected slots (same slot, same IP, inside
+	// the reinit window). BLOCKED / would-block decisions still
+	// broadcast and still enforce — operators must always see VPN
+	// kicks/bans regardless of how the connect line was generated.
+	if triggerKind == connectKindReinit && !decision.Blocked && !decision.WouldBlock {
+		if s.logger != nil {
+			s.logger.Info("anti-vpn pass broadcast suppressed for reinit connect",
+				"slot", slot,
+				"ip", decision.IP,
+				"player", playerName,
+			)
+		}
 		return
 	}
 
