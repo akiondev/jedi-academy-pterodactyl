@@ -1,0 +1,553 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Detect changed areas
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    outputs:
+      go_validate: ${{ steps.filter.outputs.go_validate }}
+      runtime_validate: ${{ steps.filter.outputs.runtime_validate }}
+      docker_taystjk_modern64: ${{ steps.filter.outputs.docker_taystjk_modern64 }}
+      docker_jk2mv: ${{ steps.filter.outputs.docker_jk2mv }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect relevant file changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            go_validate:
+              - ".github/workflows/ci.yml"
+              - "cmd/**"
+              - "internal/**"
+              - "go.mod"
+            runtime_validate:
+              - ".github/workflows/ci.yml"
+              - "scripts/**"
+              - "tools/**"
+              - "egg/**"
+              - "bundled-addons/**"
+            docker_taystjk_modern64:
+              - ".github/workflows/ci.yml"
+              - ".github/workflows/upstream-taystjk-master-sync.yml"
+              - "docker/taystjk-modern64/**"
+              - "image/taystjk-modern64/runtime.json"
+              - "cmd/**"
+              - "internal/**"
+              - "scripts/**"
+              - "tools/**"
+              - "bundled-addons/**"
+              - "docs/addon_readme.md"
+              - "docs/addon_readme_advanced.md"
+              - "go.mod"
+            docker_jk2mv:
+              - ".github/workflows/ci.yml"
+              - "docker/jk2mv/**"
+              - "scripts/jk2mv/**"
+              - "image/jk2mv/**"
+              - "egg/egg-jk2mv-pterodactyl.json"
+              - "docs/jk2mv.md"
+
+  private-string-guard:
+    name: Guard private runtime strings
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Guard against private Nexus runtime defaults
+        run: |
+          set -euo pipefail
+          patterns=(
+            "jkn""exus"
+            "stats.jkn""exus.se"
+            "nexus""vpncheck"
+            "nexus""-stats"
+            "nexus""-accounts"
+          )
+          for pattern in "${patterns[@]}"; do
+            if grep -RIin --exclude-dir=.git -- "$pattern" .; then
+              echo "Found private Nexus-only runtime string '${pattern}' in the generic public runtime." >&2
+              exit 1
+            fi
+          done
+
+  validate:
+    name: Validate scripts and egg
+    runs-on: ubuntu-latest
+    needs: changes
+    timeout-minutes: 15
+
+    steps:
+      - name: Decide whether Go validation is required
+        id: gate_go
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" || "${{ startsWith(github.ref, 'refs/tags/v') }}" == "true" || "${{ needs.changes.outputs.go_validate }}" == "true" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Decide whether runtime validation is required
+        id: gate
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" || "${{ startsWith(github.ref, 'refs/tags/v') }}" == "true" || "${{ needs.changes.outputs.runtime_validate }}" == "true" || "${{ needs.changes.outputs.docker_taystjk_modern64 }}" == "true" || "${{ needs.changes.outputs.docker_jk2mv }}" == "true" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip validation for non-runtime changes
+        if: steps.gate_go.outputs.run != 'true' && steps.gate.outputs.run != 'true'
+        run: echo "No Go, runtime, addon, shell, egg, or image-affecting changes detected; skipping validation."
+
+      - name: Check out repository
+        if: steps.gate_go.outputs.run == 'true' || steps.gate.outputs.run == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        if: steps.gate_go.outputs.run == 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+          cache-dependency-path: go.mod
+
+      - name: Validate Go packages
+        if: steps.gate_go.outputs.run == 'true'
+        run: go test ./...
+
+      - name: Validate shell scripts
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          shell_files=(
+            scripts/entrypoint.sh
+            scripts/install_taystjk.sh
+          )
+          while IFS= read -r common_file; do
+            shell_files+=("$common_file")
+          done < <(find scripts/common -maxdepth 1 -type f -name '*.sh' | LC_ALL=C sort)
+          while IFS= read -r jk2mv_file; do
+            shell_files+=("$jk2mv_file")
+          done < <(find scripts/jk2mv -maxdepth 1 -type f -name '*.sh' 2>/dev/null | LC_ALL=C sort)
+          for shell_file in "${shell_files[@]}"; do
+            echo "bash -n ${shell_file}"
+            bash -n "$shell_file"
+          done
+
+      - name: Validate Python addon helpers
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          mapfile -d '' addon_py < <(find bundled-addons -type f -name '*.py' -print0)
+          if [[ ${#addon_py[@]} -eq 0 ]]; then
+            echo "No bundled Python addons found to validate" >&2
+            exit 1
+          fi
+          printf '%s\n' "${addon_py[@]}"
+          python3 -m py_compile "${addon_py[@]}"
+
+      - name: Validate egg JSON
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          for egg in egg/*.json; do
+            echo "jq . ${egg}"
+            jq . "$egg" >/dev/null
+          done
+
+      - name: Validate runtime manifest schema
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          required_keys=(
+            engine_dist_dir
+            engine_binary_glob
+            engine_payload_root
+            runtime_common_dir
+            docs_dir
+            bundled_addons_dir
+            antivpn_binary
+            upstream_commit_file
+            upstream_ref_file
+          )
+          # The TaystJK runtime manifest schema (schema_version 2 + the
+          # required_keys above) only applies to TaystJK runtimes. Other
+          # runtimes (e.g. JK2MV under image/jk2mv/runtime.json) define
+          # their own minimal schema and are intentionally excluded here.
+          mapfile -t manifests < <(find image/taystjk-modern64 -type f -name 'runtime.json' | LC_ALL=C sort)
+          if [[ ${#manifests[@]} -eq 0 ]]; then
+            echo "No TaystJK runtime.json manifests found under image/taystjk-modern64/" >&2
+            exit 1
+          fi
+          for manifest in "${manifests[@]}"; do
+            echo "validating ${manifest}"
+            jq -e '.schema_version == 2 and (.paths | type == "object")' "$manifest" >/dev/null \
+              || { echo "${manifest} must declare schema_version == 2 with a paths object" >&2; exit 1; }
+            for key in "${required_keys[@]}"; do
+              value="$(jq -r --arg k "$key" '.paths[$k] // empty' "$manifest")"
+              if [[ -z "$value" ]]; then
+                echo "${manifest} is missing required path '${key}'" >&2
+                exit 1
+              fi
+            done
+            engine_dist="$(jq -r '.paths.engine_dist_dir' "$manifest")"
+            engine_payload="$(jq -r '.paths.engine_payload_root' "$manifest")"
+            if [[ "$engine_dist" == "$engine_payload" ]]; then
+              echo "${manifest} declares engine_dist_dir == engine_payload_root; engine binaries and syncable payload subdirectories must live in physically separate directories" >&2
+              exit 1
+            fi
+          done
+
+      - name: Validate JK2MV runtime manifest
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          manifest=image/jk2mv/runtime.json
+          if [[ ! -f "$manifest" ]]; then
+            echo "Missing $manifest" >&2
+            exit 1
+          fi
+          echo "validating ${manifest}"
+          jq -e '.schema_version == 1 and .runtime == "jk2mv" and (.paths | type == "object")' "$manifest" >/dev/null \
+            || { echo "${manifest} must declare schema_version == 1, runtime == \"jk2mv\" and a paths object" >&2; exit 1; }
+          for key in engine_binary engine_assets_dir container_home base_dir; do
+            value="$(jq -r --arg k "$key" '.paths[$k] // empty' "$manifest")"
+            if [[ -z "$value" ]]; then
+              echo "${manifest} is missing required path '${key}'" >&2
+              exit 1
+            fi
+          done
+
+      - name: Run sync_runtime_files regression test
+        if: steps.gate.outputs.run == 'true'
+        run: bash scripts/test/sync_runtime_files_test.sh
+
+      - name: Run runtime config migration regression test
+        if: steps.gate.outputs.run == 'true'
+        run: bash scripts/test/runtime_config_migration_test.sh
+
+      - name: Run announcer config env regression test
+        if: steps.gate.outputs.run == 'true'
+        run: python3 scripts/test/announcer_config_env_test.py -v
+
+      - name: Guard against /opt/taystjk-* reintroductions
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          if grep -RIn -- '/opt/taystjk-' scripts/ image/; then
+            echo "Found /opt/taystjk-* reference under scripts/ or image/. Use \${JKA_PATH_*} from /opt/jka/runtime.json instead." >&2
+            exit 1
+          fi
+
+  docker-build:
+    name: Build Docker image (no push)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs:
+      - changes
+      - validate
+    if: github.event_name == 'pull_request' && needs.changes.outputs.docker_taystjk_modern64 == 'true'
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Prepare image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/jedi-academy-pterodactyl" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/taystjk-modern64/Dockerfile
+          push: false
+          tags: ${{ steps.image.outputs.name }}:ci-${{ github.sha }}-taystjk-modern64
+          cache-from: type=gha,scope=taystjk-modern64-image
+          cache-to: type=gha,mode=max,scope=taystjk-modern64-image
+          provenance: false
+
+  publish-images:
+    name: Publish image to GHCR (and Docker Hub if configured)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs:
+      - changes
+      - validate
+    if: github.ref == 'refs/heads/main' && (needs.changes.outputs.docker_taystjk_modern64 == 'true' || github.event_name == 'workflow_dispatch')
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Prepare image names
+        id: image
+        run: |
+          owner_lc="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "ghcr=ghcr.io/${owner_lc}/jedi-academy-pterodactyl" >> "$GITHUB_OUTPUT"
+          echo "dockerhub=docker.io/${owner_lc}/jedi-academy-pterodactyl" >> "$GITHUB_OUTPUT"
+
+      - name: Decide whether to publish to Docker Hub
+        id: dockerhub_gate
+        env:
+          PUBLISH_DOCKERHUB_VAR: ${{ vars.PUBLISH_DOCKERHUB }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [[ "${PUBLISH_DOCKERHUB_VAR}" == "true" && -n "${DOCKERHUB_USERNAME}" && -n "${DOCKERHUB_TOKEN}" ]]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve TaystJK upstream master commit
+        id: upstream
+        run: |
+          set -euo pipefail
+          upstream_sha="$(git ls-remote https://github.com/taysta/TaystJK.git refs/heads/master | awk '{print $1}')"
+          if [[ -z "$upstream_sha" ]]; then
+            echo "Failed to resolve TaystJK master HEAD" >&2
+            exit 1
+          fi
+          short_sha="${upstream_sha:0:12}"
+          echo "sha=${upstream_sha}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: steps.dockerhub_gate.outputs.publish == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Compose target image list
+        id: targets
+        run: |
+          {
+            echo "images<<EOF"
+            echo "${{ steps.image.outputs.ghcr }}"
+            if [[ "${{ steps.dockerhub_gate.outputs.publish }}" == "true" ]]; then
+              echo "${{ steps.image.outputs.dockerhub }}"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Compose tag patterns
+        id: tagspec
+        env:
+          UPSTREAM_SHORT_SHA: ${{ steps.upstream.outputs.short_sha }}
+        run: |
+          set -euo pipefail
+          {
+            echo "patterns<<EOF"
+            cat <<TAGS
+          type=raw,value=latest,enable={{is_default_branch}}
+          type=raw,value=taystjk
+          type=raw,value=taystjk-modern64
+          type=raw,value=taystjk-modern64-master-${UPSTREAM_SHORT_SHA}
+          TAGS
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.targets.outputs.images }}
+          tags: ${{ steps.tagspec.outputs.patterns }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/taystjk-modern64/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: |
+            ${{ steps.meta.outputs.labels }}
+            io.akiondev.taystjk.upstream.repo=https://github.com/taysta/TaystJK.git
+            io.akiondev.taystjk.upstream.branch=master
+            io.akiondev.taystjk.upstream.commit=${{ steps.upstream.outputs.sha }}
+          build-args: |
+            TAYSTJK_REF=${{ steps.upstream.outputs.sha }}
+            TAYSTJK_COMMIT=${{ steps.upstream.outputs.sha }}
+          cache-from: type=gha,scope=taystjk-modern64-image
+          cache-to: type=gha,mode=max,scope=taystjk-modern64-image
+          provenance: false
+
+  docker-build-jk2mv:
+    name: Build JK2MV Docker image (no push)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+      - changes
+      - validate
+    if: github.event_name == 'pull_request' && needs.changes.outputs.docker_jk2mv == 'true'
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Prepare image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/jedi-academy-pterodactyl" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/jk2mv/Dockerfile
+          push: false
+          tags: ${{ steps.image.outputs.name }}:ci-${{ github.sha }}-jk2mv
+          cache-from: type=gha,scope=jk2mv-image
+          cache-to: type=gha,mode=max,scope=jk2mv-image
+          provenance: false
+
+  publish-images-jk2mv:
+    name: Publish JK2MV image to GHCR (and Docker Hub if configured)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs:
+      - changes
+      - validate
+    if: github.ref == 'refs/heads/main' && (needs.changes.outputs.docker_jk2mv == 'true' || github.event_name == 'workflow_dispatch')
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Prepare image names
+        id: image
+        run: |
+          owner_lc="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "ghcr=ghcr.io/${owner_lc}/jedi-academy-pterodactyl" >> "$GITHUB_OUTPUT"
+          echo "dockerhub=docker.io/${owner_lc}/jedi-academy-pterodactyl" >> "$GITHUB_OUTPUT"
+
+      - name: Decide whether to publish to Docker Hub
+        id: dockerhub_gate
+        env:
+          PUBLISH_DOCKERHUB_VAR: ${{ vars.PUBLISH_DOCKERHUB }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [[ "${PUBLISH_DOCKERHUB_VAR}" == "true" && -n "${DOCKERHUB_USERNAME}" && -n "${DOCKERHUB_TOKEN}" ]]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: steps.dockerhub_gate.outputs.publish == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Compose target image list
+        id: targets
+        run: |
+          {
+            echo "images<<EOF"
+            echo "${{ steps.image.outputs.ghcr }}"
+            if [[ "${{ steps.dockerhub_gate.outputs.publish }}" == "true" ]]; then
+              echo "${{ steps.image.outputs.dockerhub }}"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Compose tag patterns
+        id: tagspec
+        run: |
+          set -euo pipefail
+          short_sha="${GITHUB_SHA:0:12}"
+          branch="${GITHUB_REF_NAME}"
+          {
+            echo "patterns<<EOF"
+            cat <<TAGS
+          type=raw,value=jk2mv
+          type=raw,value=jk2mv-${branch}-${short_sha}
+          TAGS
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.targets.outputs.images }}
+          tags: ${{ steps.tagspec.outputs.patterns }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/jk2mv/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: |
+            ${{ steps.meta.outputs.labels }}
+            io.akiondev.jk2mv.upstream.repo=https://github.com/mvdevs/jk2mv
+            io.akiondev.jk2mv.upstream.version=1.4.1
+          cache-from: type=gha,scope=jk2mv-image
+          cache-to: type=gha,mode=max,scope=jk2mv-image
+          provenance: false

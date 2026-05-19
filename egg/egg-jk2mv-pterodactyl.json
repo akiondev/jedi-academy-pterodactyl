@@ -1,0 +1,73 @@
+{
+  "_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PTERODACTYL PANEL - Pterodactyl® https://pterodactyl.io",
+  "meta": {
+    "version": "PTDL_v2",
+    "update_url": null
+  },
+  "exported_at": "2026-05-04T18:00:00+02:00",
+  "name": "Jedi Outcast - JK2MV",
+  "author": "admin@example.com",
+  "description": "Runs the Jedi Outcast JK2MV (Multi Version) dedicated server on Pterodactyl. The image ships only the JK2MV engine and JK2MV's own free assetsmv.pk3/assetsmv2.pk3 - the operator must upload their own legally owned Raven Jedi Outcast base assets (assets0/1/2/5.pk3) to /home/container/base. This egg is fully isolated from the TaystJK egg/runtime in this repository.",
+  "features": [],
+  "docker_images": {
+    "Jedi Academy Pterodactyl (JK2MV runtime, GHCR)": "ghcr.io/akiondev/jedi-academy-pterodactyl:jk2mv",
+    "Jedi Academy Pterodactyl (JK2MV runtime, Docker Hub mirror)": "docker.io/akiondev/jedi-academy-pterodactyl:jk2mv"
+  },
+  "file_denylist": [],
+  "startup": "/usr/local/bin/start_jk2mv.sh",
+  "config": {
+    "files": "{}",
+    "startup": "{\"done\": \"Hitch warning\"}",
+    "logs": "{}",
+    "stop": "quit"
+  },
+  "scripts": {
+    "installation": {
+      "script": "#!/usr/bin/env bash\nset -euo pipefail\n\ncd /mnt/server\n\n: \"${COPYRIGHT_ACKNOWLEDGED:=false}\"\nif [[ \"${COPYRIGHT_ACKNOWLEDGED}\" != \"true\" ]]; then\n  printf '[ERROR] COPYRIGHT_ACKNOWLEDGED must be true. This egg does not distribute Raven Jedi Outcast assets.\\n' >&2\n  exit 1\nfi\n\nmkdir -p \\\n  /mnt/server/base \\\n  /mnt/server/logs \\\n  /mnt/server/config\n\nSERVER_CFG=/mnt/server/base/server.cfg\nif [[ ! -f \"${SERVER_CFG}\" ]]; then\n  cat > \"${SERVER_CFG}\" <<'CFG'\n// Default JK2MV server.cfg created by the JK2MV egg installer.\nseta sv_hostname \"^7JKN^1|^7JK2MV Server\"\nseta rconPassword \"change_me\"\nseta sv_maxclients \"16\"\nseta sv_privateClients \"0\"\nseta sv_pure \"1\"\nseta mv_serverversion \"1.04\"\nseta g_log \"server.log\"\nseta logfile \"2\"\nmap ffa_bespin\nCFG\n  printf '[INFO] Wrote default %s\\n' \"${SERVER_CFG}\"\nelse\n  printf '[INFO] Existing %s preserved\\n' \"${SERVER_CFG}\"\nfi\n\nprintf '[INFO] You MUST upload your legally owned Jedi Outcast base assets to /home/container/base before starting the server:\\n'\nprintf '[INFO]   assets0.pk3 assets1.pk3 assets2.pk3 assets5.pk3\\n'\nprintf '[INFO] JK2MV-specific assetsmv.pk3 / assetsmv2.pk3 are provided by the runtime image and copied in on first start (only if missing).\\n'\nprintf '[INFO] The JK2MV runtime entrypoint installs jk2mvded into /home/container on first start; no JK2MV binary is downloaded by this installer.\\n'\n",
+      "container": "ghcr.io/pterodactyl/installers:debian",
+      "entrypoint": "bash"
+    }
+  },
+  "variables": [
+    {
+      "name": "Copyright Acknowledged",
+      "description": "Required acknowledgment that you legally own the Jedi Outcast base assets you upload into /home/container/base. The runtime refuses to start without these assets. The image never distributes copyrighted Raven assets.",
+      "env_variable": "COPYRIGHT_ACKNOWLEDGED",
+      "default_value": "false",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|in:true,false",
+      "field_type": "text"
+    },
+    {
+      "name": "Server Config",
+      "description": "Name of the server config file inside /home/container/base, passed to the engine via +exec. The JK2/Quake3 engine resolves this relative to the active fs_game directory (base/).",
+      "env_variable": "SERVER_CONFIG",
+      "default_value": "server.cfg",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|max:128|regex:/^[A-Za-z0-9][A-Za-z0-9._-]*\\.cfg$/",
+      "field_type": "text"
+    },
+    {
+      "name": "JK2MV Server Version",
+      "description": "Multi-version protocol the JK2MV server advertises. Use 1.04 for the modern default; 1.02 / 1.03 for legacy compatibility; auto to let JK2MV negotiate.",
+      "env_variable": "JK2MV_SERVER_VERSION",
+      "default_value": "1.04",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|in:auto,1.02,1.03,1.04",
+      "field_type": "text"
+    },
+    {
+      "name": "Extra Startup Args",
+      "description": "Optional additional arguments appended verbatim to the dedicated server command line after +exec ${SERVER_CONFIG}. Use +set style cvars (e.g. \"+set sv_fps 40\").",
+      "env_variable": "EXTRA_STARTUP_ARGS",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string|max:512",
+      "field_type": "text"
+    }
+  ]
+}
