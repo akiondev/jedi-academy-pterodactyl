@@ -1025,13 +1025,23 @@ func (s *Supervisor) broadcastDecision(stdin io.Writer, slot, playerName string,
 
 	s.logVpnStatus(playerName, decision, country)
 
-	s.enqueueBroadcast(broadcastJob{
+	job := broadcastJob{
 		stdin:   stdin,
 		command: command,
 		slot:    slot,
 		player:  playerName,
 		summary: publicSummary,
-	})
+	}
+
+	// BLOCK decisions are followed immediately by enforcement in
+	// processConnectionEvent. Emit their public line synchronously so the
+	// gamecode sees nexusvpncheck before clientkick can disconnect the slot.
+	if decision.Blocked {
+		s.emitBroadcastJob(job)
+		return
+	}
+
+	s.enqueueBroadcast(job)
 }
 
 // enqueueBroadcast hands a broadcast command off to the serialised emission

@@ -286,6 +286,106 @@ func TestBroadcastDecisionSanitizesPlayerNameBeforeWritingCommand(t *testing.T) 
 	}
 }
 
+func TestBlockedBroadcastWritesBeforeEnforcementKick(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	supervisor := &Supervisor{
+		cfg: Config{
+			BroadcastMode:         BroadcastPassAndBlock,
+			BroadcastBlockCommand: `nexusvpncheck %SLOT% %IP% BLOCK %COUNTRY% %SCORE% %THRESHOLD%`,
+			EnforcementMode:       EnforcementKickOnly,
+		},
+		logger:        logger,
+		broadcastSeen: make(map[string]time.Time),
+	}
+	decision := Decision{
+		IP:        "198.51.100.25",
+		Blocked:   true,
+		Score:     90,
+		Threshold: 90,
+		Summary:   "blocked",
+	}
+
+	var stdin bytes.Buffer
+	supervisor.broadcastDecision(&stdin, "3", "Padawan", decision, connectKindReal)
+	supervisor.enforceDecision(&stdin, "3", netip.MustParseAddr("198.51.100.25"), decision)
+
+	got := stdin.String()
+	broadcastIndex := strings.Index(got, "nexusvpncheck 3 198.51.100.25 BLOCK")
+	kickIndex := strings.Index(got, "clientkick 3")
+	if broadcastIndex < 0 {
+		t.Fatalf("expected blocked broadcast command, got %q", got)
+	}
+	if kickIndex < 0 {
+		t.Fatalf("expected enforcement kick command, got %q", got)
+	}
+	if broadcastIndex > kickIndex {
+		t.Fatalf("expected blocked broadcast before kick, got %q", got)
+	}
+}
+
+func TestBlockedBroadcastBypassesAsyncQueue(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	supervisor := &Supervisor{
+		cfg: Config{
+			BroadcastMode:         BroadcastPassAndBlock,
+			BroadcastBlockCommand: `nexusvpncheck %SLOT% %IP% BLOCK %COUNTRY% %SCORE% %THRESHOLD%`,
+		},
+		logger:         logger,
+		broadcastSeen:  make(map[string]time.Time),
+		broadcastQueue: make(chan broadcastJob, 1),
+	}
+
+	var stdin bytes.Buffer
+	supervisor.broadcastDecision(&stdin, "3", "Padawan", Decision{
+		IP:        "198.51.100.25",
+		Blocked:   true,
+		Score:     90,
+		Threshold: 90,
+	}, connectKindReal)
+
+	if !strings.Contains(stdin.String(), "nexusvpncheck 3 198.51.100.25 BLOCK") {
+		t.Fatalf("expected blocked broadcast to be written synchronously, got %q", stdin.String())
+	}
+	select {
+	case job := <-supervisor.broadcastQueue:
+		t.Fatalf("expected blocked broadcast to bypass async queue, queued %#v", job)
+	default:
+	}
+}
+
+func TestPassBroadcastStillUsesAsyncQueue(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	supervisor := &Supervisor{
+		cfg: Config{
+			BroadcastMode:        BroadcastPassAndBlock,
+			BroadcastPassCommand: `nexusvpncheck %SLOT% %IP% PASS %COUNTRY% %SCORE% %THRESHOLD%`,
+		},
+		logger:         logger,
+		broadcastSeen:  make(map[string]time.Time),
+		broadcastQueue: make(chan broadcastJob, 1),
+	}
+
+	var stdin bytes.Buffer
+	supervisor.broadcastDecision(&stdin, "3", "Padawan", Decision{
+		IP:        "198.51.100.25",
+		Allowed:   true,
+		Score:     10,
+		Threshold: 90,
+	}, connectKindReal)
+
+	if stdin.Len() != 0 {
+		t.Fatalf("expected pass broadcast to stay queued, got direct write %q", stdin.String())
+	}
+	select {
+	case job := <-supervisor.broadcastQueue:
+		if !strings.Contains(job.command, "nexusvpncheck 3 198.51.100.25 PASS") {
+			t.Fatalf("unexpected queued pass broadcast command: %q", job.command)
+		}
+	default:
+		t.Fatal("expected pass broadcast to be queued")
+	}
+}
+
 func TestHandleLogLineClearsTrackedConnectionStateOnDisconnect(t *testing.T) {
 	supervisor := &Supervisor{
 		connectionState: map[string]slotConnectionState{
