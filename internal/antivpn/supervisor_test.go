@@ -291,7 +291,7 @@ func TestBlockedBroadcastWritesBeforeEnforcementKick(t *testing.T) {
 	supervisor := &Supervisor{
 		cfg: Config{
 			BroadcastMode:         BroadcastPassAndBlock,
-			BroadcastBlockCommand: `nexusvpncheck %SLOT% %IP% BLOCK %COUNTRY% %SCORE% %THRESHOLD%`,
+			BroadcastBlockCommand: `svsay VPN BLOCK %PLAYER% %SCORE%/%THRESHOLD%`,
 			EnforcementMode:       EnforcementKickOnly,
 		},
 		logger:        logger,
@@ -310,7 +310,7 @@ func TestBlockedBroadcastWritesBeforeEnforcementKick(t *testing.T) {
 	supervisor.enforceDecision(&stdin, "3", netip.MustParseAddr("198.51.100.25"), decision)
 
 	got := stdin.String()
-	broadcastIndex := strings.Index(got, "nexusvpncheck 3 198.51.100.25 BLOCK")
+	broadcastIndex := strings.Index(got, "svsay VPN BLOCK Padawan 90/90")
 	kickIndex := strings.Index(got, "clientkick 3")
 	if broadcastIndex < 0 {
 		t.Fatalf("expected blocked broadcast command, got %q", got)
@@ -328,7 +328,7 @@ func TestBlockedBroadcastBypassesAsyncQueue(t *testing.T) {
 	supervisor := &Supervisor{
 		cfg: Config{
 			BroadcastMode:         BroadcastPassAndBlock,
-			BroadcastBlockCommand: `nexusvpncheck %SLOT% %IP% BLOCK %COUNTRY% %SCORE% %THRESHOLD%`,
+			BroadcastBlockCommand: `svsay VPN BLOCK %PLAYER% %SCORE%/%THRESHOLD%`,
 		},
 		logger:         logger,
 		broadcastSeen:  make(map[string]time.Time),
@@ -343,7 +343,7 @@ func TestBlockedBroadcastBypassesAsyncQueue(t *testing.T) {
 		Threshold: 90,
 	}, connectKindReal)
 
-	if !strings.Contains(stdin.String(), "nexusvpncheck 3 198.51.100.25 BLOCK") {
+	if !strings.Contains(stdin.String(), "svsay VPN BLOCK Padawan 90/90") {
 		t.Fatalf("expected blocked broadcast to be written synchronously, got %q", stdin.String())
 	}
 	select {
@@ -358,7 +358,7 @@ func TestPassBroadcastStillUsesAsyncQueue(t *testing.T) {
 	supervisor := &Supervisor{
 		cfg: Config{
 			BroadcastMode:        BroadcastPassAndBlock,
-			BroadcastPassCommand: `nexusvpncheck %SLOT% %IP% PASS %COUNTRY% %SCORE% %THRESHOLD%`,
+			BroadcastPassCommand: `svsay VPN PASS %PLAYER% %SCORE%/%THRESHOLD%`,
 		},
 		logger:         logger,
 		broadcastSeen:  make(map[string]time.Time),
@@ -378,7 +378,7 @@ func TestPassBroadcastStillUsesAsyncQueue(t *testing.T) {
 	}
 	select {
 	case job := <-supervisor.broadcastQueue:
-		if !strings.Contains(job.command, "nexusvpncheck 3 198.51.100.25 PASS") {
+		if !strings.Contains(job.command, "svsay VPN PASS Padawan 10/90") {
 			t.Fatalf("unexpected queued pass broadcast command: %q", job.command)
 		}
 	default:
