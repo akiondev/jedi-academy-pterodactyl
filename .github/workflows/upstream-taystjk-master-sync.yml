@@ -9,6 +9,9 @@ permissions:
   contents: read
   packages: write
 
+env:
+  DOCKER_BUILD_RECORD_UPLOAD: false
+
 concurrency:
   group: upstream-taystjk-sync
   cancel-in-progress: false
@@ -125,8 +128,6 @@ jobs:
           build-args: |
             TAYSTJK_REF=${{ steps.upstream.outputs.sha }}
             TAYSTJK_COMMIT=${{ steps.upstream.outputs.sha }}
-          cache-from: type=gha,scope=taystjk-modern64-image
-          cache-to: type=gha,mode=max,scope=taystjk-modern64-image
           provenance: false
 
       - name: Smoke test image contents
@@ -180,6 +181,4 @@ jobs:
           build-args: |
             TAYSTJK_REF=${{ steps.upstream.outputs.sha }}
             TAYSTJK_COMMIT=${{ steps.upstream.outputs.sha }}
-          cache-from: type=gha,scope=taystjk-modern64-image
-          cache-to: type=gha,mode=max,scope=taystjk-modern64-image
           provenance: false

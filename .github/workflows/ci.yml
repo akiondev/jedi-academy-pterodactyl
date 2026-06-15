@@ -12,6 +12,9 @@ on:
 permissions:
   contents: read
 
+env:
+  DOCKER_BUILD_RECORD_UPLOAD: false
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -292,8 +295,6 @@ jobs:
           file: docker/taystjk-modern64/Dockerfile
           push: false
           tags: ${{ steps.image.outputs.name }}:ci-${{ github.sha }}-taystjk-modern64
-          cache-from: type=gha,scope=taystjk-modern64-image
-          cache-to: type=gha,mode=max,scope=taystjk-modern64-image
           provenance: false
 
   publish-images:
@@ -414,8 +415,6 @@ jobs:
           build-args: |
             TAYSTJK_REF=${{ steps.upstream.outputs.sha }}
             TAYSTJK_COMMIT=${{ steps.upstream.outputs.sha }}
-          cache-from: type=gha,scope=taystjk-modern64-image
-          cache-to: type=gha,mode=max,scope=taystjk-modern64-image
           provenance: false
 
   docker-build-jk2mv:
@@ -445,8 +444,6 @@ jobs:
           file: docker/jk2mv/Dockerfile
           push: false
           tags: ${{ steps.image.outputs.name }}:ci-${{ github.sha }}-jk2mv
-          cache-from: type=gha,scope=jk2mv-image
-          cache-to: type=gha,mode=max,scope=jk2mv-image
           provenance: false
 
   publish-images-jk2mv:
@@ -548,6 +545,4 @@ jobs:
             ${{ steps.meta.outputs.labels }}
             io.akiondev.jk2mv.upstream.repo=https://github.com/mvdevs/jk2mv
             io.akiondev.jk2mv.upstream.version=1.4.1
-          cache-from: type=gha,scope=jk2mv-image
-          cache-to: type=gha,mode=max,scope=jk2mv-image
           provenance: false
